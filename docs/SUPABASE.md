@@ -1,6 +1,6 @@
 # Supabase Setup — Suffolk Tennis
 
-This project runs on its own Supabase database, independent of Lovable.
+This app runs on its own Supabase project, separate from the Lovable-managed one.
 
 ## Project details
 
@@ -14,101 +14,149 @@ This project runs on its own Supabase database, independent of Lovable.
 | API URL | `https://twtmkvorzpvwnznqzcrw.supabase.co` |
 | Dashboard | https://supabase.com/dashboard/project/twtmkvorzpvwnznqzcrw |
 
-Cost: $10/month, billed to the Nullshift org.
+Cost: $10/month on the Nullshift org.
 
-## Status
+The previous Lovable project ref was `wbwhjhqfkailkumcxmcq`. It no longer appears
+anywhere in this repo.
 
-The project is provisioned and reachable, but **the database is still empty**.
-The Suffolk Tennis schema currently lives in the Lovable-managed Supabase
-project and has not been exported yet. Nothing here assumes a schema — no
-speculative tables have been created, so the Lovable dump will apply cleanly.
+## What is already done
+
+- All 29 migrations in `supabase/migrations/` have been replayed onto the new
+  database, in timestamp order.
+- 19 tables, all with Row Level Security enabled.
+- 4 storage buckets: `child-photos` (private), `report-pdfs` (private),
+  `news-media` (public), `player-watch-media` (public).
+- Extensions `pg_net`, `pg_cron`, `supabase_vault`, `pgmq`, and the four email
+  queues (`auth_emails`, `transactional_emails`, and their DLQs).
+- `supabase_migrations.schema_migrations` has been backfilled with all 29
+  migration versions, so `supabase db push` is a no-op rather than trying to
+  replay everything.
+- `supabase/config.toml` and `.env.example` point at the new project.
+
+Schema fidelity was verified by comparing the new database's column signature
+against the `types.ts` Lovable generated from the old database: 235 columns
+across 19 tables, identical on both sides. `src/integrations/supabase/types.ts`
+therefore needs no regeneration.
+
+## What is NOT done yet
+
+### Edge functions are not deployed
+
+None of the 14 functions in `supabase/functions/` exist on the new project.
+Deploy them with:
+
+```bash
+supabase link --project-ref twtmkvorzpvwnznqzcrw
+supabase functions deploy
+```
+
+They need these secrets set (`supabase secrets set NAME=value`):
+
+| Secret | Used by |
+|---|---|
+| `LOVABLE_API_KEY` | auth-email-hook, compose-news, handle-email-suppression, nearest-clubs, parse-report, preview-transactional-email, process-email-queue |
+| `LOVABLE_SEND_URL` | process-email-queue (optional override) |
+| `GOOGLE_MAPS_API_KEY` | postcode-lookup / nearest-clubs |
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected
+automatically by the platform — do not set those by hand.
+
+### The email pipeline still runs through Lovable
+
+This is the one place the app is not yet independent. Seven edge functions call
+Lovable's API: transactional and auth email sending goes through Lovable's mail
+service, and `compose-news`, `parse-report` and `nearest-clubs` use Lovable's AI
+gateway. The database no longer depends on Lovable; these functions still do.
+
+To fully cut the cord, those call sites need repointing at direct providers
+(e.g. Resend for mail, a model provider key for the AI features). Until then,
+keep `LOVABLE_API_KEY` valid or email will silently stop working.
+
+### Vault secret and cron job
+
+`20260713100622_email_infra.sql` documents two post-migration steps that are not
+static SQL and have not been applied:
+
+1. A vault secret `email_queue_service_role_key` holding the service_role key.
+2. A `pg_cron` job `process-email-queue` on a 5-second interval that calls the
+   `process-email-queue` edge function via `net.http_post`.
+
+Neither exists on the new project yet (`vault.secrets` and `cron.job` are both
+empty). Apply them after the edge functions are deployed, or the cron job will
+fire against a function that isn't there.
+
+### There is no admin user
+
+`auth.users` is empty, so nobody has the `admin` role. Two of the migrations try
+to seed admins and were no-ops for that reason. The trigger from
+`20260720185903` is live though: when `cmelsa@me.com` signs up, that account is
+granted `admin` automatically.
+
+To promote anyone else after they have registered:
+
+```sql
+insert into public.user_roles (user_id, role)
+select id, 'admin'::app_role from auth.users where lower(email) = lower('someone@example.com')
+on conflict do nothing;
+```
+
+### Auth redirect URLs
+
+Set these in the dashboard under Authentication → URL Configuration before
+going live, otherwise password resets and magic links will point at the wrong
+host.
 
 ## Local setup
 
 ```bash
-cp .env.example .env          # publishable values are already filled in
-npm install                   # once the app code is in the repo
-npm install @supabase/supabase-js
+cp .env.example .env
+npm install
+npm run dev
 ```
 
-Link the Supabase CLI to the remote project:
-
-```bash
-supabase link --project-ref twtmkvorzpvwnznqzcrw
-```
+The publishable values in `.env.example` are already filled in. The Google Maps
+and Mapbox placeholders still need real values.
 
 ## Keys
 
-Two keys matter, and mixing them up is the usual way these projects leak:
-
 - **Publishable** (`sb_publishable_...`) — safe in the browser, committed in
-  `.env.example`. All access through it is filtered by Row Level Security.
+  `.env.example`. Filtered by RLS.
 - **Secret / `service_role`** — bypasses RLS entirely. Server-side only. Never
-  commit it, never put it in a `VITE_`/`NEXT_PUBLIC_` variable. Read it from the
-  dashboard when you need it.
+  commit it, never put it behind a `VITE_` prefix.
 
-## Importing the schema out of Lovable
+## Known issues carried over from Lovable
 
-Lovable's Supabase project is separate and this session has no access to it, so
-this part is manual. From the Lovable project's dashboard, grab the connection
-string (Project Settings → Database) and run:
+These came across with the migrations and are worth fixing, but were left as-is
+so the new database matches the old one:
 
-```bash
-# 1. Schema only — tables, types, functions, RLS policies, triggers
-pg_dump \
-  --schema-only \
-  --no-owner \
-  --no-privileges \
-  --schema=public \
-  "postgresql://postgres:[LOVABLE_DB_PASSWORD]@db.[LOVABLE_REF].supabase.co:5432/postgres" \
-  > supabase/migrations/00000000000000_initial_schema.sql
-
-# 2. Data, if you want the existing rows carried across
-pg_dump \
-  --data-only \
-  --no-owner \
-  --schema=public \
-  "postgresql://postgres:[LOVABLE_DB_PASSWORD]@db.[LOVABLE_REF].supabase.co:5432/postgres" \
-  > lovable_data.sql
-```
-
-Rename the migration file to a real timestamp, then apply it:
-
-```bash
-mv supabase/migrations/00000000000000_initial_schema.sql \
-   supabase/migrations/$(date +%Y%m%d%H%M%S)_initial_schema.sql
-supabase db push
-```
-
-Things to check in the dump before pushing it:
-
-- Strip any `CREATE SCHEMA`/`ALTER ... OWNER TO` lines that reference Lovable-specific roles.
-- Confirm every table has `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` plus real policies. Lovable projects frequently ship tables with RLS off, which would make them world-readable through the publishable key.
-- Auth users do **not** come across in a `public` schema dump. If members need to keep their logins, export `auth.users` separately or have them re-register.
-
-Then regenerate the types:
-
-```bash
-supabase gen types typescript --project-id twtmkvorzpvwnznqzcrw > src/lib/database.types.ts
-```
-
-## Cutting the app over from Lovable
-
-Lovable generates a hardcoded client at `src/integrations/supabase/client.ts`
-with the URL and key inlined. To break the dependency:
-
-1. Delete `src/integrations/supabase/client.ts`.
-2. Repoint imports at `src/lib/supabase.ts`, which reads from env vars instead
-   of hardcoded literals.
-3. Grep for leftovers — the old project ref should appear nowhere:
-   ```bash
-   grep -rn "supabase.co" src/ | grep -v twtmkvorzpvwnznqzcrw
+1. **The email queue RPCs are callable by anonymous users.**
+   `20260713100622_email_infra.sql` intends to lock `enqueue_email`,
+   `read_email_batch`, `delete_email` and `move_to_dlq` to `service_role`, but
+   `REVOKE EXECUTE ... FROM PUBLIC` does not remove Supabase's default grants to
+   `anon` and `authenticated`. All four are currently reachable via
+   `/rest/v1/rpc/...` without signing in — `enqueue_email` in particular is a
+   spam vector. Fix:
+   ```sql
+   revoke execute on function public.enqueue_email(text, jsonb) from anon, authenticated;
+   revoke execute on function public.read_email_batch(text, int, int) from anon, authenticated;
+   revoke execute on function public.delete_email(text, bigint) from anon, authenticated;
+   revoke execute on function public.move_to_dlq(text, text, bigint, jsonb) from anon, authenticated;
    ```
-4. Update the auth redirect URLs in the new project's dashboard
-   (Authentication → URL Configuration) to the real deployed domain.
+
+2. **A plaintext password sits in the migration history.**
+   `20260601130746_...sql` contains `crypt('Tennis26!', ...)` against a hardcoded
+   user id. It was a no-op here (that user does not exist in this database), but
+   the password is in the git history of a public repo and should be treated as
+   compromised wherever it was reused.
+
+3. **Four functions have a mutable `search_path`** (`enqueue_email`,
+   `read_email_batch`, `delete_email`, `move_to_dlq`). Add
+   `SET search_path = public` to each.
+
+Run `supabase db lint` or check Advisors in the dashboard for the current list.
 
 ## Migrations from here on
 
-Schema changes go in `supabase/migrations/` as timestamped SQL files and are
-applied with `supabase db push`. Don't edit the schema by hand in the dashboard —
-it drifts from the repo and the next push will fight it.
+Schema changes go in `supabase/migrations/` as timestamped SQL files, applied
+with `supabase db push`. Don't edit schema by hand in the dashboard — it drifts
+from the repo and the next push will fight it.
