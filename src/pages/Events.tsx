@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import miniMastersLogo from "@/assets/mini-masters-logo.png.asset.json";
+import miniMastersLogo from "@/assets/mini-masters-logo.png";
 
 type LtaEvent = {
   title: string;
@@ -105,7 +105,7 @@ const Events = () => {
             className="max-w-5xl mx-auto rounded-3xl overflow-hidden bg-suffolk-navy text-primary-foreground border border-suffolk-navy grid md:grid-cols-[auto_1fr] items-center gap-8 p-8 md:p-10"
           >
             <img
-              src={miniMastersLogo.url}
+              src={miniMastersLogo}
               alt="Suffolk Mini Masters logo"
               className="w-40 md:w-48 mx-auto drop-shadow-[0_10px_25px_rgba(0,0,0,0.4)]"
             />

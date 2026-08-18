@@ -5,16 +5,16 @@ import { Link, useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import GrandSlamSlider from "@/components/GrandSlamSlider";
-import redBadgeAsset from "@/assets/punchy-red-ball-v2.png.asset.json";
-import orangeBadgeAsset from "@/assets/punchy-orange-ball-v2.png.asset.json";
-import greenBadgeAsset from "@/assets/punchy-green-ball.png.asset.json";
-import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png.asset.json";
-const orangeBadge = orangeBadgeAsset.url;
-const greenBadge = greenBadgeAsset.url;
-const yellowBadge = yellowBadgeAsset.url;
+import redBadgeAsset from "@/assets/punchy-red-ball-v2.png";
+import orangeBadgeAsset from "@/assets/punchy-orange-ball-v2.png";
+import greenBadgeAsset from "@/assets/punchy-green-ball.png";
+import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png";
+const orangeBadge = orangeBadgeAsset;
+const greenBadge = greenBadgeAsset;
+const yellowBadge = yellowBadgeAsset;
 import redCharacter from "@/assets/punchy-red-character.png";
 
-const redBadge = redBadgeAsset.url;
+const redBadge = redBadgeAsset;
 
 const TourRed = () => {
   const navigate = useNavigate();

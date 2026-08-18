@@ -7,8 +7,8 @@ import { useEffect } from "react";
 import { Mail, Lock, User, ArrowRight, Trophy, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png.asset.json";
-const logo = logoAsset.url;
+import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
+const logo = logoAsset;
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);

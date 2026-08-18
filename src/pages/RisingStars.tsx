@@ -9,8 +9,8 @@ import Footer from "@/components/Footer";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsLogo from "@/assets/ipswich-sports-logo.png";
 import culfordLogo from "@/assets/culford-logo.jpg";
-import risingStarsBadge from "@/assets/suffolk-rising-stars-badge.png.asset.json";
-import risingStarsCertificate from "@/assets/rising-stars-certificate.jpeg.asset.json";
+import risingStarsBadge from "@/assets/suffolk-rising-stars-badge.png";
+import risingStarsCertificate from "@/assets/rising-stars-certificate.jpeg";
 
 const funDayHighlights = [
   "Playing tennis",
@@ -122,7 +122,7 @@ const RisingStars = () => {
               <div className="relative">
                 <div className="absolute inset-4 rounded-full bg-lta-yellow/20 blur-3xl" />
                 <img
-                  src={risingStarsBadge.url}
+                  src={risingStarsBadge}
                   alt="Suffolk Rising Stars badge featuring Punchy the mascot"
                   className="relative w-72 md:w-80 lg:w-[22rem] object-contain drop-shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
                 />
@@ -416,7 +416,7 @@ const RisingStars = () => {
                       transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 2.5, ease: "easeInOut" }}
                     />
                     <img
-                      src={risingStarsCertificate.url}
+                      src={risingStarsCertificate}
                       alt="Suffolk Rising Stars Well Done certificate awarded to attendees"
                       className="block w-full h-auto"
                     />

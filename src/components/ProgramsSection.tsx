@@ -2,17 +2,17 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 
-import punchyMascot from "@/assets/punchy-mascot.png.asset.json";
+import punchyMascot from "@/assets/punchy-mascot.png";
 
-import redTourBadgeAsset from "@/assets/punchy-red-ball-v2.png.asset.json";
-import orangeTourBadgeAsset from "@/assets/punchy-orange-ball-v2.png.asset.json";
-const orangeTourBadge = orangeTourBadgeAsset.url;
-import greenTourBadgeAsset from "@/assets/punchy-green-ball.png.asset.json";
-const greenTourBadge = greenTourBadgeAsset.url;
-import yellowTourBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png.asset.json";
-const yellowTourBadge = yellowTourBadgeAsset.url;
+import redTourBadgeAsset from "@/assets/punchy-red-ball-v2.png";
+import orangeTourBadgeAsset from "@/assets/punchy-orange-ball-v2.png";
+const orangeTourBadge = orangeTourBadgeAsset;
+import greenTourBadgeAsset from "@/assets/punchy-green-ball.png";
+const greenTourBadge = greenTourBadgeAsset;
+import yellowTourBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png";
+const yellowTourBadge = yellowTourBadgeAsset;
 
-const redTourBadge = redTourBadgeAsset.url;
+const redTourBadge = redTourBadgeAsset;
 
 const tours = [
   {
@@ -233,7 +233,7 @@ const ProgramsSection = () => {
                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                 >
                   <img
-                    src={punchyMascot.url}
+                    src={punchyMascot}
                     alt="Punchy, the Suffolk Tennis 10U mascot"
                     className="w-full h-auto object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.2)]"
                   />

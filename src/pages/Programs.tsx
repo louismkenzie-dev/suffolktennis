@@ -7,9 +7,9 @@ import Footer from "@/components/Footer";
 import redBadge from "@/assets/punchy-red-tour.png";
 import orangeBadge from "@/assets/punchy-orange-tour.png";
 import greenBadge from "@/assets/punchy-green-tour.png";
-import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png.asset.json";
+import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png";
 
-const yellowBadge = yellowBadgeAsset.url;
+const yellowBadge = yellowBadgeAsset;
 
 const programs = [
   {

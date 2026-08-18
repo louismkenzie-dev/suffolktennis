@@ -1,9 +1,9 @@
 import { Instagram, Facebook, Youtube, Twitter, Mail } from "lucide-react";
-import logoAsset from "@/assets/suffolk-tennis-logo-v7.png.asset.json";
+import logoAsset from "@/assets/suffolk-tennis-logo-v7.png";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsWhite from "@/assets/ipswich-sports-white.png";
 import culfordWhite from "@/assets/culford-white.png";
-const logo = logoAsset.url;
+const logo = logoAsset;
 
 const venueLogos = [
   { src: davidLloydLogo, alt: "David Lloyd Ipswich", invert: true },

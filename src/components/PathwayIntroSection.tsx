@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { TrendingUp, Target, Users, ArrowRight, ExternalLink } from "lucide-react";
-import suffolkTennisLogo from "@/assets/suffolk-tennis-official-logo.png.asset.json";
+import suffolkTennisLogo from "@/assets/suffolk-tennis-official-logo.png";
 
 
 const milestones = [
@@ -54,7 +54,7 @@ const PathwayIntroSection = () => {
             transition={{ type: "spring", stiffness: 300 }}
           >
             <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 bg-white flex items-center justify-center">
-              <img src={suffolkTennisLogo.url} alt="Suffolk Tennis" className="w-full h-full object-contain" />
+              <img src={suffolkTennisLogo} alt="Suffolk Tennis" className="w-full h-full object-contain" />
             </div>
             <div className="text-left">
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">Official Partner</p>

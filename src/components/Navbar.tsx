@@ -3,20 +3,20 @@ import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { Menu, X, ChevronDown, Calendar, Sparkles, Brain } from "lucide-react";
 import { Link } from "react-router-dom";
-import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png.asset.json";
+import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsLogo from "@/assets/ipswich-sports-logo.png";
 import culfordLogo from "@/assets/culford-logo.jpg";
 import redBadge from "@/assets/punchy-red-tour.png";
 import orangeBadge from "@/assets/punchy-orange-tour.png";
 import greenBadge from "@/assets/punchy-green-tour.png";
-import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png.asset.json";
-import risingStarsBadge from "@/assets/suffolk-rising-stars-badge.png.asset.json";
-import miniMastersLogo from "@/assets/mini-masters-logo.png.asset.json";
-import tennisGpLogo from "@/assets/tennis-gp-logo.png.asset.json";
+import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png";
+import risingStarsBadge from "@/assets/suffolk-rising-stars-badge.png";
+import miniMastersLogo from "@/assets/mini-masters-logo.png";
+import tennisGpLogo from "@/assets/tennis-gp-logo.png";
 
-const logo = logoAsset.url;
-const yellowBadge = yellowBadgeAsset.url;
+const logo = logoAsset;
+const yellowBadge = yellowBadgeAsset;
 
 const defaultFeederClubs = [
   { name: "East Bergholt TC", path: "/clubs/east-bergholt" },
@@ -48,19 +48,19 @@ const eventLinks = [
     label: "Suffolk Mini Masters",
     description: "10 & Under LTA-sanctioned series across Suffolk",
     path: "/events/mini-masters",
-    image: miniMastersLogo.url,
+    image: miniMastersLogo,
   },
   {
     label: "Suffolk Rising Stars",
     description: "Fun days and county pathway for enthusiastic 6–8 year olds",
     path: "/events/rising-stars",
-    image: risingStarsBadge.url,
+    image: risingStarsBadge,
   },
   {
     label: "Tennis Grand Prix",
     description: "Beginner & improver competition series across Suffolk",
     path: "/events/tennis-gp",
-    image: tennisGpLogo.url,
+    image: tennisGpLogo,
   },
   {
     label: "Workshops",
