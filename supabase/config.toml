@@ -1,0 +1,19 @@
+project_id = "wbwhjhqfkailkumcxmcq"
+
+[functions]
+  [functions.auth-email-hook]
+    verify_jwt = false
+  [functions.compose-news]
+    verify_jwt = false
+  [functions.handle-email-suppression]
+    verify_jwt = false
+  [functions.handle-email-unsubscribe]
+    verify_jwt = false
+  [functions.preview-transactional-email]
+    verify_jwt = false
+  [functions.process-email-queue]
+    verify_jwt = true
+  [functions.send-transactional-email]
+    verify_jwt = true
+  [functions.submit-rising-stars-signup]
+    verify_jwt = false
