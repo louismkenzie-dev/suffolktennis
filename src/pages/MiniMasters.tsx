@@ -8,10 +8,10 @@ import Footer from "@/components/Footer";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsLogo from "@/assets/ipswich-sports-logo.png";
 import culfordLogo from "@/assets/culford-logo.jpg";
-import miniMasters8u from "@/assets/mini-masters-8u.png.asset.json";
-import miniMasters9u from "@/assets/mini-masters-9u.png.asset.json";
-import miniMasters10u from "@/assets/mini-masters-10u.png.asset.json";
-import miniMastersLogo from "@/assets/mini-masters-logo.png.asset.json";
+import miniMasters8u from "@/assets/mini-masters-8u.png";
+import miniMasters9u from "@/assets/mini-masters-9u.png";
+import miniMasters10u from "@/assets/mini-masters-10u.png";
+import miniMastersLogo from "@/assets/mini-masters-logo.png";
 
 type MiniMastersEvent = {
   id: string;
@@ -33,9 +33,9 @@ const miniMastersReasons = [
 ];
 
 const miniMastersBadges = [
-  { label: "8 & Under", ball: "Red Ball", src: miniMasters8u.url, glow: "bg-rose-500" },
-  { label: "9 & Under", ball: "Orange Ball", src: miniMasters9u.url, glow: "bg-orange-500" },
-  { label: "10 & Under", ball: "Green Ball", src: miniMasters10u.url, glow: "bg-emerald-500" },
+  { label: "8 & Under", ball: "Red Ball", src: miniMasters8u, glow: "bg-rose-500" },
+  { label: "9 & Under", ball: "Orange Ball", src: miniMasters9u, glow: "bg-orange-500" },
+  { label: "10 & Under", ball: "Green Ball", src: miniMasters10u, glow: "bg-emerald-500" },
 ];
 
 const miniMastersVenues = [
@@ -76,7 +76,7 @@ const MiniMasters = () => {
               initial={{ opacity: 0, scale: 0.85, rotate: -8 }}
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               transition={{ duration: 0.7 }}
-              src={miniMastersLogo.url}
+              src={miniMastersLogo}
               alt="Suffolk Mini Masters logo"
               className="w-48 md:w-64 mx-auto drop-shadow-[0_15px_35px_rgba(0,0,0,0.4)]"
             />
@@ -245,7 +245,7 @@ const MiniMasters = () => {
                       </div>
                     ) : (
                       <div className="aspect-[4/3] overflow-hidden bg-gradient-to-br from-suffolk-navy to-primary flex items-center justify-center">
-                        <img src={miniMastersLogo.url} alt="Mini Masters" className="w-2/3 opacity-90" />
+                        <img src={miniMastersLogo} alt="Mini Masters" className="w-2/3 opacity-90" />
                       </div>
                     )}
                     <div className="p-6">

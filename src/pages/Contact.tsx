@@ -7,18 +7,18 @@ import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
-import ollieImg from "@/assets/coach-ollie.png.asset.json";
-import dannyImg from "@/assets/coach-danny.png.asset.json";
-import chrisImg from "@/assets/coach-chris.png.asset.json";
+import ollieImg from "@/assets/coach-ollie.png";
+import dannyImg from "@/assets/coach-danny.png";
+import chrisImg from "@/assets/coach-chris.png";
 import jamesImg from "@/assets/coach-james.jpeg";
-import uniformCourtAsset from "@/assets/suffolk-uniform-court.png.asset.json";
-import uniformTrioAsset from "@/assets/suffolk-uniform-trio.jpeg.asset.json";
+import uniformCourtAsset from "@/assets/suffolk-uniform-court.png";
+import uniformTrioAsset from "@/assets/suffolk-uniform-trio.jpeg";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsWhite from "@/assets/ipswich-sports-white.png";
 import culfordWhite from "@/assets/culford-white.png";
 
-const uniformCourt = uniformCourtAsset.url;
-const uniformTrio = uniformTrioAsset.url;
+const uniformCourt = uniformCourtAsset;
+const uniformTrio = uniformTrioAsset;
 
 const leadCoaches = [
   {
@@ -29,7 +29,7 @@ const leadCoaches = [
     ageBand: "8U/9U/10U",
     programs: "Red Ball • Orange Ball • Green Ball",
     email: "ollie@suffolktennis.online",
-    photo: ollieImg.url,
+    photo: ollieImg,
     accent: "from-red-500 to-orange-500",
     prompt: "Get in touch with our 10U Performance Manager Ollie Sutton for any questions about 8U, 9U or 10U county training",
     venue: { src: davidLloydLogo, alt: "David Lloyd Ipswich", invert: true, label: "Based at David Lloyd Ipswich" },
@@ -42,7 +42,7 @@ const leadCoaches = [
     ageBand: "11–18",
     programs: "Yellow Ball • Performance Pathway",
     email: "chris@suffolktennis.online",
-    photo: chrisImg.url,
+    photo: chrisImg,
     accent: "from-yellow-400 to-amber-500",
     prompt: "Get in touch with our County\nPerformance Manager Chris Daynes for any questions about 11U-18U\ncounty training",
     venue: { src: ipswichSportsWhite, alt: "Ipswich Sports Club", invert: false, label: "Based at Ipswich Sports Club" },
@@ -55,7 +55,7 @@ const leadCoaches = [
     ageBand: "RPDC",
     programs: "Regional Performance Development Centre",
     email: "danny@suffolktennis.online",
-    photo: dannyImg.url,
+    photo: dannyImg,
     accent: "from-green-500 to-emerald-600",
     prompt: "Interested in our Regional Performance Development Centre? Email Danny directly with any questions.",
     venue: { src: culfordWhite, alt: "Culford Sports & Tennis Centre", invert: false, label: "Based at Culford" },

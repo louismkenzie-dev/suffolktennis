@@ -4,8 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
 import { Lock, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png.asset.json";
-const logo = logoAsset.url;
+import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
+const logo = logoAsset;
 
 const ResetPassword = () => {
   const [password, setPassword] = useState("");

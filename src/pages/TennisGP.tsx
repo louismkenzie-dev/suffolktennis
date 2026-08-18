@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Trophy, Users, Calendar, Sparkles, Heart, ShieldCheck, ArrowRight, ExternalLink, Award, Target } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import tennisGpLogo from "@/assets/tennis-gp-logo.png.asset.json";
+import tennisGpLogo from "@/assets/tennis-gp-logo.png";
 
 const reasons = [
   { icon: Users, title: "Social & Friendly", text: "A safe, welcoming environment built for enjoyment as much as competition." },
@@ -43,7 +43,7 @@ const TennisGP = () => {
               initial={{ scale: 0.85, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.1, type: "spring" }}
-              src={tennisGpLogo.url}
+              src={tennisGpLogo}
               alt="Tennis Grand Prix logo"
               className="w-32 h-32 md:w-40 md:h-40 mx-auto rounded-2xl shadow-2xl"
             />

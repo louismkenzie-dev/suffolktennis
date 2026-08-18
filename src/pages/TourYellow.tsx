@@ -5,15 +5,15 @@ import { Link, useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
-import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png.asset.json";
-const yellowBadge = yellowBadgeAsset.url;
-import chrisImg from "@/assets/coach-chris.png.asset.json";
-import redBadgeAsset from "@/assets/punchy-red-ball-v2.png.asset.json";
-const redBadge = redBadgeAsset.url;
-import orangeBadgeAsset from "@/assets/punchy-orange-ball-v2.png.asset.json";
-const orangeBadge = orangeBadgeAsset.url;
-import greenBadgeAsset from "@/assets/punchy-green-ball.png.asset.json";
-const greenBadge = greenBadgeAsset.url;
+import yellowBadgeAsset from "@/assets/suffolk-yellow-ball-badge.png";
+const yellowBadge = yellowBadgeAsset;
+import chrisImg from "@/assets/coach-chris.png";
+import redBadgeAsset from "@/assets/punchy-red-ball-v2.png";
+const redBadge = redBadgeAsset;
+import orangeBadgeAsset from "@/assets/punchy-orange-ball-v2.png";
+const orangeBadge = orangeBadgeAsset;
+import greenBadgeAsset from "@/assets/punchy-green-ball.png";
+const greenBadge = greenBadgeAsset;
 
 const TourYellow = () => {
   const navigate = useNavigate();
@@ -105,7 +105,7 @@ const TourYellow = () => {
               >
                 <div className="relative w-64 h-72 md:w-72 md:h-80 rounded-3xl overflow-hidden shadow-[var(--shadow-elevated)]">
                   <img
-                    src={chrisImg.url}
+                    src={chrisImg}
                     alt="Chris Daynes"
                     className="w-full h-full object-cover object-top"
                   />

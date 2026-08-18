@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Star, Award, X, Quote, Clock, Target, GraduationCap, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import ollieImg from "@/assets/coach-ollie.png.asset.json";
-import dannyImg from "@/assets/coach-danny.png.asset.json";
-import chrisImg from "@/assets/coach-chris.png.asset.json";
+import ollieImg from "@/assets/coach-ollie.png";
+import dannyImg from "@/assets/coach-danny.png";
+import chrisImg from "@/assets/coach-chris.png";
 import jamesImg from "@/assets/coach-james.jpeg";
 
 type CoachCard = {
@@ -44,7 +44,7 @@ const defaultCoaches: CoachCard[] = [
     experience: "25 years",
     qualification: "LTA Level 4",
     specialty: "10U Pathway Lead & Programme Administration",
-    photo: ollieImg.url,
+    photo: ollieImg,
     quote: "\"Every child who picks up a racket has the potential to fall in love with tennis. My job is to light that spark and keep it burning.\"",
     bio: "Ollie has been at the heart of Suffolk tennis for over two decades. Starting as a junior player himself in the county, he transitioned into coaching with a deep passion for developing players of all ages and abilities. Over his 25 year career, Ollie has coached hundreds of juniors through the pathway — many going on to represent Suffolk at county level and beyond.",
     achievements: [
@@ -61,7 +61,7 @@ const defaultCoaches: CoachCard[] = [
     experience: "15 years",
     qualification: "LTA Level 4",
     specialty: "10U Pathway & Performance Coaching",
-    photo: dannyImg.url,
+    photo: dannyImg,
     quote: "\"The 10&Under pathway is where champions are made — it's about building the right habits, mindset, and love for competition from the very start.\"",
     bio: "Danny is an LTA Level 4 Performance Coach who leads the 10&Under pathway programme and serves as Assistant Head Coach at Culford RPDC. His expertise in early-stage player development ensures young athletes build strong technical foundations while maintaining a passion for the game.",
     achievements: [
@@ -78,7 +78,7 @@ const defaultCoaches: CoachCard[] = [
     experience: "20 years",
     qualification: "LTA Level 4",
     specialty: "11-18 Pathway & Programme Administration",
-    photo: chrisImg.url,
+    photo: chrisImg,
     quote: "\"Tennis isn't just a sport — it's a community. Whether you're 8 or 80, there's a place for you on court.\"",
     bio: "Chris leads the 11-18 age group pathway, bringing 20 years of coaching experience and a gift for connecting with teenage players. His structured approach to development helps players navigate the crucial transition years, building both their game and their character.",
     achievements: [
