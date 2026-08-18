@@ -58,10 +58,15 @@ Edge Functions → Secrets):
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected
 automatically by the platform — do not set those by hand.
 
-### Data still lives in the old Lovable database
+### Data migration: COMPLETE (18 Aug 2026)
 
-See "Migrating data from Lovable" below — users, content rows and uploaded
-storage files all still need copying across.
+All data has been migrated from the Lovable project and verified by checksum:
+17 auth users (bcrypt password hashes byte-identical, so logins carry over),
+17 profiles, 13 children, 1,340 sporting_schedule rows, 2 player reports,
+site content (4 coaches, 9 venues, 2 events, 10 news articles, 3 player watch),
+and all 49 storage files across the four buckets. Every stored URL now points
+at this project or the site's own /migrated-assets/ paths; no reference to the
+old Lovable project remains in the data.
 
 ### Vault secret and cron job
 
