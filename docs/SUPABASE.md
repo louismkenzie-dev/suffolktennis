@@ -40,37 +40,28 @@ therefore needs no regeneration.
 
 ## What is NOT done yet
 
-### Edge functions are not deployed
+### Edge functions: partially deployed, Lovable removal in progress
 
-None of the 14 functions in `supabase/functions/` exist on the new project.
-Deploy them with:
-
-```bash
-supabase link --project-ref twtmkvorzpvwnznqzcrw
-supabase functions deploy
-```
-
-They need these secrets set (`supabase secrets set NAME=value`):
+Four functions are live on the new project (see the deployment status section
+at the end). The rest are being converted off Lovable's APIs — email is moving
+to Resend, the AI features to the Anthropic API — and deploy as each conversion
+lands. Secrets they need (`supabase secrets set NAME=value`, or dashboard →
+Edge Functions → Secrets):
 
 | Secret | Used by |
 |---|---|
-| `LOVABLE_API_KEY` | auth-email-hook, compose-news, handle-email-suppression, nearest-clubs, parse-report, preview-transactional-email, process-email-queue |
-| `LOVABLE_SEND_URL` | process-email-queue (optional override) |
-| `GOOGLE_MAPS_API_KEY` | postcode-lookup / nearest-clubs |
+| `RESEND_API_KEY` | process-email-queue, send-transactional-email, auth-email-hook |
+| `ANTHROPIC_API_KEY` | compose-news, parse-report |
+| `GOOGLE_MAPS_API_KEY` | nearest-clubs |
+| `SEND_EMAIL_HOOK_SECRET` | auth-email-hook (from Auth → Hooks when enabling the send-email hook) |
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected
 automatically by the platform — do not set those by hand.
 
-### The email pipeline still runs through Lovable
+### Data still lives in the old Lovable database
 
-This is the one place the app is not yet independent. Seven edge functions call
-Lovable's API: transactional and auth email sending goes through Lovable's mail
-service, and `compose-news`, `parse-report` and `nearest-clubs` use Lovable's AI
-gateway. The database no longer depends on Lovable; these functions still do.
-
-To fully cut the cord, those call sites need repointing at direct providers
-(e.g. Resend for mail, a model provider key for the AI features). Until then,
-keep `LOVABLE_API_KEY` valid or email will silently stop working.
+See "Migrating data from Lovable" below — users, content rows and uploaded
+storage files all still need copying across.
 
 ### Vault secret and cron job
 
@@ -154,6 +145,88 @@ so the new database matches the old one:
    `SET search_path = public` to each.
 
 Run `supabase db lint` or check Advisors in the dashboard for the current list.
+
+## Migrating data from Lovable
+
+Three separate things need to come across, because they live in three places:
+
+### 1. Repo image assets (logo, coach photos, tour artwork)
+
+Lovable's repo export replaced 30 images under `src/assets/` with
+`*.asset.json` placeholders whose URLs only resolve on Lovable's hosting —
+which is why they 404 on Vercel. On a machine with normal internet, from the
+repo root:
+
+```bash
+node scripts/fetch-lovable-assets.mjs
+npm run build          # sanity check
+git add -A && git commit -m "Restore image assets from Lovable" && git push
+```
+
+The script downloads every missing binary from the live Lovable site, rewrites
+the imports to use the real files, and deletes the placeholders. If the live
+site is not at suffolktennis.online, pass `--base https://<your-site>`.
+
+### 2. Database rows and users
+
+Produce a data-only dump of the old project (ref `wbwhjhqfkailkumcxmcq`).
+Preferred: from the old project's Supabase dashboard get the connection string
+(Settings → Database), then locally:
+
+```bash
+npx supabase db dump --db-url "postgresql://postgres:[PASSWORD]@db.wbwhjhqfkailkumcxmcq.supabase.co:5432/postgres" \
+  --data-only -s public -f lovable_public_data.sql
+npx supabase db dump --db-url "postgresql://postgres:[PASSWORD]@db.wbwhjhqfkailkumcxmcq.supabase.co:5432/postgres" \
+  --data-only -s auth -f lovable_auth_data.sql
+```
+
+No-CLI fallback: in the old project's SQL editor, run `select * from <table>`
+per table and use Download CSV — including `select * from auth.users` and
+`select * from auth.identities` (the SQL editor can read the auth schema;
+the table UI cannot). `encrypted_password` is a bcrypt hash, so existing
+users keep their passwords after import.
+
+**Never commit these dumps — this repo is public and they contain user PII
+and password hashes.** Hand them over privately.
+
+Import order on the new project (disable the two `auth.users` triggers first —
+`on_auth_user_created` and `on_auth_user_created_grant_cmelsa_admin` — so the
+imported `profiles` rows don't collide with trigger-created ones; re-enable
+after): `auth.users`, `auth.identities`, then public tables parents-first:
+`profiles`, `user_roles`, `children`, `coaches`, `venues`, `events`,
+`suffolk_news`, `player_watch`, `news_posts`, `player_progress`,
+`player_reports`, `tennis_goals`, `sporting_schedule`, `event_invitations`,
+`event_signups`. Afterwards rewrite stored URLs:
+
+```sql
+-- repoint uploaded-image URLs at the new project
+update public.coaches      set photo_url      = replace(photo_url,      'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where photo_url      like '%wbwhjhqfkailkumcxmcq%';
+update public.venues       set image_url      = replace(image_url,      'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where image_url      like '%wbwhjhqfkailkumcxmcq%';
+update public.venues       set logo_url       = replace(logo_url,       'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where logo_url       like '%wbwhjhqfkailkumcxmcq%';
+update public.suffolk_news set image_url      = replace(image_url,      'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where image_url      like '%wbwhjhqfkailkumcxmcq%';
+update public.suffolk_news set media          = replace(media::text,    'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw')::jsonb where media::text like '%wbwhjhqfkailkumcxmcq%';
+update public.player_watch set main_image_url = replace(main_image_url, 'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where main_image_url like '%wbwhjhqfkailkumcxmcq%';
+update public.player_watch set gallery        = replace(gallery::text,  'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw')::jsonb where gallery::text like '%wbwhjhqfkailkumcxmcq%';
+update public.children     set photo_url      = replace(photo_url,      'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where photo_url      like '%wbwhjhqfkailkumcxmcq%';
+update public.player_reports set report_pdf_url = replace(report_pdf_url, 'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where report_pdf_url like '%wbwhjhqfkailkumcxmcq%';
+update public.events       set poster_url     = replace(poster_url,     'wbwhjhqfkailkumcxmcq', 'twtmkvorzpvwnznqzcrw') where poster_url     like '%wbwhjhqfkailkumcxmcq%';
+```
+
+### 3. Storage files (admin-uploaded photos, news media, report PDFs)
+
+The bucket contents (child-photos, report-pdfs, news-media,
+player-watch-media). On a machine with normal internet:
+
+```bash
+OLD_SUPABASE_URL="https://wbwhjhqfkailkumcxmcq.supabase.co" \
+OLD_SERVICE_ROLE_KEY="<old service_role key>" \
+NEW_SUPABASE_URL="https://twtmkvorzpvwnznqzcrw.supabase.co" \
+NEW_SERVICE_ROLE_KEY="<new service_role key>" \
+node scripts/migrate-storage.mjs
+```
+
+service_role keys come from each project's dashboard → Project Settings → API
+keys. Do not commit them, and rotate any key that gets pasted anywhere public.
 
 ## Migrations from here on
 
