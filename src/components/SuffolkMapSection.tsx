@@ -4,7 +4,15 @@ import { Link, useNavigate } from "react-router-dom";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+// A real Mapbox public token starts with "pk."; treat anything else (missing
+// env var, or the .env.example placeholder) as "no token" so the map degrades
+// gracefully instead of mapboxgl throwing and white-screening the whole app.
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+const HAS_MAPBOX_TOKEN =
+  typeof MAPBOX_TOKEN === "string" && /^pk\.[A-Za-z0-9._-]+$/.test(MAPBOX_TOKEN);
+if (HAS_MAPBOX_TOKEN) {
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+}
 
 const hubs = [
 {
@@ -96,16 +104,24 @@ const SuffolkMapSection = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return;
+    if (!HAS_MAPBOX_TOKEN || !mapContainer.current || mapRef.current) return;
 
-    const map = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/light-v11",
-      center: [1.0, 52.18],
-      zoom: 9,
-      pitch: 20,
-      attributionControl: false
-    });
+    let map: mapboxgl.Map;
+    try {
+      map = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: "mapbox://styles/mapbox/light-v11",
+        center: [1.0, 52.18],
+        zoom: 9,
+        pitch: 20,
+        attributionControl: false
+      });
+    } catch (error) {
+      // Never let a Mapbox failure take down the page — the venue legends
+      // below the map carry the same information.
+      console.error("Failed to initialise Mapbox map", error);
+      return;
+    }
 
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
@@ -210,8 +226,16 @@ const SuffolkMapSection = () => {
           viewport={{ once: true }}
           transition={{ delay: 0.15 }}
           className="rounded-2xl overflow-hidden border border-lta-cyan/20 shadow-[var(--shadow-glow-blue)]"
-          style={{ height: "650px" }}>
-          <div ref={mapContainer} className="w-full h-full" />
+          style={{ height: HAS_MAPBOX_TOKEN ? "650px" : "auto" }}>
+          {HAS_MAPBOX_TOKEN ? (
+            <div ref={mapContainer} className="w-full h-full" />
+          ) : (
+            <div className="w-full py-16 flex items-center justify-center bg-card">
+              <p className="text-muted-foreground font-body text-sm">
+                Interactive map unavailable — explore our venues below.
+              </p>
+            </div>
+          )}
         </motion.div>
 
         {/* Hub legend */}

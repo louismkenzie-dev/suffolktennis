@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import AppErrorBoundary from "@/components/AppErrorBoundary";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import VenueDavidLloyd from "./pages/VenueDavidLloyd";
@@ -36,6 +37,7 @@ import TennisGP from "./pages/TennisGP";
 const queryClient = new QueryClient();
 
 const App = () => (
+  <AppErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
@@ -77,6 +79,7 @@ const App = () => (
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
+  </AppErrorBoundary>
 );
 
 export default App;
