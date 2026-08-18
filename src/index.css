@@ -163,14 +163,14 @@
 }
 
 /* Mapbox popup styling */
-.suffolk-map-popup .mapboxgl-popup-content {
+.suffolk-map-popup .maplibregl-popup-content {
   background: #fff !important;
   border: 1px solid hsl(195 100% 45% / 0.2);
   border-radius: 12px;
   box-shadow: 0 8px 30px -6px rgba(0, 0, 0, 0.15);
   padding: 0;
 }
-.suffolk-map-popup .mapboxgl-popup-tip {
+.suffolk-map-popup .maplibregl-popup-tip {
   border-top-color: #fff !important;
 }
 

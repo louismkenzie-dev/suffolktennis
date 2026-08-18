@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import * as maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
-// A real Mapbox public token starts with "pk."; treat anything else (missing
-// env var, or the .env.example placeholder) as "no token" so the map degrades
-// gracefully instead of mapboxgl throwing and white-screening the whole app.
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-const HAS_MAPBOX_TOKEN =
-  typeof MAPBOX_TOKEN === "string" && /^pk\.[A-Za-z0-9._-]+$/.test(MAPBOX_TOKEN);
-if (HAS_MAPBOX_TOKEN) {
-  mapboxgl.accessToken = MAPBOX_TOKEN;
-}
+// MapLibre + OpenFreeMap: token-free, no account, free for any use.
+// Positron is visually equivalent to the Mapbox light style used previously.
+const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 
 const hubs = [
 {
@@ -99,31 +93,33 @@ const FEEDER_BALL_SVG = `
 
 const SuffolkMapSection = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
   const [activeHub, setActiveHub] = useState<string | null>(null);
+  const [mapFailed, setMapFailed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!HAS_MAPBOX_TOKEN || !mapContainer.current || mapRef.current) return;
+    if (!mapContainer.current || mapRef.current) return;
 
-    let map: mapboxgl.Map;
+    let map: maplibregl.Map;
     try {
-      map = new mapboxgl.Map({
+      map = new maplibregl.Map({
         container: mapContainer.current,
-        style: "mapbox://styles/mapbox/light-v11",
+        style: MAP_STYLE_URL,
         center: [1.0, 52.18],
         zoom: 9,
         pitch: 20,
         attributionControl: false
       });
     } catch (error) {
-      // Never let a Mapbox failure take down the page — the venue legends
+      // Never let a map failure take down the page — the venue legends
       // below the map carry the same information.
-      console.error("Failed to initialise Mapbox map", error);
+      console.error("Failed to initialise map", error);
+      setMapFailed(true);
       return;
     }
 
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
 
     map.on("load", async () => {
       try {
@@ -158,7 +154,7 @@ const SuffolkMapSection = () => {
         markerEl.addEventListener("mouseleave", () => setActiveHub(null));
         markerEl.addEventListener("click", () => navigate(hub.path));
 
-        const popup = new mapboxgl.Popup({
+        const popup = new maplibregl.Popup({
           offset: 30, closeButton: false, closeOnClick: false, className: "suffolk-map-popup"
         }).setHTML(`
           <div style="padding: 12px 16px; max-width: 260px;">
@@ -171,7 +167,7 @@ const SuffolkMapSection = () => {
         markerEl.addEventListener("mouseenter", () => popup.addTo(map));
         markerEl.addEventListener("mouseleave", () => popup.remove());
 
-        new mapboxgl.Marker({ element: markerEl }).setLngLat(hub.coords).setPopup(popup).addTo(map);
+        new maplibregl.Marker({ element: markerEl }).setLngLat(hub.coords).setPopup(popup).addTo(map);
       });
 
       feederClubs.forEach((club) => {
@@ -182,7 +178,7 @@ const SuffolkMapSection = () => {
 
         markerEl.addEventListener("click", () => navigate(club.path));
 
-        const popup = new mapboxgl.Popup({
+        const popup = new maplibregl.Popup({
           offset: 20, closeButton: false, closeOnClick: false, className: "suffolk-map-popup"
         }).setHTML(`
           <div style="padding: 10px 14px; max-width: 240px;">
@@ -195,7 +191,7 @@ const SuffolkMapSection = () => {
         markerEl.addEventListener("mouseenter", () => popup.addTo(map));
         markerEl.addEventListener("mouseleave", () => popup.remove());
 
-        new mapboxgl.Marker({ element: markerEl }).setLngLat(club.coords).setPopup(popup).addTo(map);
+        new maplibregl.Marker({ element: markerEl }).setLngLat(club.coords).setPopup(popup).addTo(map);
       });
     });
 
@@ -226,15 +222,15 @@ const SuffolkMapSection = () => {
           viewport={{ once: true }}
           transition={{ delay: 0.15 }}
           className="rounded-2xl overflow-hidden border border-lta-cyan/20 shadow-[var(--shadow-glow-blue)]"
-          style={{ height: HAS_MAPBOX_TOKEN ? "650px" : "auto" }}>
-          {HAS_MAPBOX_TOKEN ? (
-            <div ref={mapContainer} className="w-full h-full" />
-          ) : (
+          style={{ height: mapFailed ? "auto" : "650px" }}>
+          {mapFailed ? (
             <div className="w-full py-16 flex items-center justify-center bg-card">
               <p className="text-muted-foreground font-body text-sm">
                 Interactive map unavailable — explore our venues below.
               </p>
             </div>
+          ) : (
+            <div ref={mapContainer} className="w-full h-full" />
           )}
         </motion.div>
 
