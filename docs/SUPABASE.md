@@ -160,3 +160,45 @@ Run `supabase db lint` or check Advisors in the dashboard for the current list.
 Schema changes go in `supabase/migrations/` as timestamped SQL files, applied
 with `supabase db push`. Don't edit schema by hand in the dashboard — it drifts
 from the repo and the next push will fight it.
+
+## Vercel
+
+The site is deployed from this repo's `main` branch to the Vercel project
+`suffolktennis` (team: Louis McKenzie's projects, `prj_zUtaqd6JIKPLakM1ndPhS1JSAZ3l`),
+live at https://suffolktennis.vercel.app.
+
+Vite inlines `VITE_*` variables at **build** time, so these must be set in
+Vercel → Settings → Environment Variables or the app white-screens: the Supabase
+client is constructed at module scope and throws `supabaseUrl is required` before
+React mounts.
+
+| Variable | Value |
+|---|---|
+| `VITE_SUPABASE_URL` | `https://twtmkvorzpvwnznqzcrw.supabase.co` |
+| `VITE_SUPABASE_PROJECT_ID` | `twtmkvorzpvwnznqzcrw` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | the project's legacy anon key (a JWT) |
+| `VITE_MAPBOX_TOKEN` | your Mapbox public token |
+| `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY` | your Google Maps browser key |
+
+Changing an environment variable does not rebuild on its own — trigger a
+redeploy afterwards.
+
+## Edge function deployment status
+
+Deployed to the new project so far:
+
+| Function | verify_jwt | Notes |
+|---|---|---|
+| `postcode-lookup` | true | works now |
+| `manage-reports` | true | works now |
+| `lta-news` | true | works now |
+| `submit-rising-stars-signup` | false | inserts fine; its confirmation emails need `send-transactional-email` |
+
+Still to deploy: `auth-email-hook`, `compose-news`, `handle-email-suppression`,
+`handle-email-unsubscribe`, `lta-events`, `lta-rankings`, `nearest-clubs`,
+`parse-report`, `preview-transactional-email`, `process-email-queue`,
+`send-transactional-email`.
+
+Seven of those read `LOVABLE_API_KEY`, so they are worth deploying only once you
+have decided whether to keep Lovable as the mail/AI provider or move to a direct
+one.
