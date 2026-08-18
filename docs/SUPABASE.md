@@ -186,6 +186,17 @@ per table and use Download CSV — including `select * from auth.users` and
 the table UI cannot). `encrypted_password` is a bcrypt hash, so existing
 users keep their passwords after import.
 
+**Lovable Cloud projects** (the project is owned by Lovable — no dashboard, no
+database password, no service keys): everything still comes out through
+Lovable's own SQL editor. Run `json_agg` export queries there and hand over
+the JSON output; the data imports from those directly. For storage files,
+export a manifest (`select bucket_id, name, metadata->>'mimetype' as mimetype
+from storage.objects`), temporarily set the private buckets public
+(`update storage.buckets set public = true where id in
+('child-photos','report-pdfs');`), run
+`scripts/pull-storage-from-lovable.mjs manifest.json` locally (needs only the
+NEW project's legacy service_role key), then flip the buckets back private.
+
 **Never commit these dumps — this repo is public and they contain user PII
 and password hashes.** Hand them over privately.
 
