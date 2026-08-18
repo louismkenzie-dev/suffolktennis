@@ -23,6 +23,19 @@ if (!OLD_URL || !OLD_KEY || !NEW_URL || !NEW_KEY) {
   process.exit(1);
 }
 
+// The storage API authenticates with the legacy JWT-style service_role key
+// (a long string starting "eyJ"). The newer sb_secret_... keys are rejected
+// with "Invalid Compact JWS" — catch that here with a useful message.
+for (const [name, key] of [["OLD_SERVICE_ROLE_KEY", OLD_KEY], ["NEW_SERVICE_ROLE_KEY", NEW_KEY]]) {
+  if (!key.startsWith("eyJ")) {
+    console.error(
+      `${name} does not look like a legacy service_role JWT (should start with "eyJ").\n` +
+      `Get it from the project dashboard: Project Settings -> API Keys -> "Legacy API Keys" tab -> service_role.`,
+    );
+    process.exit(1);
+  }
+}
+
 const oldHeaders = { Authorization: `Bearer ${OLD_KEY}`, apikey: OLD_KEY };
 const newHeaders = { Authorization: `Bearer ${NEW_KEY}`, apikey: NEW_KEY };
 
