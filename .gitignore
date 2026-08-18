@@ -1,23 +1,35 @@
-# Dependencies
-node_modules/
-
-# Environment — never commit real keys
-.env
-.env.local
-.env.*.local
-
-# Build output
-dist/
-build/
-.next/
-.vercel/
-
-# Supabase CLI local state
-supabase/.temp/
-supabase/.branches/
-
-# Logs / editor
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-.idea/
-.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables (contains API keys — keep out of this public repo)
+.env
+.env.*
+!.env.example
+
+# Local archives / imports
+*.zip
+
+# Test coverage
+coverage

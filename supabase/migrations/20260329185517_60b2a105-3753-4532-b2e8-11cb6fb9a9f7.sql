@@ -1,0 +1,1 @@
+UPDATE suffolk_news SET title = 'Freddie Wins Cambridge Easter Title' WHERE id = '8cbfe92f-5715-4897-b624-1ef8b7fccd45';

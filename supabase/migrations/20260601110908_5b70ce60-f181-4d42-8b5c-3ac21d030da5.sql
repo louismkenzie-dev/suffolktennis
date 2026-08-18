@@ -1,0 +1,1 @@
+ALTER TABLE public.children ADD COLUMN IF NOT EXISTS handedness TEXT CHECK (handedness IN ('left','right','both'));
