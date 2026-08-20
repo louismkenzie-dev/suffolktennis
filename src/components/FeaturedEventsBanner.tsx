@@ -76,17 +76,22 @@ const FeaturedEventsBanner = () => {
                     {ev.cost && <div className="text-lta-yellow font-bold text-xs uppercase tracking-widest mt-2">{ev.cost}</div>}
                   </div>
                   {ev.description && <p className="text-primary-foreground/70 text-sm mt-4 line-clamp-3">{ev.description}</p>}
-                  <div className="mt-5 flex gap-2">
-                    {ev.sign_up_enabled ? (
-                      <Button onClick={() => setSignupFor(ev)} className="flex-1 bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold">
-                        Sign up free
-                      </Button>
-                    ) : (
-                      <Button asChild variant="outline" className="flex-1 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
-                        <Link to={isRising ? "/rising-stars" : "/events"}>Learn more <ArrowRight size={14} className="ml-1" /></Link>
-                      </Button>
-                    )}
-                  </div>
+                  {/* Rising Stars events without signup get a working detail link;
+                      other non-signup events get no button — the card already
+                      shows everything and the old white button led nowhere. */}
+                  {(ev.sign_up_enabled || isRising) && (
+                    <div className="mt-5 flex gap-2">
+                      {ev.sign_up_enabled ? (
+                        <Button onClick={() => setSignupFor(ev)} className="flex-1 bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold">
+                          Sign up free
+                        </Button>
+                      ) : (
+                        <Button asChild variant="outline" className="flex-1 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+                          <Link to="/events/rising-stars">Learn more <ArrowRight size={14} className="ml-1" /></Link>
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );

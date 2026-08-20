@@ -120,10 +120,17 @@ const SuffolkNewsCard = ({ item }: { item: SuffolkNews }) => {
           <span className="text-[hsl(var(--suffolk-gold))] text-[11px] font-semibold">{formatDate(displayDate)}</span>
         </div>
         <h4 className="text-white font-bold text-base mb-2 leading-tight line-clamp-2">{item.title}</h4>
-        <div className={`text-white/60 text-xs leading-relaxed flex-1 ${!expanded && isLong ? 'line-clamp-3' : ''}`}>
-          {item.content.split('\n\n').map((para, idx) => (
-            <p key={idx} className={idx > 0 ? 'mt-2' : ''}>{para}</p>
-          ))}
+        {/* line-clamp only behaves on direct text content — clamping a stack of
+            <p> blocks lets the hidden overflow paint over the card below. When
+            collapsed, render the content flattened to one clampable paragraph. */}
+        <div className="text-white/60 text-xs leading-relaxed flex-1">
+          {!expanded && isLong ? (
+            <p className="line-clamp-3">{item.content.replace(/\s*\n+\s*/g, ' ')}</p>
+          ) : (
+            item.content.split('\n\n').map((para, idx) => (
+              <p key={idx} className={idx > 0 ? 'mt-2' : ''}>{para}</p>
+            ))
+          )}
         </div>
         {isLong && (
           <button
