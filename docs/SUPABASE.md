@@ -291,3 +291,54 @@ Still to deploy: `auth-email-hook`, `compose-news`, `handle-email-suppression`,
 Seven of those read `LOVABLE_API_KEY`, so they are worth deploying only once you
 have decided whether to keep Lovable as the mail/AI provider or move to a direct
 one.
+
+## Booking system (added 20 Aug 2026)
+
+Invitational booking portal with Stripe payments, mirroring The Dance
+Exclusive's payments architecture: Stripe Connect **direct charges** on the
+client's connected account using the Nullshift platform's API keys, with a
+platform application fee (default 1%, override with `PLATFORM_FEE_PERCENT`).
+The sandbox/live switch is server-side in `app_settings.payments_mode`
+(currently `sandbox`; flip with
+`update app_settings set value='live' where key='payments_mode';`).
+
+Schema: `20260820120000_booking_system.sql` — event visibility
+(public/private) + pricing, `event_sessions`, tokenized
+`booking_invitations`, `bookings`, `memberships` (monthly programmes as
+Stripe subscriptions committed to `programme_months` payments), `tickets`
+(QR) and `ticket_scans`.
+
+Edge functions (all deployed): `get-invitation`, `create-booking-checkout`,
+`booking-payments-webhook`, `get-booking-status`, `send-booking-invitations`
+(admin), `scan-ticket` (admin).
+
+Frontend: `/book/:token` (invitation booking page), `/booking/return`,
+`/ticket/:qrToken` (QR entry ticket), `/admin/scan` (camera scanner), and
+the Bookings tab in `/admin` (create events, invite players by age-group
+filter, dashboard of invited/booked/paid, failed-payment chase list).
+
+### Secrets to set when the Stripe/Resend accounts are ready
+
+Dashboard → Edge Functions → Secrets:
+
+| Secret | Value |
+|---|---|
+| `STRIPE_SANDBOX_API_KEY` | Platform account **test** secret key |
+| `STRIPE_LIVE_API_KEY` | Platform account **live** secret key |
+| `STRIPE_SANDBOX_CONNECTED_ACCOUNT_ID` | `acct_...` of the client's test connected account |
+| `STRIPE_LIVE_CONNECTED_ACCOUNT_ID` | `acct_...` of the client's live connected account (Karen's) |
+| `PAYMENTS_SANDBOX_WEBHOOK_SECRET` | signing secret of the sandbox webhook endpoint |
+| `PAYMENTS_LIVE_WEBHOOK_SECRET` | signing secret of the live webhook endpoint |
+| `RESEND_API_KEY` | Resend key (invitation + confirmation emails) |
+| `SITE_URL` | `https://suffolktennis.vercel.app` (later suffolktennis.online) |
+
+Stripe webhook endpoints to create (Dashboard → Developers → Webhooks, one
+per environment, listening ON the connected account for direct charges):
+
+- URL: `https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/booking-payments-webhook?env=sandbox` (and `?env=live`)
+- Events: `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`
+
+Verified without keys: `get-invitation` serves private events by token
+(HTTP 200 end-to-end), and `create-booking-checkout` fails cleanly when
+Stripe is unconfigured (booking rolled back to cancelled — no capacity
+leak). With keys set, the same call returns the hosted checkout URL.

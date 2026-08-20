@@ -10,10 +10,204 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.4"
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
+      booking_invitations: {
+        Row: {
+          child_id: string | null
+          child_name: string | null
+          created_at: string
+          event_id: string
+          id: string
+          invited_by: string | null
+          opened_at: string | null
+          parent_email: string
+          parent_name: string | null
+          parent_user_id: string | null
+          reminded_at: string | null
+          sent_at: string | null
+          status: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          child_id?: string | null
+          child_name?: string | null
+          created_at?: string
+          event_id: string
+          id?: string
+          invited_by?: string | null
+          opened_at?: string | null
+          parent_email: string
+          parent_name?: string | null
+          parent_user_id?: string | null
+          reminded_at?: string | null
+          sent_at?: string | null
+          status?: string
+          token?: string
+          updated_at?: string
+        }
+        Update: {
+          child_id?: string | null
+          child_name?: string | null
+          created_at?: string
+          event_id?: string
+          id?: string
+          invited_by?: string | null
+          opened_at?: string | null
+          parent_email?: string
+          parent_name?: string | null
+          parent_user_id?: string | null
+          reminded_at?: string | null
+          sent_at?: string | null
+          status?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_invitations_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_invitations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bookings: {
+        Row: {
+          amount_pence: number
+          child_dob: string | null
+          child_id: string | null
+          child_name: string
+          created_at: string
+          currency: string
+          event_id: string
+          id: string
+          invitation_id: string | null
+          medical_notes: string | null
+          membership_id: string | null
+          paid_at: string | null
+          parent_email: string
+          parent_name: string
+          parent_phone: string | null
+          parent_user_id: string | null
+          photo_consent: boolean
+          session_slot: string | null
+          status: string
+          stripe_checkout_session_id: string | null
+          stripe_env: string
+          stripe_payment_intent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_pence?: number
+          child_dob?: string | null
+          child_id?: string | null
+          child_name: string
+          created_at?: string
+          currency?: string
+          event_id: string
+          id?: string
+          invitation_id?: string | null
+          medical_notes?: string | null
+          membership_id?: string | null
+          paid_at?: string | null
+          parent_email: string
+          parent_name: string
+          parent_phone?: string | null
+          parent_user_id?: string | null
+          photo_consent?: boolean
+          session_slot?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_env?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_pence?: number
+          child_dob?: string | null
+          child_id?: string | null
+          child_name?: string
+          created_at?: string
+          currency?: string
+          event_id?: string
+          id?: string
+          invitation_id?: string | null
+          medical_notes?: string | null
+          membership_id?: string | null
+          paid_at?: string | null
+          parent_email?: string
+          parent_name?: string
+          parent_phone?: string | null
+          parent_user_id?: string | null
+          photo_consent?: boolean
+          session_slot?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_env?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_invitation_id_fkey"
+            columns: ["invitation_id"]
+            isOneToOne: false
+            referencedRelation: "booking_invitations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_membership_fk"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       children: {
         Row: {
           btm_number: string | null
@@ -290,6 +484,47 @@ export type Database = {
           },
         ]
       }
+      event_sessions: {
+        Row: {
+          created_at: string
+          end_time: string | null
+          event_id: string
+          id: string
+          notes: string | null
+          session_date: string
+          start_time: string | null
+          venue: string | null
+        }
+        Insert: {
+          created_at?: string
+          end_time?: string | null
+          event_id: string
+          id?: string
+          notes?: string | null
+          session_date: string
+          start_time?: string | null
+          venue?: string | null
+        }
+        Update: {
+          created_at?: string
+          end_time?: string | null
+          event_id?: string
+          id?: string
+          notes?: string | null
+          session_date?: string
+          start_time?: string | null
+          venue?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_sessions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_signups: {
         Row: {
           child_dob: string | null
@@ -362,12 +597,17 @@ export type Database = {
           featured: boolean
           id: string
           location: string | null
+          monthly_amount_pence: number | null
           poster_url: string | null
+          price_pence: number | null
+          programme_months: number | null
+          programme_type: string
           session_slots: Json
           sign_up_deadline: string | null
           sign_up_enabled: boolean
           title: string
           updated_at: string
+          visibility: string
         }
         Insert: {
           age_group?: string | null
@@ -381,12 +621,17 @@ export type Database = {
           featured?: boolean
           id?: string
           location?: string | null
+          monthly_amount_pence?: number | null
           poster_url?: string | null
+          price_pence?: number | null
+          programme_months?: number | null
+          programme_type?: string
           session_slots?: Json
           sign_up_deadline?: string | null
           sign_up_enabled?: boolean
           title: string
           updated_at?: string
+          visibility?: string
         }
         Update: {
           age_group?: string | null
@@ -400,14 +645,100 @@ export type Database = {
           featured?: boolean
           id?: string
           location?: string | null
+          monthly_amount_pence?: number | null
           poster_url?: string | null
+          price_pence?: number | null
+          programme_months?: number | null
+          programme_type?: string
           session_slots?: Json
           sign_up_deadline?: string | null
           sign_up_enabled?: boolean
           title?: string
           updated_at?: string
+          visibility?: string
         }
         Relationships: []
+      }
+      memberships: {
+        Row: {
+          booking_id: string | null
+          cancelled_at: string | null
+          child_name: string
+          created_at: string
+          current_period_end: string | null
+          event_id: string
+          id: string
+          last_payment_failed_at: string | null
+          monthly_amount_pence: number
+          months_paid: number
+          months_total: number
+          parent_email: string
+          parent_user_id: string | null
+          started_at: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_env: string
+          stripe_subscription_id: string
+          updated_at: string
+        }
+        Insert: {
+          booking_id?: string | null
+          cancelled_at?: string | null
+          child_name: string
+          created_at?: string
+          current_period_end?: string | null
+          event_id: string
+          id?: string
+          last_payment_failed_at?: string | null
+          monthly_amount_pence: number
+          months_paid?: number
+          months_total: number
+          parent_email: string
+          parent_user_id?: string | null
+          started_at?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_env?: string
+          stripe_subscription_id: string
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string | null
+          cancelled_at?: string | null
+          child_name?: string
+          created_at?: string
+          current_period_end?: string | null
+          event_id?: string
+          id?: string
+          last_payment_failed_at?: string | null
+          monthly_amount_pence?: number
+          months_paid?: number
+          months_total?: number
+          parent_email?: string
+          parent_user_id?: string | null
+          started_at?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_env?: string
+          stripe_subscription_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memberships_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       news_posts: {
         Row: {
@@ -610,6 +941,7 @@ export type Database = {
           sponsorship_company: string | null
           sponsorship_details: string | null
           sponsorship_interest: boolean
+          stripe_customer_id: string | null
           updated_at: string
           user_id: string
         }
@@ -634,6 +966,7 @@ export type Database = {
           sponsorship_company?: string | null
           sponsorship_details?: string | null
           sponsorship_interest?: boolean
+          stripe_customer_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -658,6 +991,7 @@ export type Database = {
           sponsorship_company?: string | null
           sponsorship_details?: string | null
           sponsorship_interest?: boolean
+          stripe_customer_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -844,6 +1178,90 @@ export type Database = {
           },
         ]
       }
+      ticket_scans: {
+        Row: {
+          id: string
+          result: string
+          scanned_at: string
+          scanned_by: string | null
+          session_id: string | null
+          ticket_id: string
+        }
+        Insert: {
+          id?: string
+          result: string
+          scanned_at?: string
+          scanned_by?: string | null
+          session_id?: string | null
+          ticket_id: string
+        }
+        Update: {
+          id?: string
+          result?: string
+          scanned_at?: string
+          scanned_by?: string | null
+          session_id?: string | null
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_scans_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "event_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ticket_scans_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tickets: {
+        Row: {
+          booking_id: string
+          event_id: string
+          id: string
+          issued_at: string
+          qr_token: string
+          status: string
+        }
+        Insert: {
+          booking_id: string
+          event_id: string
+          id?: string
+          issued_at?: string
+          qr_token?: string
+          status?: string
+        }
+        Update: {
+          booking_id?: string
+          event_id?: string
+          id?: string
+          issued_at?: string
+          qr_token?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tickets_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -946,7 +1364,6 @@ export type Database = {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
       }
-      email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number

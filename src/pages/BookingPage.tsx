@@ -1,0 +1,209 @@
+import { useEffect, useState } from "react";
+import { useParams, Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar, MapPin, Loader2, Ticket, AlertCircle } from "lucide-react";
+import logo from "@/assets/suffolk-tennis-logo-v7.png";
+
+type InvitationPayload = {
+  invitation: { id: string; status: string; child_name: string | null; parent_name: string | null; parent_email: string };
+  event: {
+    id: string; title: string; description: string | null; event_date: string | null;
+    location: string | null; poster_url: string | null; session_slots: string[] | null;
+    programme_type: string; price_pence: number | null; monthly_amount_pence: number | null;
+    programme_months: number | null; capacity: number | null;
+  };
+  sessions: Array<{ id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null }>;
+  existing_booking: { id: string; status: string } | null;
+};
+
+const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
+
+const BookingPage = () => {
+  const { token } = useParams<{ token: string }>();
+  const [data, setData] = useState<InvitationPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [parentName, setParentName] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [childName, setChildName] = useState("");
+  const [sessionSlot, setSessionSlot] = useState("");
+  const [medicalNotes, setMedicalNotes] = useState("");
+  const [photoConsent, setPhotoConsent] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    supabase.functions
+      .invoke("get-invitation", { body: { token } })
+      .then(({ data, error }) => {
+        if (error || data?.error) {
+          setError(data?.error || "This invitation link could not be opened.");
+        } else {
+          setData(data as InvitationPayload);
+          setParentName(data.invitation.parent_name ?? "");
+          setParentEmail(data.invitation.parent_email ?? "");
+          setChildName(data.invitation.child_name ?? "");
+        }
+      })
+      .catch(() => setError("Something went wrong loading your invitation."))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const handlePay = async () => {
+    if (!data) return;
+    if (!parentName.trim() || !parentEmail.trim() || !childName.trim()) {
+      setError("Please fill in your name, email and the player's name.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("create-booking-checkout", {
+        body: {
+          invitation_token: token,
+          parent_name: parentName.trim(),
+          parent_email: parentEmail.trim(),
+          parent_phone: parentPhone.trim(),
+          child_name: childName.trim(),
+          session_slot: sessionSlot,
+          medical_notes: medicalNotes.trim(),
+          photo_consent: photoConsent,
+        },
+      });
+      if (error || res?.error) throw new Error(res?.error || "Payment setup failed");
+      window.location.href = res.url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Payment setup failed — please try again.");
+      setSubmitting(false);
+    }
+  };
+
+  const isProgramme = data?.event.programme_type === "monthly_programme";
+  const priceLabel = data
+    ? isProgramme && data.event.monthly_amount_pence
+      ? `${gbp(data.event.monthly_amount_pence)}/month × ${data.event.programme_months} months`
+      : data.event.price_pence
+        ? gbp(data.event.price_pence)
+        : "Free"
+    : "";
+
+  return (
+    <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
+      <header className="container mx-auto px-6 py-6">
+        <Link to="/"><img src={logo} alt="Suffolk Tennis" className="h-12" /></Link>
+      </header>
+      <main className="container mx-auto px-6 pb-20 max-w-2xl">
+        {loading ? (
+          <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>
+        ) : !data ? (
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
+            <AlertCircle className="w-10 h-10 text-lta-yellow mx-auto mb-4" />
+            <p className="text-lg">{error}</p>
+          </div>
+        ) : (
+          <>
+            <span className="inline-block px-3 py-1 rounded-full bg-lta-yellow/15 text-lta-yellow text-[11px] font-bold uppercase tracking-widest mb-3">
+              Invitation for {data.invitation.child_name || childName || "your player"}
+            </span>
+            <h1 className="font-display text-3xl md:text-4xl font-black">{data.event.title}</h1>
+            <div className="mt-3 space-y-1.5 text-sm text-primary-foreground/80">
+              {data.event.event_date && (
+                <div className="flex items-center gap-2"><Calendar size={14} className="text-lta-cyan" />
+                  {new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                </div>
+              )}
+              {data.event.location && <div className="flex items-center gap-2"><MapPin size={14} className="text-lta-cyan" /> {data.event.location}</div>}
+              <div className="text-lta-yellow font-bold mt-2">{priceLabel}</div>
+              {isProgramme && (
+                <p className="text-primary-foreground/60 text-xs">
+                  Paid monthly by card. Signing up commits you to the full {data.event.programme_months}-month programme.
+                </p>
+              )}
+            </div>
+            {data.event.description && (
+              <p className="mt-4 text-primary-foreground/70 text-sm whitespace-pre-line">{data.event.description}</p>
+            )}
+            {data.sessions.length > 0 && (
+              <div className="mt-5 bg-white/5 border border-white/10 rounded-xl p-4">
+                <h3 className="font-display font-bold text-sm mb-2">Session dates</h3>
+                <ul className="text-sm text-primary-foreground/80 space-y-1">
+                  {data.sessions.map((s) => (
+                    <li key={s.id}>
+                      {new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                      {s.start_time ? ` · ${s.start_time.slice(0, 5)}${s.end_time ? `–${s.end_time.slice(0, 5)}` : ""}` : ""}
+                      {s.venue ? ` · ${s.venue}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {data.existing_booking?.status === "paid" || data.invitation.status === "booked" ? (
+              <div className="mt-8 bg-lta-cyan/10 border border-lta-cyan/30 rounded-2xl p-6 text-center">
+                <Ticket className="w-8 h-8 text-lta-cyan mx-auto mb-3" />
+                <p className="font-bold">This place is already booked.</p>
+                <p className="text-sm text-primary-foreground/70 mt-1">Your entry ticket was emailed to you — check your inbox for the confirmation.</p>
+              </div>
+            ) : (
+              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+                <h3 className="font-display font-bold text-lg">Book this place</h3>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-primary-foreground/80">Your name</Label>
+                    <Input value={parentName} onChange={(e) => setParentName(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <Label className="text-primary-foreground/80">Your email</Label>
+                    <Input type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <Label className="text-primary-foreground/80">Phone (optional)</Label>
+                    <Input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <Label className="text-primary-foreground/80">Player's name</Label>
+                    <Input value={childName} onChange={(e) => setChildName(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
+                  </div>
+                </div>
+                {Array.isArray(data.event.session_slots) && data.event.session_slots.length > 0 && (
+                  <div>
+                    <Label className="text-primary-foreground/80">Session</Label>
+                    <Select value={sessionSlot} onValueChange={setSessionSlot}>
+                      <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground"><SelectValue placeholder="Choose a session" /></SelectTrigger>
+                      <SelectContent>
+                        {data.event.session_slots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div>
+                  <Label className="text-primary-foreground/80">Medical needs we should know about (optional)</Label>
+                  <Textarea value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" rows={2} />
+                </div>
+                <label className="flex items-start gap-2 text-sm text-primary-foreground/80 cursor-pointer">
+                  <Checkbox checked={photoConsent} onCheckedChange={(v) => setPhotoConsent(v === true)} className="mt-0.5" />
+                  I consent to photos of my child being taken at this event for Suffolk Tennis use.
+                </label>
+                {error && <p className="text-red-400 text-sm">{error}</p>}
+                <Button onClick={handlePay} disabled={submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
+                  {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Continue to payment · ${priceLabel}`}
+                </Button>
+                <p className="text-[11px] text-primary-foreground/50 text-center">Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid.</p>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default BookingPage;

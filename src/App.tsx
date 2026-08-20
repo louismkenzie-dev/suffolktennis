@@ -31,6 +31,10 @@ import RisingStars from "./pages/RisingStars";
 import Programs from "./pages/Programs";
 import Unsubscribe from "./pages/Unsubscribe";
 import Workshops from "./pages/Workshops";
+import BookingPage from "./pages/BookingPage";
+import BookingReturn from "./pages/BookingReturn";
+import TicketPage from "./pages/TicketPage";
+import AdminScan from "./pages/AdminScan";
 import MiniMasters from "./pages/MiniMasters";
 import TennisGP from "./pages/TennisGP";
 
@@ -50,6 +54,10 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/parent-hub" element={<ParentHub />} />
             <Route path="/admin" element={<AdminHub />} />
+            <Route path="/admin/scan" element={<AdminScan />} />
+            <Route path="/book/:token" element={<BookingPage />} />
+            <Route path="/booking/return" element={<BookingReturn />} />
+            <Route path="/ticket/:qrToken" element={<TicketPage />} />
             <Route path="/venues" element={<Venues />} />
             <Route path="/venues/david-lloyd" element={<VenueDavidLloyd />} />
             <Route path="/venues/ipswich-sports-club" element={<VenueIpswichSports />} />

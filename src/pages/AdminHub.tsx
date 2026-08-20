@@ -21,10 +21,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
   Shield, Users, FileText, Target, CalendarDays, Newspaper, UserCog,
-  LogOut, ArrowLeft, Trash2, Plus, Send, Sparkles, Upload, X, Loader2, ImageIcon, Video, Star, Pencil, Award, Crop, MapPin, GraduationCap,
+  LogOut, ArrowLeft, Trash2, Plus, Send, Sparkles, Upload, X, Loader2, ImageIcon, Video, Star, Pencil, Award, Crop, MapPin, GraduationCap, Ticket,
 } from "lucide-react";
 import VenuesPanel from "@/components/admin/VenuesPanel";
 import CoachesPanel from "@/components/admin/CoachesPanel";
+import BookingsPanel from "@/components/admin/BookingsPanel";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 
 
@@ -148,7 +149,8 @@ const AdminHub = () => {
 
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="families" className="w-full">
-          <TabsList className="grid grid-cols-3 md:grid-cols-9 w-full mb-6 h-auto">
+          <TabsList className="grid grid-cols-3 md:grid-cols-10 w-full mb-6 h-auto">
+            <TabsTrigger value="bookings" className="gap-2"><Ticket className="w-4 h-4" />Bookings</TabsTrigger>
             <TabsTrigger value="families" className="gap-2"><Users className="w-4 h-4" />Families</TabsTrigger>
             <TabsTrigger value="reports" className="gap-2"><FileText className="w-4 h-4" />Reports</TabsTrigger>
             <TabsTrigger value="goals" className="gap-2"><Target className="w-4 h-4" />Goals</TabsTrigger>
@@ -160,6 +162,7 @@ const AdminHub = () => {
             <TabsTrigger value="admins" className="gap-2"><UserCog className="w-4 h-4" />Admins</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="bookings"><BookingsPanel /></TabsContent>
           <TabsContent value="families"><FamiliesPanel /></TabsContent>
           <TabsContent value="reports"><ReportsPanel /></TabsContent>
           <TabsContent value="goals"><GoalsPanel /></TabsContent>
