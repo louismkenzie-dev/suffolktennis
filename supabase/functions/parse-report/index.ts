@@ -46,7 +46,14 @@ serve(async (req) => {
       if (!pdfResponse.ok) throw new Error("Failed to fetch PDF");
       pdfBuffer = await pdfResponse.arrayBuffer();
     }
-    const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+    // Chunked base64: spreading the whole buffer into fromCharCode overflows
+    // the call stack on PDFs beyond ~100KB.
+    const bytes = new Uint8Array(pdfBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    const pdfBase64 = btoa(binary);
 
     // Parse the PDF with Claude (Anthropic API, PDF document input).
     const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {

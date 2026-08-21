@@ -14,7 +14,16 @@ function decodeHtml(text: string): string {
     .trim();
 }
 
-const SEARCH_URL = 'https://competitions.lta.org.uk/find?DateFilterType=0&StartDate=2026-03-13&EndDate=2026-12-31&LocationFilterType=1&Distance=15&page=1&LocationCode=A090AB1B-D639-4765-92FC-6FE361EEFDB9&AgeGroupIDList%5B0%5D=8&AgeGroupIDList%5B1%5D=9&AgeGroupIDList%5B2%5D=10&AgeGroupIDList%5B3%5D=11&AgeGroupIDList%5B4%5D=12&AgeGroupIDList%5B5%5D=14&AgeGroupIDList%5B6%5D=16&AgeGroupIDList%5B7%5D=18';
+// Rolling window: today → +6 months, so the calendar always shows what's
+// actually upcoming (the previous hardcoded window went stale).
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+const start = new Date();
+const end = new Date();
+end.setMonth(end.getMonth() + 6);
+const SEARCH_PATH = `/find?DateFilterType=0&StartDate=${isoDate(start)}&EndDate=${isoDate(end)}&LocationFilterType=1&Distance=15&page=1&LocationCode=A090AB1B-D639-4765-92FC-6FE361EEFDB9&AgeGroupIDList%5B0%5D=8&AgeGroupIDList%5B1%5D=9&AgeGroupIDList%5B2%5D=10&AgeGroupIDList%5B3%5D=11&AgeGroupIDList%5B4%5D=12&AgeGroupIDList%5B5%5D=14&AgeGroupIDList%5B6%5D=16&AgeGroupIDList%5B7%5D=18`;
+const SEARCH_URL = `https://competitions.lta.org.uk${SEARCH_PATH}`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -32,7 +41,17 @@ Deno.serve(async (req) => {
         'Origin': 'https://competitions.lta.org.uk',
         'Referer': SEARCH_URL,
       },
-      body: 'Necessary=true&BasicAnalytics=true&PersonalizedAds=true&Performance=true&ThirdPartyCookies=true',
+      // Field names taken from the actual cookiewall form: ReturnUrl +
+      // SettingsOpen + CookiePurposes bitmask checkboxes (1,2,4,8,16).
+      body: new URLSearchParams([
+        ['ReturnUrl', SEARCH_PATH],
+        ['SettingsOpen', 'false'],
+        ['CookiePurposes', '1'],
+        ['CookiePurposes', '2'],
+        ['CookiePurposes', '4'],
+        ['CookiePurposes', '8'],
+        ['CookiePurposes', '16'],
+      ]).toString(),
       redirect: 'manual',
     });
 
@@ -62,28 +81,58 @@ Deno.serve(async (req) => {
       ? cookieString + '; CookieConsent=necessary:true,analytics:true,personalizedAds:true,performance:true,thirdPartyCookies:true'
       : 'CookieConsent=necessary:true,analytics:true,personalizedAds:true,performance:true,thirdPartyCookies:true';
 
-    // Follow any redirect from the consent POST
-    const location = cookieRes.headers.get('location');
-    const fetchUrl = location && location.startsWith('http') ? location : SEARCH_URL;
+    // The /find page is only a shell — results load via AJAX from
+    // /find/tournament/DoSearch (same pattern as the player search the
+    // rankings function uses). Call that endpoint directly with the consent
+    // cookies; try GET first, then the form POST the page itself performs.
+    const doSearchFields: Array<[string, string]> = [
+      ['Page', '1'],
+      ['TournamentFilter.DateFilterType', '0'],
+      ['TournamentFilter.StartDate', isoDate(start)],
+      ['TournamentFilter.EndDate', isoDate(end)],
+      ['TournamentFilter.LocationFilterType', '1'],
+      ['TournamentFilter.Distance', '15'],
+      ['TournamentExtendedFilter.LocationCode', 'A090AB1B-D639-4765-92FC-6FE361EEFDB9'],
+      ['TournamentExtendedFilter.SportID', '0'],
+      ...['8', '9', '10', '11', '12', '14', '16', '18'].map(
+        (id, i) => [`TournamentExtendedFilter.AgeGroupIDList[${i}]`, id] as [string, string],
+      ),
+    ];
+    const doSearchParams = new URLSearchParams(doSearchFields);
+    const commonHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html, */*; q=0.01',
+      'Accept-Language': 'en-GB,en;q=0.9',
+      'Cookie': allCookies,
+      'Referer': SEARCH_URL,
+      'X-Requested-With': 'XMLHttpRequest',
+    };
 
-    const pageRes = await fetch(fetchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-GB,en;q=0.9',
-        'Cookie': allCookies,
-        'Referer': 'https://competitions.lta.org.uk/',
-      },
-    });
+    let pageRes = await fetch(
+      `https://competitions.lta.org.uk/find/tournament/DoSearch?${doSearchParams.toString()}`,
+      { headers: commonHeaders },
+    );
+    let html = await pageRes.text();
+    console.log(`DoSearch GET: status=${pageRes.status}, length=${html.length}`);
 
-    const html = await pageRes.text();
-    console.log(`Page fetch: status=${pageRes.status}, length=${html.length}, hasCookieWall=${html.includes('cookiewall') || html.includes('message-page')}`);
+    if (!html.includes('/tournament/')) {
+      pageRes = await fetch('https://competitions.lta.org.uk/find/tournament/DoSearch', {
+        method: 'POST',
+        headers: { ...commonHeaders, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body: doSearchParams.toString(),
+      });
+      html = await pageRes.text();
+      console.log(`DoSearch POST: status=${pageRes.status}, length=${html.length}`);
+    }
 
-    // Check if we got past the cookie wall
-    if (!html.includes('message-page') && !html.includes('cookiewall/Save')) {
+
+    // Don't gate on cookie-wall substrings — every LTA page links the cookie
+    // settings in its footer, so that check false-positives on real results.
+    // The parser is the arbiter: events found = we're past the wall.
+    {
       const events = parseEventsFromHtml(html);
+      console.log(`Parsed ${events.length} events from primary fetch`);
       if (events.length > 0) {
-        console.log(`Parsed ${events.length} live events`);
         return respond({ success: true, source: 'live', events });
       }
     }
@@ -102,12 +151,12 @@ Deno.serve(async (req) => {
     });
 
     const altHtml = await altRes.text();
-    console.log(`Alt fetch: status=${altRes.status}, length=${altHtml.length}, hasCookieWall=${altHtml.includes('message-page')}`);
+    console.log(`Alt fetch: status=${altRes.status}, length=${altHtml.length}`);
 
-    if (!altHtml.includes('message-page') && !altHtml.includes('cookiewall/Save')) {
+    {
       const events = parseEventsFromHtml(altHtml);
+      console.log(`Parsed ${events.length} events from alt fetch`);
       if (events.length > 0) {
-        console.log(`Parsed ${events.length} live events from alt fetch`);
         return respond({ success: true, source: 'live', events });
       }
     }
@@ -149,31 +198,35 @@ function parseEventsFromHtml(html: string): Array<{
     url: string;
   }> = [];
 
-  // TournamentSoftware uses media cards with tournament info
-  // Try multiple parsing strategies
+  // Strategy A: the DoSearch fragment's media cards. Each tournament is a
+  // <div class="media"> with an anchor to /sport/tournament?id=<GUID>, the
+  // venue under an icon-marker nav-link, dates as <time datetime="...">, and
+  // grade/type as tag spans.
+  const blocks = html.split('<div class="media">').slice(1);
+  for (const raw of blocks) {
+    const block = raw.substring(0, 5000);
+    const hrefMatch = block.match(/href="(\/sport\/tournament\?id=[^"]+)"/);
+    const titleMatch =
+      block.match(/title="([^"]+)"[^>]*class="media__link"/) ??
+      block.match(/class="media__link"[^>]*>\s*<span class="nav-link__value">([\s\S]*?)<\/span>/);
+    if (!hrefMatch || !titleMatch) continue;
 
-  // Strategy A: Look for tournament list items with links
-  const itemRegex = /<a[^>]*href="(\/tournament\/[^"]*)"[^>]*>[\s\S]*?<\/a>/gi;
-  const items = html.match(itemRegex) || [];
-  
-  for (const item of items) {
-    const hrefMatch = item.match(/href="([^"]*)"/);
-    const titleMatch = item.match(/<h[34][^>]*>([\s\S]*?)<\/h[34]>/);
-    const dateMatch = item.match(/datetime="([^"]*)"/);
-    const locationMatch = item.match(/(?:venue|location|address)[^>]*>([\s\S]*?)<\/(?:span|div|p)/i);
-    
-    if (hrefMatch && titleMatch) {
-      const title = decodeHtml(titleMatch[1]);
-      events.push({
-        title,
-        date: dateMatch ? dateMatch[1].split('T')[0] : '',
-        location: locationMatch ? decodeHtml(locationMatch[1]) : '',
-        category: categorizeEvent(title),
-        grade: extractGrade(title),
-        ageGroups: extractAgeGroups(item),
-        url: `https://competitions.lta.org.uk${hrefMatch[1]}`,
-      });
-    }
+    const times = [...block.matchAll(/<time datetime="([^" ]+)[^"]*">/g)].map((m) => m[1]);
+    const locationMatch = block.match(/icon-marker[\s\S]*?<span class="nav-link__value">\s*([\s\S]*?)\s*<\/span>/);
+    const gradeMatch = block.match(/>\s*(Grade \d)\s*</);
+    const title = decodeHtml(titleMatch[1]);
+    const location = locationMatch ? decodeHtml(locationMatch[1]).split('|')[0].trim() : '';
+
+    events.push({
+      title,
+      date: times[0]?.slice(0, 10) ?? '',
+      endDate: times[1]?.slice(0, 10),
+      location,
+      category: categorizeEvent(title),
+      grade: gradeMatch ? gradeMatch[1] : extractGrade(title),
+      ageGroups: extractAgeGroups(block),
+      url: `https://competitions.lta.org.uk${decodeHtml(hrefMatch[1])}`,
+    });
   }
 
   // Strategy B: Look for media blocks
