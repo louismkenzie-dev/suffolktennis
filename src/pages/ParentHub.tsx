@@ -8,7 +8,7 @@ import {
   Trophy, Clock, MapPin, ExternalLink, BookOpen, Users, Shield, Heart, CalendarDays, X, MessageCircle, Menu, ChevronDown
 } from "lucide-react";
 import MyChildrenSection from "@/components/children/MyChildrenSection";
-import { AdminLink } from "@/components/admin/AdminLink";
+import RoleViewSwitcher from "@/components/RoleViewSwitcher";
 import SportingTimetable from "@/components/timetable/SportingTimetable";
 import ParentDetailsSection from "@/components/parent/ParentDetailsSection";
 import MyBookingsSection from "@/components/parent/MyBookingsSection";
@@ -169,7 +169,7 @@ const ParentHub = () => {
             <span className="font-display font-bold text-sm hidden sm:block">Parent Hub</span>
           </Link>
           <div className="flex items-center gap-4">
-            <AdminLink />
+            <RoleViewSwitcher />
             <div className="flex items-center gap-2 text-sm">
               <div className="w-8 h-8 rounded-full bg-lta-cyan/20 flex items-center justify-center">
                 <User size={16} className="text-lta-cyan" />

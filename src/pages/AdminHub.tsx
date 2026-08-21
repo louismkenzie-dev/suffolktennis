@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import RoleViewSwitcher from "@/components/RoleViewSwitcher";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -137,15 +138,16 @@ const AdminHub = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/parent-hub"><ArrowLeft className="w-4 h-4 mr-2" />Parent view</Link>
-            </Button>
+            <RoleViewSwitcher className="max-sm:hidden" />
             <Button variant="outline" size="sm" onClick={signOut}>
               <LogOut className="w-4 h-4 mr-2" />Sign out
             </Button>
           </div>
         </div>
       </header>
+      <div className="sm:hidden container mx-auto px-4 pt-3">
+        <RoleViewSwitcher />
+      </div>
 
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="families" className="w-full">

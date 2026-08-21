@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { Mail, Lock, User, ArrowRight, Trophy, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { roleHomePath } from "@/lib/roleHome";
 import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
 const logo = logoAsset;
 
@@ -27,7 +28,8 @@ const Auth = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (user) navigate("/parent-hub");
+    // Land each user on their role's dashboard (admin/coach/parent).
+    if (user) roleHomePath(user.id).then((path) => navigate(path));
   }, [user, navigate]);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -58,12 +60,12 @@ const Auth = () => {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (!rememberMe) {
           // Session will naturally expire if not remembered
         }
-        navigate("/parent-hub");
+        navigate(data.user ? await roleHomePath(data.user.id) : "/parent-hub");
       } else {
         const { error } = await supabase.auth.signUp({
           email,

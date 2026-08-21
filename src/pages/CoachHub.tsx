@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, ArrowLeft, QrCode, ClipboardList, AlertCircle, CheckCircle2, Star } from "lucide-react";
+import RoleViewSwitcher from "@/components/RoleViewSwitcher";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
 
 const db = supabase as any;
@@ -141,6 +142,9 @@ const CoachHub = () => {
           <img src={logo} alt="Suffolk Tennis" className="h-10 mx-auto mb-2" />
           <h1 className="font-display font-black text-xl">Session Reports</h1>
           <p className="text-primary-foreground/60 text-xs mt-1">Pick your session, then tap a player to rate and comment.</p>
+          <div className="mt-3 flex justify-center">
+            <RoleViewSwitcher />
+          </div>
         </div>
 
         {events.length === 0 ? (
