@@ -343,9 +343,9 @@ API versions removed):
 **Sandbox endpoint created 21 Aug 2026**: `we_1U6qmgE0aLvInrlqpuWFwsap`
 (acacia-pinned, connect). Its `whsec_…` signing secret was handed to Louis to
 paste as `PAYMENTS_SANDBOX_WEBHOOK_SECRET`. Sandbox connected account:
-`acct_1U6qXsE0aLYAntjY` (needs test onboarding completed before
-`charges_enabled=true`). The live endpoint still needs creating when live
-keys arrive. A temporary `stripe-bootstrap` edge function (guard-token
+`acct_1TnJ2NE0aLUyRazc` ("Test account", fully onboarded, charges enabled —
+replaced `acct_1U6qXsE0aLYAntjY`, which never completed onboarding). The
+live endpoint still needs creating when live keys arrive. A temporary `stripe-bootstrap` edge function (guard-token
 protected form-encoding relay for pg_net → Stripe API calls) is deployed for
 sandbox setup — **delete it once testing is done**.
 
