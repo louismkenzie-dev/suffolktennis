@@ -49,7 +49,8 @@ const HeroSection = () =>
       <div className="absolute inset-0 bg-gradient-to-r from-suffolk-navy/90 via-suffolk-navy/70 to-suffolk-navy/40" />
     </div>
 
-    <div className="container mx-auto px-6 relative z-10 pt-20" style={{ textShadow: '0 2px 16px rgba(0,0,0,0.6)' }}>
+    {/* pt must clear the fixed navbar (104px tall until the page scrolls). */}
+    <div className="container mx-auto px-6 relative z-10 pt-32 pb-10" style={{ textShadow: '0 2px 16px rgba(0,0,0,0.6)' }}>
       <div className="max-w-2xl">
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
           <span className="inline-block px-4 py-1.5 rounded-full bg-lta-yellow/20 text-primary-foreground font-semibold mb-6 border border-lta-yellow/40 backdrop-blur-sm text-sm">🎾  Where Aspiring Juniors Play Tennis
