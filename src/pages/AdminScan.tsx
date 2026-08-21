@@ -135,7 +135,7 @@ const AdminScan = () => {
       <div className="container mx-auto px-4 py-4 max-w-md">
         <div className="flex items-center justify-between mb-4">
           <Button asChild variant="ghost" size="sm" className="text-primary-foreground/70">
-            <Link to={isAdmin ? "/admin" : "/"}><ArrowLeft className="w-4 h-4 mr-1" /> {isAdmin ? "Admin" : "Home"}</Link>
+            <Link to={isAdmin ? "/admin" : "/coach"}><ArrowLeft className="w-4 h-4 mr-1" /> {isAdmin ? "Admin" : "Reports"}</Link>
           </Button>
           <h1 className="font-display font-black text-lg">Ticket Scanner</h1>
           <div className="w-16" />

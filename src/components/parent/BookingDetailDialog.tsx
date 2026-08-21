@@ -7,7 +7,7 @@ import { findVenueByLocation, googleMapsUrl } from "@/lib/venues";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, Ticket, ExternalLink, AlertCircle, RefreshCcw } from "lucide-react";
+import { Calendar, MapPin, Ticket, ExternalLink, AlertCircle, RefreshCcw, Star, ClipboardList } from "lucide-react";
 
 const db = supabase as any;
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
@@ -25,6 +25,14 @@ export type MembershipDetail = {
 } | null;
 
 type Session = { id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null };
+type CoachReport = {
+  id: string; session_id: string | null; coach_name: string | null;
+  stats: Record<string, number>; comment: string | null; created_at: string;
+};
+
+const RATING_LABELS: Record<string, string> = {
+  technique: "Technique", attitude: "Attitude & effort", movement: "Movement", matchplay: "Match play",
+};
 
 const gbp = (p: number) => `£${(p / 100).toFixed(p % 100 === 0 ? 0 : 2)}`;
 
@@ -70,16 +78,25 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
   onOpenChange: (open: boolean) => void;
 }) => {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [reports, setReports] = useState<CoachReport[]>([]);
   const isProgramme = event?.programme_type === "monthly_programme";
 
   useEffect(() => {
-    if (!open || !event) { setSessions([]); return; }
+    if (!open || !event) { setSessions([]); setReports([]); return; }
     db.from("event_sessions")
       .select("id, session_date, start_time, end_time, venue")
       .eq("event_id", event.id)
       .order("session_date")
       .then(({ data }: { data: Session[] | null }) => setSessions(data ?? []));
-  }, [open, event?.id]);
+    if (booking) {
+      // Coach session feedback — RLS limits this to the parent's own bookings.
+      db.from("session_reports")
+        .select("id, session_id, coach_name, stats, comment, created_at")
+        .eq("booking_id", booking.id)
+        .order("created_at", { ascending: false })
+        .then(({ data }: { data: CoachReport[] | null }) => setReports(data ?? []));
+    }
+  }, [open, event?.id, booking?.id]);
 
   if (!booking) return null;
 
@@ -146,6 +163,45 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
                 </a>
               </div>
               {venue && <VenueMap coords={venue.coords} name={venue.name} />}
+            </div>
+          )}
+
+          {reports.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2 inline-flex items-center gap-1.5">
+                <ClipboardList size={15} className="text-lta-cyan" /> Coach feedback
+              </h4>
+              <div className="space-y-3">
+                {reports.map((r) => {
+                  const session = sessions.find((s) => s.id === r.session_id);
+                  const rated = Object.entries(r.stats ?? {}).filter(([, v]) => (v ?? 0) > 0);
+                  return (
+                    <div key={r.id} className="rounded-lg border border-border p-3 space-y-2">
+                      <div className="text-xs text-muted-foreground">
+                        {session
+                          ? new Date(session.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })
+                          : new Date(r.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                        {r.coach_name ? ` · ${r.coach_name}` : ""}
+                      </div>
+                      {rated.length > 0 && (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          {rated.map(([key, value]) => (
+                            <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-muted-foreground">{RATING_LABELS[key] ?? key}</span>
+                              <span className="flex">
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                  <Star key={n} className={`w-3.5 h-3.5 ${value >= n ? "text-lta-cyan fill-lta-cyan" : "text-muted-foreground/30"}`} />
+                                ))}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {r.comment && <p className="text-sm whitespace-pre-line">{r.comment}</p>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
