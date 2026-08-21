@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import type { Appearance, Stripe, StripeElementsOptions } from "@stripe/stripe-js";
 import { supabase } from "@/integrations/supabase/client";
+import { getStripeFor, type PaymentsEnvironment } from "@/lib/stripe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Loader2, Ticket, AlertCircle } from "lucide-react";
+import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck } from "lucide-react";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
 
 type InvitationPayload = {
@@ -22,7 +25,124 @@ type InvitationPayload = {
   existing_booking: { id: string; status: string } | null;
 };
 
+type PaymentSetup = {
+  clientSecret: string;
+  bookingId: string;
+  environment: PaymentsEnvironment;
+  mode: "payment" | "subscription";
+  amountPence: number;
+  monthsTotal: number | null;
+};
+
 const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
+
+// Stripe Payment Element theming — matches the navy booking page so the card
+// form reads as part of the site, not an embedded third party.
+const appearance: Appearance = {
+  theme: "night",
+  labels: "floating",
+  variables: {
+    colorPrimary: "hsl(195 100% 45%)", // lta-cyan
+    colorBackground: "hsl(220 55% 18%)",
+    colorText: "hsl(0 0% 98%)",
+    colorTextSecondary: "hsl(220 20% 70%)",
+    colorTextPlaceholder: "hsl(220 20% 55%)",
+    colorDanger: "hsl(0 84% 66%)",
+    colorIcon: "hsl(220 20% 70%)",
+    fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+    fontSizeBase: "15px",
+    borderRadius: "10px",
+  },
+  rules: {
+    ".Input": {
+      backgroundColor: "hsl(220 60% 11%)",
+      border: "1px solid hsla(0, 0%, 100%, 0.18)",
+      boxShadow: "none",
+      padding: "12px 14px",
+    },
+    ".Input:focus": {
+      border: "1px solid hsl(195 100% 45%)",
+      boxShadow: "0 0 0 1px hsl(195 100% 45%)",
+    },
+    ".Label": { color: "hsl(220 20% 70%)", fontSize: "13px" },
+    ".Tab": {
+      backgroundColor: "hsl(220 60% 11%)",
+      border: "1px solid hsla(0, 0%, 100%, 0.18)",
+    },
+    ".Tab--selected": {
+      border: "1px solid hsl(195 100% 45%)",
+      boxShadow: "0 0 0 1px hsl(195 100% 45%)",
+    },
+    ".Error": { fontSize: "13px" },
+  },
+};
+
+const PaymentStep = ({ setup, priceLabel, onBack }: {
+  setup: PaymentSetup;
+  priceLabel: string;
+  onBack: () => void;
+}) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const navigate = useNavigate();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const returnUrl = `${window.location.origin}/booking/return?booking_id=${setup.bookingId}`;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setSubmitting(true);
+    setError(null);
+
+    // `redirect: "if_required"` lets card payments complete inline; only
+    // redirect-based methods (3DS challenge pages etc.) leave the site.
+    const { error: submitError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: { return_url: returnUrl },
+      redirect: "if_required",
+    });
+
+    if (submitError) {
+      setError(submitError.message || "Payment failed. Please try again.");
+      setSubmitting(false);
+      return;
+    }
+    if (paymentIntent) {
+      navigate(
+        `/booking/return?booking_id=${setup.bookingId}` +
+          `&redirect_status=${paymentIntent.status === "succeeded" ? "succeeded" : "processing"}`,
+      );
+    }
+    // Otherwise Stripe is mid-redirect — do nothing.
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display font-bold text-lg">Payment</h3>
+        <button type="button" onClick={onBack} className="text-sm text-primary-foreground/60 hover:text-primary-foreground inline-flex items-center gap-1">
+          <ArrowLeft size={14} /> Back to details
+        </button>
+      </div>
+      {setup.mode === "subscription" && setup.monthsTotal && (
+        <p className="text-sm text-primary-foreground/70">
+          Your card will be charged {gbp(setup.amountPence)} today and then monthly — {setup.monthsTotal} payments in total. It stops automatically after the programme.
+        </p>
+      )}
+      <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
+      {error && <p className="text-red-400 text-sm">{error}</p>}
+      <Button type="submit" disabled={!stripe || !elements || submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
+        {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Pay ${priceLabel}`}
+      </Button>
+      <div className="flex items-center justify-center gap-4 text-[11px] text-primary-foreground/50 uppercase tracking-wider">
+        <span className="flex items-center gap-1.5"><Lock className="w-3 h-3" /> Secure payment</span>
+        <span className="flex items-center gap-1.5"><ShieldCheck className="w-3 h-3" /> Powered by Stripe</span>
+      </div>
+    </form>
+  );
+};
 
 const BookingPage = () => {
   const { token } = useParams<{ token: string }>();
@@ -38,6 +158,9 @@ const BookingPage = () => {
   const [sessionSlot, setSessionSlot] = useState("");
   const [medicalNotes, setMedicalNotes] = useState("");
   const [photoConsent, setPhotoConsent] = useState(false);
+
+  const [setup, setSetup] = useState<PaymentSetup | null>(null);
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -57,7 +180,7 @@ const BookingPage = () => {
       .finally(() => setLoading(false));
   }, [token]);
 
-  const handlePay = async () => {
+  const handleContinue = async () => {
     if (!data) return;
     if (!parentName.trim() || !parentEmail.trim() || !childName.trim()) {
       setError("Please fill in your name, email and the player's name.");
@@ -78,10 +201,31 @@ const BookingPage = () => {
           photo_consent: photoConsent,
         },
       });
-      if (error || res?.error) throw new Error(res?.error || "Payment setup failed");
-      window.location.href = res.url;
+      if (error || res?.error || !res?.client_secret) {
+        // supabase-js hides the function's JSON body behind error.context —
+        // surface the server's message (capacity, invitation-only, …).
+        let message = res?.error || "Payment setup failed";
+        const ctx = (error as { context?: Response } | null)?.context;
+        if (ctx && typeof ctx.json === "function") {
+          try {
+            const body = await ctx.json();
+            if (body?.error) message = body.error;
+          } catch { /* keep generic message */ }
+        }
+        throw new Error(message);
+      }
+      setStripePromise(getStripeFor(res.environment as PaymentsEnvironment));
+      setSetup({
+        clientSecret: res.client_secret,
+        bookingId: res.booking_id,
+        environment: res.environment,
+        mode: res.mode,
+        amountPence: res.amount_pence,
+        monthsTotal: res.months_total ?? null,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment setup failed — please try again.");
+    } finally {
       setSubmitting(false);
     }
   };
@@ -94,6 +238,17 @@ const BookingPage = () => {
         ? gbp(data.event.price_pence)
         : "Free"
     : "";
+  const payLabel = data
+    ? isProgramme && data.event.monthly_amount_pence
+      ? `${gbp(data.event.monthly_amount_pence)} today`
+      : data.event.price_pence
+        ? gbp(data.event.price_pence)
+        : ""
+    : "";
+
+  const elementsOptions: StripeElementsOptions | null = setup
+    ? { clientSecret: setup.clientSecret, appearance, loader: "auto" }
+    : null;
 
   return (
     <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
@@ -152,6 +307,10 @@ const BookingPage = () => {
                 <p className="font-bold">This place is already booked.</p>
                 <p className="text-sm text-primary-foreground/70 mt-1">Your entry ticket was emailed to you — check your inbox for the confirmation.</p>
               </div>
+            ) : setup && elementsOptions && stripePromise ? (
+              <Elements stripe={stripePromise} options={elementsOptions}>
+                <PaymentStep setup={setup} priceLabel={payLabel} onBack={() => setSetup(null)} />
+              </Elements>
             ) : (
               <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <h3 className="font-display font-bold text-lg">Book this place</h3>
@@ -193,7 +352,7 @@ const BookingPage = () => {
                   I consent to photos of my child being taken at this event for Suffolk Tennis use.
                 </label>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
-                <Button onClick={handlePay} disabled={submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
+                <Button onClick={handleContinue} disabled={submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
                   {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Continue to payment · ${priceLabel}`}
                 </Button>
                 <p className="text-[11px] text-primary-foreground/50 text-center">Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid.</p>

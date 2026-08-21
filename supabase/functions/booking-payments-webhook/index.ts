@@ -41,6 +41,9 @@ Deno.serve(async (req) => {
     console.log("stripe event:", event.type, "env:", env);
 
     switch (event.type) {
+      case "payment_intent.succeeded":
+        await handlePaymentIntentSucceeded(event.data.object);
+        break;
       case "checkout.session.completed":
         await handleCheckoutCompleted(event.data.object, env);
         break;
@@ -63,6 +66,15 @@ Deno.serve(async (req) => {
     return new Response("Webhook error", { status: 400 });
   }
 });
+
+// One-off payments made through the embedded Payment Element. Subscription
+// first-invoice PaymentIntents also fire this event but carry no bookingId
+// metadata (Stripe creates them) — those settle via invoice.payment_succeeded.
+async function handlePaymentIntentSucceeded(paymentIntent: any) {
+  const bookingId = paymentIntent.metadata?.bookingId;
+  if (!bookingId) return;
+  await settleBooking(bookingId, { stripe_payment_intent_id: paymentIntent.id });
+}
 
 async function handleCheckoutCompleted(session: any, env: StripeEnv) {
   const bookingId = session.metadata?.bookingId;

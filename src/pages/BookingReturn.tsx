@@ -13,19 +13,20 @@ type Status = {
 
 const BookingReturn = () => {
   const [params] = useSearchParams();
-  const sessionId = params.get("session_id");
+  const sessionId = params.get("session_id"); // legacy hosted-checkout returns
+  const bookingId = params.get("booking_id");
   const cancelled = params.get("cancelled");
   const [status, setStatus] = useState<Status | null>(null);
   const [failed, setFailed] = useState(false);
   const attempts = useRef(0);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId && !bookingId) return;
     let stopped = false;
     const poll = async () => {
       attempts.current += 1;
       const { data, error } = await supabase.functions.invoke("get-booking-status", {
-        body: { session_id: sessionId },
+        body: bookingId ? { booking_id: bookingId } : { session_id: sessionId },
       });
       if (stopped) return;
       if (!error && data && !data.error) {
@@ -38,7 +39,7 @@ const BookingReturn = () => {
     };
     poll();
     return () => { stopped = true; };
-  }, [sessionId]);
+  }, [sessionId, bookingId]);
 
   const paid = status?.booking?.status === "paid";
   const pending = !paid && !failed && !cancelled;

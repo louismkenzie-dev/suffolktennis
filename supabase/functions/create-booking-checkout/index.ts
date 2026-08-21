@@ -1,15 +1,19 @@
-// Creates a pending booking and a Stripe Checkout session (hosted page).
+// Creates a pending booking and the Stripe objects for the EMBEDDED checkout
+// (Payment Element on our own booking page — no redirect to Stripe).
 //
 // Authorization is by invitation token for private events; public events with
 // sign-up enabled can be booked without one. The client never chooses the
-// Stripe environment — that comes from app_settings via getActiveStripeEnv.
+// Stripe environment — that comes from app_settings via getActiveStripeEnv;
+// the response's `environment` tells the client which publishable-key pair to
+// load Stripe.js with.
 //
-// One-off events   -> mode "payment", price from events.price_pence.
-// Monthly programme -> mode "subscription" (monthly), price from
-//                     events.monthly_amount_pence; the parent commits to
-//                     events.programme_months payments — enforced in the
-//                     webhook, which cancels the subscription once the final
-//                     committed month is paid.
+// One-off events    -> PaymentIntent, price from events.price_pence.
+// Monthly programme -> incomplete subscription, price from
+//                      events.monthly_amount_pence; the client confirms the
+//                      first invoice's PaymentIntent, and the parent commits
+//                      to events.programme_months payments — enforced in the
+//                      webhook, which cancels the subscription once the final
+//                      committed month is paid.
 import { z } from "npm:zod@3.23.8";
 import {
   type StripeEnv,
@@ -34,16 +38,6 @@ const Body = z.object({
   medical_notes: z.string().trim().max(1000).optional().or(z.literal("")),
   photo_consent: z.boolean().optional(),
 });
-
-function isValidReturnOrigin(origin: string | null): origin is string {
-  if (!origin) return false;
-  try {
-    const u = new URL(origin);
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -119,10 +113,6 @@ Deno.serve(async (req) => {
     }
   }
 
-  // --- Return URL ---
-  const origin = req.headers.get("origin");
-  const siteUrl = isValidReturnOrigin(origin) ? origin : (Deno.env.get("SITE_URL") ?? "https://suffolktennis.vercel.app");
-
   // Link the booking to a known parent account when the email matches one,
   // so the booking and ticket show up in their Parent Hub too.
   let parentUserId: string | null = null;
@@ -162,9 +152,14 @@ Deno.serve(async (req) => {
     return json({ error: "Could not start the booking — please try again." }, 500);
   }
 
-  // --- Stripe Checkout session ---
+  // --- Stripe payment, embedded on our own page (Payment Element) ---
+  // One-offs: a PaymentIntent whose client_secret the booking page confirms
+  // inline. Programmes: an incomplete subscription whose first invoice's
+  // PaymentIntent is confirmed the same way. Both are direct charges on the
+  // connected account with the platform fee, mirroring the reference setup.
   try {
     const stripe = createStripeClient(env);
+    const connectOpts = connectRequestOptions(env);
     const productName = isProgramme
       ? `${event.title} — monthly programme`
       : event.title;
@@ -175,74 +170,115 @@ Deno.serve(async (req) => {
       isProgramme ? `${event.programme_months} monthly payments` : null,
     ].filter(Boolean).join(" · ");
 
-    const common = {
-      success_url: `${siteUrl}/booking/return?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${siteUrl}/booking/return?cancelled=1`,
-      customer_email: body.parent_email,
-      metadata: {
-        bookingId: booking.id,
-        eventId: event.id,
-        checkoutType: isProgramme ? "programme_membership" : "event_booking",
-      },
-    } as const;
+    const metadata = {
+      bookingId: booking.id,
+      eventId: event.id,
+      checkoutType: isProgramme ? "programme_membership" : "event_booking",
+    };
 
-    let session;
+    let clientSecret: string;
+    let paymentIntentId: string | null = null;
+
     if (isProgramme) {
       const feePercent = getConnectedAccountId(env) ? getPlatformFeePercent() : null;
-      session = await stripe.checkout.sessions.create(
-        {
-          ...common,
-          mode: "subscription",
-          line_items: [{
-            price_data: {
-              currency: "gbp",
-              product_data: { name: productName, description },
-              unit_amount: amountPence,
-              recurring: { interval: "month" },
-            },
-            quantity: 1,
-          }],
-          subscription_data: {
-            metadata: {
-              bookingId: booking.id,
-              eventId: event.id,
-              monthsTotal: String(event.programme_months),
-            },
-            ...(feePercent != null && { application_fee_percent: feePercent }),
-          },
-        },
-        connectRequestOptions(env),
+
+      const customer = await stripe.customers.create(
+        { email: body.parent_email, name: body.parent_name, metadata },
+        connectOpts,
       );
+      const price = await stripe.prices.create(
+        {
+          currency: "gbp",
+          unit_amount: amountPence,
+          recurring: { interval: "month" },
+          product_data: { name: productName },
+        },
+        connectOpts,
+      );
+      const subscription = await stripe.subscriptions.create(
+        {
+          customer: customer.id,
+          items: [{ price: price.id }],
+          payment_behavior: "default_incomplete",
+          payment_settings: {
+            save_default_payment_method: "on_subscription",
+            payment_method_types: ["card"],
+          },
+          ...(feePercent != null && { application_fee_percent: feePercent }),
+          expand: ["latest_invoice.payment_intent"],
+          metadata: { ...metadata, monthsTotal: String(event.programme_months) },
+        },
+        connectOpts,
+      );
+
+      const pi = (subscription.latest_invoice as any)?.payment_intent as any;
+      if (!pi?.client_secret) throw new Error("subscription has no first-invoice PaymentIntent");
+      clientSecret = pi.client_secret;
+      paymentIntentId = pi.id ?? null;
+
+      // Membership record up-front (status incomplete) so the invoice
+      // webhooks can find it by subscription id; first paid invoice settles
+      // the booking and activates it.
+      const { data: membership } = await admin
+        .from("memberships")
+        .upsert({
+          booking_id: booking.id,
+          event_id: event.id,
+          parent_user_id: parentUserId,
+          parent_email: body.parent_email.toLowerCase(),
+          child_name: body.child_name,
+          stripe_subscription_id: subscription.id,
+          stripe_customer_id: customer.id,
+          stripe_env: env,
+          monthly_amount_pence: amountPence,
+          months_total: event.programme_months,
+          status: "incomplete",
+        }, { onConflict: "stripe_subscription_id" })
+        .select("id")
+        .maybeSingle();
+
+      await admin
+        .from("bookings")
+        .update({
+          membership_id: membership?.id ?? null,
+          stripe_payment_intent_id: paymentIntentId,
+        })
+        .eq("id", booking.id);
     } else {
       const applicationFee = bookingApplicationFee(env, amountPence);
-      session = await stripe.checkout.sessions.create(
+      const paymentIntent = await stripe.paymentIntents.create(
         {
-          ...common,
-          mode: "payment",
-          line_items: [{
-            price_data: {
-              currency: "gbp",
-              product_data: { name: productName, description },
-              unit_amount: amountPence,
-            },
-            quantity: 1,
-          }],
-          ...(applicationFee != null && {
-            payment_intent_data: { application_fee_amount: applicationFee },
-          }),
+          amount: amountPence,
+          currency: "gbp",
+          payment_method_types: ["card"],
+          description: `${productName} · ${description}`,
+          receipt_email: body.parent_email,
+          ...(applicationFee != null && { application_fee_amount: applicationFee }),
+          metadata,
         },
-        connectRequestOptions(env),
+        connectOpts,
       );
+      if (!paymentIntent.client_secret) throw new Error("PaymentIntent has no client_secret");
+      clientSecret = paymentIntent.client_secret;
+      paymentIntentId = paymentIntent.id;
+
+      await admin
+        .from("bookings")
+        .update({ stripe_payment_intent_id: paymentIntentId })
+        .eq("id", booking.id);
     }
 
-    await admin
-      .from("bookings")
-      .update({ stripe_checkout_session_id: session.id })
-      .eq("id", booking.id);
-
-    return json({ url: session.url, booking_id: booking.id });
+    return json({
+      client_secret: clientSecret,
+      payment_intent_id: paymentIntentId,
+      booking_id: booking.id,
+      amount_pence: amountPence,
+      environment: env,
+      mode: isProgramme ? "subscription" : "payment",
+      months_total: isProgramme ? event.programme_months : null,
+    });
   } catch (error) {
-    console.error("checkout create failed", error);
+    console.error("payment setup failed", error);
     await admin.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
     return json({ error: "Payment setup failed — please try again shortly." }, 500);
   }

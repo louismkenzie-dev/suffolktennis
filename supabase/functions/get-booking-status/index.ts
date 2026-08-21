@@ -10,6 +10,7 @@ import { createStripeClient, connectRequestOptions, type StripeEnv } from "../_s
 
 const Body = z.object({
   session_id: z.string().trim().min(8).max(255).optional(),
+  booking_id: z.string().uuid().optional(),
   qr_token: z.string().trim().min(8).max(128).optional(),
 });
 
@@ -25,13 +26,13 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: "Invalid JSON" }, 400);
   }
-  if (!body.session_id && !body.qr_token) {
-    return json({ error: "session_id or qr_token required" }, 400);
+  if (!body.session_id && !body.booking_id && !body.qr_token) {
+    return json({ error: "session_id, booking_id or qr_token required" }, 400);
   }
 
   const admin = serviceClient();
 
-  let bookingId: string | null = null;
+  let bookingId: string | null = body.booking_id ?? null;
   if (body.qr_token) {
     const { data: ticket } = await admin
       .from("tickets").select("booking_id").eq("qr_token", body.qr_token).maybeSingle();
@@ -39,29 +40,39 @@ Deno.serve(async (req) => {
     bookingId = ticket.booking_id;
   }
 
+  const bookingColumns =
+    "id, status, event_id, child_name, parent_name, session_slot, amount_pence, stripe_env, stripe_checkout_session_id, stripe_payment_intent_id, membership_id, paid_at";
   let booking = null as null | Record<string, any>;
   if (bookingId) {
     ({ data: booking } = await admin
-      .from("bookings")
-      .select("id, status, event_id, child_name, parent_name, session_slot, amount_pence, stripe_env, stripe_checkout_session_id, paid_at")
-      .eq("id", bookingId).maybeSingle());
+      .from("bookings").select(bookingColumns).eq("id", bookingId).maybeSingle());
   } else {
     ({ data: booking } = await admin
-      .from("bookings")
-      .select("id, status, event_id, child_name, parent_name, session_slot, amount_pence, stripe_env, stripe_checkout_session_id, paid_at")
+      .from("bookings").select(bookingColumns)
       .eq("stripe_checkout_session_id", body.session_id!).maybeSingle());
   }
   if (!booking) return json({ error: "Booking not found" }, 404);
 
-  // Webhook race: confirm with Stripe directly when still pending.
-  if (booking.status === "pending" && booking.stripe_checkout_session_id) {
+  // Webhook race: confirm with Stripe directly when still pending. Embedded
+  // checkout stores a PaymentIntent id; the old hosted flow stored a
+  // checkout session id.
+  if (booking.status === "pending" && (booking.stripe_payment_intent_id || booking.stripe_checkout_session_id)) {
     try {
       const env = booking.stripe_env as StripeEnv;
       const stripe = createStripeClient(env);
-      const session = await stripe.checkout.sessions.retrieve(
-        booking.stripe_checkout_session_id, {}, connectRequestOptions(env),
-      );
-      if (session.payment_status === "paid" || session.status === "complete") {
+      let confirmedPaid = false;
+      if (booking.stripe_payment_intent_id) {
+        const pi = await stripe.paymentIntents.retrieve(
+          booking.stripe_payment_intent_id, {}, connectRequestOptions(env),
+        );
+        confirmedPaid = pi.status === "succeeded";
+      } else {
+        const session = await stripe.checkout.sessions.retrieve(
+          booking.stripe_checkout_session_id, {}, connectRequestOptions(env),
+        );
+        confirmedPaid = session.payment_status === "paid" || session.status === "complete";
+      }
+      if (confirmedPaid) {
         // Report paid; the webhook will (or has) settled the row and issued
         // the ticket. Give it a moment and re-read.
         await new Promise((r) => setTimeout(r, 1500));

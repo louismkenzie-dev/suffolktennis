@@ -338,7 +338,21 @@ events from the connected account are delivered; **pin `api_version` to
 API versions removed):
 
 - URL: `https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/booking-payments-webhook?env=sandbox` (and `?env=live`)
-- Events: `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`
+- Events: `payment_intent.succeeded`, `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`
+
+**Embedded checkout (21 Aug 2026)**: the parent-facing payment moved from
+Stripe-hosted Checkout to an embedded Payment Element on `/book/:token`
+(brand-themed, no redirect — same as The Dance Exclusive). Server:
+`create-booking-checkout` now returns a `client_secret` (+`environment`) —
+one-offs are PaymentIntents, programmes are `default_incomplete`
+subscriptions whose first-invoice PaymentIntent is confirmed inline; the
+membership row is created at subscription-creation time. Fulfilment:
+one-offs settle via `payment_intent.succeeded` (bookingId metadata),
+programmes via `invoice.payment_succeeded` — the old
+`checkout.session.completed` handler remains for the legacy hosted flow.
+Client key pairs (publishable key + connected account per env) live in
+`src/lib/stripe.ts`; the live pair is empty and fails closed until Karen's
+account exists.
 
 **Sandbox endpoint created 21 Aug 2026**: `we_1U6qmgE0aLvInrlqpuWFwsap`
 (acacia-pinned, connect). Its `whsec_…` signing secret was handed to Louis to
