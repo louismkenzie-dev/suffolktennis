@@ -169,7 +169,7 @@ const ParentHub = () => {
             <span className="font-display font-bold text-sm hidden sm:block">Parent Hub</span>
           </Link>
           <div className="flex items-center gap-4">
-            <RoleViewSwitcher />
+            <RoleViewSwitcher onDark />
             <div className="flex items-center gap-2 text-sm">
               <div className="w-8 h-8 rounded-full bg-lta-cyan/20 flex items-center justify-center">
                 <User size={16} className="text-lta-cyan" />

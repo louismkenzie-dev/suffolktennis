@@ -6,9 +6,11 @@ import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireRole, CORS, json } from "../_shared/adminAuth.ts";
 
 const Body = z.object({
-  action: z.enum(["events", "roster"]),
+  action: z.enum(["events", "roster", "mark"]),
   event_id: z.string().uuid().optional(),
   session_id: z.string().uuid().optional(),
+  booking_id: z.string().uuid().optional(),
+  present: z.boolean().optional(),
 });
 
 Deno.serve(async (req) => {
@@ -57,6 +59,39 @@ Deno.serve(async (req) => {
     return json({
       events: (events ?? []).map((e) => ({ ...e, sessions: sessionsByEvent.get(e.id) ?? [] })),
     });
+  }
+
+  // Live register: mark a player present (same record a QR scan writes, so
+  // scans and manual ticks share one attendance list) or clear the mark.
+  if (body.action === "mark") {
+    if (!body.booking_id || body.present === undefined) {
+      return json({ error: "booking_id and present required" }, 400);
+    }
+    const { data: ticket } = await admin
+      .from("tickets").select("id").eq("booking_id", body.booking_id).maybeSingle();
+    if (!ticket) return json({ error: "No ticket for this booking" }, 404);
+
+    const windowStart = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    let existing = admin
+      .from("ticket_scans").select("id").eq("ticket_id", ticket.id).eq("result", "admitted");
+    existing = body.session_id
+      ? existing.eq("session_id", body.session_id)
+      : existing.gte("scanned_at", windowStart);
+    const { data: rows } = await existing;
+
+    if (body.present) {
+      if ((rows ?? []).length === 0) {
+        await admin.from("ticket_scans").insert({
+          ticket_id: ticket.id,
+          session_id: body.session_id ?? null,
+          result: "admitted",
+          scanned_by: staffId,
+        });
+      }
+    } else if ((rows ?? []).length > 0) {
+      await admin.from("ticket_scans").delete().in("id", rows!.map((r) => r.id));
+    }
+    return json({ ok: true, present: body.present });
   }
 
   // roster
