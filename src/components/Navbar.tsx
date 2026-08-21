@@ -363,6 +363,12 @@ const Navbar = () => {
 
           <Link
             to="/auth"
+            className="px-4 py-2.5 rounded-lg border border-white/25 text-white text-sm font-semibold hover:bg-white/10 transition-colors"
+          >
+            Sign In
+          </Link>
+          <Link
+            to="/auth"
             className="px-5 py-2.5 rounded-lg bg-lta-pink text-white text-sm font-semibold hover:brightness-110 transition-all shadow-[var(--shadow-glow-pink)]"
           >
             Parent Hub
@@ -554,6 +560,13 @@ const Navbar = () => {
                 className="mt-4 block w-full text-center px-5 py-3.5 rounded-lg bg-lta-pink text-white text-base font-semibold hover:brightness-110 transition-all shadow-[var(--shadow-glow-pink)]"
               >
                 Parent Hub
+              </Link>
+              <Link
+                to="/auth"
+                onClick={() => setOpen(false)}
+                className="mt-2 block w-full text-center px-5 py-3.5 rounded-lg border border-white/25 text-white text-base font-semibold hover:bg-white/10 transition-colors"
+              >
+                Sign In — Parents, Coaches &amp; Staff
               </Link>
             </div>
           </motion.div>
