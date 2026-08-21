@@ -26,7 +26,7 @@ type SessionOption = { id: string; label: string };
 
 const AdminScan = () => {
   const { user, loading: authLoading } = useAuth();
-  const { isAdmin, loading: adminLoading } = useIsAdmin();
+  const { isAdmin, canScan, loading: adminLoading } = useIsAdmin();
   const navigate = useNavigate();
 
   const [sessions, setSessions] = useState<SessionOption[]>([]);
@@ -121,10 +121,10 @@ const AdminScan = () => {
   if (authLoading || adminLoading) {
     return <div className="min-h-screen bg-suffolk-navy flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>;
   }
-  if (!isAdmin) {
+  if (!canScan) {
     return (
       <div className="min-h-screen bg-suffolk-navy text-primary-foreground flex flex-col items-center justify-center gap-4">
-        <p>Admin access required.</p>
+        <p>Staff access required.</p>
         <Button asChild variant="outline"><Link to="/">Back to site</Link></Button>
       </div>
     );
@@ -135,7 +135,7 @@ const AdminScan = () => {
       <div className="container mx-auto px-4 py-4 max-w-md">
         <div className="flex items-center justify-between mb-4">
           <Button asChild variant="ghost" size="sm" className="text-primary-foreground/70">
-            <Link to="/admin"><ArrowLeft className="w-4 h-4 mr-1" /> Admin</Link>
+            <Link to={isAdmin ? "/admin" : "/"}><ArrowLeft className="w-4 h-4 mr-1" /> {isAdmin ? "Admin" : "Home"}</Link>
           </Button>
           <h1 className="font-display font-black text-lg">Ticket Scanner</h1>
           <div className="w-16" />

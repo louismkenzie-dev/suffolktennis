@@ -10,8 +10,12 @@ export function serviceClient(): SupabaseClient {
   );
 }
 
-/** Returns the admin's user id, or null when the caller is not an admin. */
-export async function requireAdmin(req: Request, admin: SupabaseClient): Promise<string | null> {
+/** Returns the caller's user id when they hold one of the given roles. */
+export async function requireRole(
+  req: Request,
+  admin: SupabaseClient,
+  roles: string[],
+): Promise<string | null> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
   const anon = createClient(
@@ -24,9 +28,15 @@ export async function requireAdmin(req: Request, admin: SupabaseClient): Promise
     .from("user_roles")
     .select("id")
     .eq("user_id", user.id)
-    .eq("role", "admin")
+    .in("role", roles)
+    .limit(1)
     .maybeSingle();
   return role ? user.id : null;
+}
+
+/** Returns the admin's user id, or null when the caller is not an admin. */
+export async function requireAdmin(req: Request, admin: SupabaseClient): Promise<string | null> {
+  return requireRole(req, admin, ["admin"]);
 }
 
 export const CORS = {

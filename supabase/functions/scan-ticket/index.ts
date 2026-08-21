@@ -1,11 +1,12 @@
-// Admin-only: validate a QR ticket at the venue and record arrival.
+// Staff-only (admin or coach): validate a QR ticket at the venue and record
+// arrival.
 // The QR encodes the ticket's qr_token. Validity is decided AT SCAN TIME:
 //  - booking must be paid (a later refund/cancellation invalidates the ticket)
 //  - for programme bookings, the membership must not be past_due — a failed
 //    monthly payment stops admission until it is resolved (Ollie chases).
 //  - the ticket must not be void, and not already scanned for this session.
 import { z } from "npm:zod@3.23.8";
-import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
+import { serviceClient, requireRole, CORS, json } from "../_shared/adminAuth.ts";
 
 const Body = z.object({
   qr_token: z.string().trim().min(8).max(128),
@@ -17,8 +18,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const admin = serviceClient();
-  const adminUserId = await requireAdmin(req, admin);
-  if (!adminUserId) return json({ error: "Admin access required" }, 403);
+  const adminUserId = await requireRole(req, admin, ["admin", "coach"]);
+  if (!adminUserId) return json({ error: "Staff access required" }, 403);
 
   let body: z.infer<typeof Body>;
   try {
