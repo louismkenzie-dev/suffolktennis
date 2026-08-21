@@ -262,52 +262,8 @@ const ParentHub = () => {
       {/* Tab Navigation */}
       <div className="border-b border-border bg-card sticky top-0 z-30">
         <div className="container mx-auto px-6">
-          {/* Mobile: dropdown menu */}
-          <div className="sm:hidden py-3 relative">
-            <button
-              onClick={() => setMobileMenuOpen((o) => !o)}
-              className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl bg-muted text-foreground font-display font-bold text-sm"
-              aria-expanded={mobileMenuOpen}
-              aria-haspopup="menu"
-            >
-              <span className="flex items-center gap-2">
-                <Menu size={16} />
-                {tabs.find((t) => t.id === activeTab)?.label ?? "Menu"}
-              </span>
-              <ChevronDown size={16} className={`transition-transform ${mobileMenuOpen ? "rotate-180" : ""}`} />
-            </button>
-            <AnimatePresence>
-              {mobileMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="absolute left-6 right-6 mt-2 rounded-xl bg-card border border-border shadow-xl overflow-hidden z-40"
-                >
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => {
-                        setActiveTab(tab.id);
-                        setMobileMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-left transition-colors ${
-                        activeTab === tab.id
-                          ? "bg-lta-cyan/10 text-lta-cyan"
-                          : "text-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <tab.icon size={16} />
-                      {tab.label}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Desktop / tablet: horizontal tabs */}
-          <div className="hidden sm:flex gap-1 overflow-x-auto">
+          {/* Desktop / tablet: horizontal tabs (mobile uses the bottom app bar) */}
+          <div className="flex gap-1 overflow-x-auto max-sm:hidden">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -328,7 +284,7 @@ const ParentHub = () => {
 
 
       {/* Content */}
-      <main className="container mx-auto px-6 py-8">
+      <main className="container mx-auto px-6 py-8 max-sm:pb-32">
         <ProfileCompletionBanner
           onGoToParent={() => setActiveTab("parent")}
           onGoToChildren={() => setActiveTab("children")}
@@ -752,6 +708,69 @@ const ParentHub = () => {
                 <MessageCircle size={16} />
                 Or tap to join
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile bottom app bar — native-app navigation on phones. First four
+          tabs are one tap; the rest live behind "More" as a bottom sheet. */}
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-border pb-safe">
+        <div className="grid grid-cols-5">
+          {tabs.slice(0, 4).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); window.scrollTo({ top: 0 }); }}
+              className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors ${
+                activeTab === tab.id && !mobileMenuOpen ? "text-lta-cyan" : "text-muted-foreground"
+              }`}
+            >
+              <tab.icon size={20} strokeWidth={activeTab === tab.id && !mobileMenuOpen ? 2.4 : 1.8} />
+              {{ children: "Children", bookings: "Bookings", parent: "Parent", timetable: "Timetable" }[tab.id] ?? tab.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setMobileMenuOpen((o) => !o)}
+            className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors ${
+              mobileMenuOpen || tabs.slice(4).some((t) => t.id === activeTab) ? "text-lta-cyan" : "text-muted-foreground"
+            }`}
+            aria-expanded={mobileMenuOpen}
+          >
+            <Menu size={20} strokeWidth={1.8} />
+            More
+          </button>
+        </div>
+      </nav>
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="sm:hidden fixed inset-0 z-30 bg-black/40"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 80 }}
+              animate={{ y: 0 }}
+              exit={{ y: 80 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className="absolute bottom-0 inset-x-0 rounded-t-2xl bg-card border-t border-border p-3 pb-24"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-10 h-1 rounded-full bg-muted-foreground/30 mx-auto mb-3" />
+              {tabs.slice(4).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); window.scrollTo({ top: 0 }); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-left transition-colors ${
+                    activeTab === tab.id ? "bg-lta-cyan/10 text-lta-cyan" : "text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <tab.icon size={18} />
+                  {tab.label}
+                </button>
+              ))}
             </motion.div>
           </motion.div>
         )}

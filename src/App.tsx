@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -5,40 +6,51 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
+import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import VenueDavidLloyd from "./pages/VenueDavidLloyd";
-import VenueIpswichSports from "./pages/VenueIpswichSports";
-import VenueCulford from "./pages/VenueCulford";
-import Venues from "./pages/Venues";
-import TourRed from "./pages/TourRed";
-import TourOrange from "./pages/TourOrange";
-import TourGreen from "./pages/TourGreen";
-import TourYellow from "./pages/TourYellow";
-import Auth from "./pages/Auth";
-import ResetPassword from "./pages/ResetPassword";
-import ParentHub from "./pages/ParentHub";
-import AdminHub from "./pages/AdminHub";
-import ClubEastBergholt from "./pages/ClubEastBergholt";
-import ClubNewmarket from "./pages/ClubNewmarket";
-import ClubStowmarket from "./pages/ClubStowmarket";
-import ClubFelixstowe from "./pages/ClubFelixstowe";
-import ClubWoodbridge from "./pages/ClubWoodbridge";
-import ClubFramlingham from "./pages/ClubFramlingham";
-import Contact from "./pages/Contact";
-import Events from "./pages/Events";
-import RisingStars from "./pages/RisingStars";
-import Programs from "./pages/Programs";
-import Unsubscribe from "./pages/Unsubscribe";
-import Workshops from "./pages/Workshops";
-import BookingPage from "./pages/BookingPage";
-import BookingReturn from "./pages/BookingReturn";
-import TicketPage from "./pages/TicketPage";
-import AdminScan from "./pages/AdminScan";
-import MiniMasters from "./pages/MiniMasters";
-import TennisGP from "./pages/TennisGP";
+
+// Every page except the homepage is code-split: the first paint ships only
+// the shell + homepage, and each section loads on demand (then caches via the
+// service worker). This is what keeps the mobile app feel snappy.
+const VenueDavidLloyd = lazy(() => import("./pages/VenueDavidLloyd"));
+const VenueIpswichSports = lazy(() => import("./pages/VenueIpswichSports"));
+const VenueCulford = lazy(() => import("./pages/VenueCulford"));
+const Venues = lazy(() => import("./pages/Venues"));
+const TourRed = lazy(() => import("./pages/TourRed"));
+const TourOrange = lazy(() => import("./pages/TourOrange"));
+const TourGreen = lazy(() => import("./pages/TourGreen"));
+const TourYellow = lazy(() => import("./pages/TourYellow"));
+const Auth = lazy(() => import("./pages/Auth"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const ParentHub = lazy(() => import("./pages/ParentHub"));
+const AdminHub = lazy(() => import("./pages/AdminHub"));
+const ClubEastBergholt = lazy(() => import("./pages/ClubEastBergholt"));
+const ClubNewmarket = lazy(() => import("./pages/ClubNewmarket"));
+const ClubStowmarket = lazy(() => import("./pages/ClubStowmarket"));
+const ClubFelixstowe = lazy(() => import("./pages/ClubFelixstowe"));
+const ClubWoodbridge = lazy(() => import("./pages/ClubWoodbridge"));
+const ClubFramlingham = lazy(() => import("./pages/ClubFramlingham"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Events = lazy(() => import("./pages/Events"));
+const RisingStars = lazy(() => import("./pages/RisingStars"));
+const Programs = lazy(() => import("./pages/Programs"));
+const Unsubscribe = lazy(() => import("./pages/Unsubscribe"));
+const Workshops = lazy(() => import("./pages/Workshops"));
+const BookingPage = lazy(() => import("./pages/BookingPage"));
+const BookingReturn = lazy(() => import("./pages/BookingReturn"));
+const TicketPage = lazy(() => import("./pages/TicketPage"));
+const AdminScan = lazy(() => import("./pages/AdminScan"));
+const MiniMasters = lazy(() => import("./pages/MiniMasters"));
+const TennisGP = lazy(() => import("./pages/TennisGP"));
 
 const queryClient = new QueryClient();
+
+const RouteFallback = () => (
+  <div className="min-h-screen bg-suffolk-navy flex items-center justify-center">
+    <Loader2 className="w-8 h-8 animate-spin text-lta-cyan" />
+  </div>
+);
 
 const App = () => (
   <AppErrorBoundary>
@@ -48,6 +60,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
@@ -83,6 +96,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>

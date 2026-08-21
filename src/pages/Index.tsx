@@ -12,7 +12,11 @@ import CoachesSection from "@/components/CoachesSection";
 
 import PlayerWatchSection from "@/components/PlayerWatchSection";
 import FacilitiesSection from "@/components/FacilitiesSection";
-import SuffolkMapSection from "@/components/SuffolkMapSection";
+import { lazy, Suspense } from "react";
+
+// The interactive map (MapLibre ~1MB) sits below the fold — loading it lazily
+// keeps the homepage's first paint light, especially on mobile.
+const SuffolkMapSection = lazy(() => import("@/components/SuffolkMapSection"));
 import ContactSection from "@/components/ContactSection";
 import SponsorsSection from "@/components/SponsorsSection";
 import Footer from "@/components/Footer";
@@ -45,7 +49,9 @@ const Index = () => {
     <CoachesSection />
     
     <FacilitiesSection />
-    <SuffolkMapSection />
+    <Suspense fallback={<div className="min-h-[400px]" />}>
+      <SuffolkMapSection />
+    </Suspense>
     <ContactSection />
     <SponsorsSection />
     <Footer />
