@@ -332,11 +332,22 @@ Dashboard → Edge Functions → Secrets:
 | `RESEND_API_KEY` | Resend key (invitation + confirmation emails) |
 | `SITE_URL` | `https://suffolktennis.vercel.app` (later suffolktennis.online) |
 
-Stripe webhook endpoints to create (Dashboard → Developers → Webhooks, one
-per environment, listening ON the connected account for direct charges):
+Stripe webhook endpoints (platform account, `connect=true` so direct-charge
+events from the connected account are delivered; **pin `api_version` to
+`2025-02-24.acacia`** — the handler reads `invoice.subscription`, which newer
+API versions removed):
 
 - URL: `https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/booking-payments-webhook?env=sandbox` (and `?env=live`)
 - Events: `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`
+
+**Sandbox endpoint created 21 Aug 2026**: `we_1U6qmgE0aLvInrlqpuWFwsap`
+(acacia-pinned, connect). Its `whsec_…` signing secret was handed to Louis to
+paste as `PAYMENTS_SANDBOX_WEBHOOK_SECRET`. Sandbox connected account:
+`acct_1U6qXsE0aLYAntjY` (needs test onboarding completed before
+`charges_enabled=true`). The live endpoint still needs creating when live
+keys arrive. A temporary `stripe-bootstrap` edge function (guard-token
+protected form-encoding relay for pg_net → Stripe API calls) is deployed for
+sandbox setup — **delete it once testing is done**.
 
 Verified without keys: `get-invitation` serves private events by token
 (HTTP 200 end-to-end), and `create-booking-checkout` fails cleanly when
