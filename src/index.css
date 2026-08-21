@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -71,12 +71,13 @@
     --shadow-glow-yellow: 0 8px 30px -6px hsl(327 75% 52% / 0.35);
     --shadow-glow-pink: 0 8px 30px -6px hsl(327 75% 52% / 0.35);
 
-    /* Brand type per the LTA spec: Flama Semibold headings (uppercase,
-       weight 400 on the semibold cut), Roboto 16/24 body. Flama is a
-       licensed font — it renders wherever the licensed files are available,
-       with Barlow (closest Google-Fonts equivalent) as the live fallback. */
-    --font-display: 'Flama Semibold', 'Flama', 'Barlow', sans-serif;
-    --font-body: 'Roboto', system-ui, Arial, sans-serif;
+    /* Brand type: Archivo (variable, set expanded for big headlines) gives
+       the uppercase display work a broadcast-sport presence — width carries
+       the impact instead of ultra-heavy weights. Hanken Grotesk body is a
+       Gotham-adjacent geometric-humanist: the premium-tennis undertone at
+       comfortable 16px reading sizes. */
+    --font-display: 'Archivo', sans-serif;
+    --font-body: 'Hanken Grotesk', system-ui, Arial, sans-serif;
   }
 
   .dark {
@@ -114,14 +115,17 @@
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
-    font-weight: 600; /* reads as ~Flama Semibold via the Barlow fallback */
+    font-weight: 600;
     letter-spacing: normal;
   }
-  /* Headline style per the brand spec: uppercase, tight leading. Kept to the
-     top heading levels so small UI headings stay sentence case. */
+  /* Big display headings: expanded width + uppercase carries the athletic
+     impact (broadcast-sport look) without heavy weights. Kept to the top
+     heading levels so small UI headings stay sentence case and normal width. */
   h1, h2 {
     text-transform: uppercase;
+    font-stretch: 112%;
     line-height: 0.95;
+    letter-spacing: 0.01em;
   }
 }
 

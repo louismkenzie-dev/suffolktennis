@@ -158,9 +158,9 @@ const SuffolkMapSection = () => {
           offset: 30, closeButton: false, closeOnClick: false, className: "suffolk-map-popup"
         }).setHTML(`
           <div style="padding: 12px 16px; max-width: 260px;">
-            <h4 style="font-family: 'Flama Semibold', 'Barlow', sans-serif; font-weight: 600; font-size: 15px; margin: 0 0 2px; color: #0f1c2e;">${hub.name}</h4>
-            <p style="font-family: 'Flama Semibold', 'Barlow', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #00b8d4; margin: 0 0 8px; font-weight: 600;">${hub.tagline}</p>
-            <p style="font-family: 'Roboto', sans-serif; font-size: 13px; color: #546e7a; margin: 0; line-height: 1.5;">${hub.description}</p>
+            <h4 style="font-family: 'Archivo', sans-serif; font-weight: 600; font-size: 15px; margin: 0 0 2px; color: #0f1c2e;">${hub.name}</h4>
+            <p style="font-family: 'Archivo', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #00b8d4; margin: 0 0 8px; font-weight: 600;">${hub.tagline}</p>
+            <p style="font-family: 'Hanken Grotesk', sans-serif; font-size: 13px; color: #546e7a; margin: 0; line-height: 1.5;">${hub.description}</p>
           </div>
         `);
 
@@ -184,9 +184,9 @@ const SuffolkMapSection = () => {
           offset: 20, closeButton: false, closeOnClick: false, className: "suffolk-map-popup"
         }).setHTML(`
           <div style="padding: 10px 14px; max-width: 240px;">
-            <h4 style="font-family: 'Flama Semibold', 'Barlow', sans-serif; font-weight: 600; font-size: 14px; margin: 0 0 2px; color: #0f1c2e;">${club.name}</h4>
-            <p style="font-family: 'Flama Semibold', 'Barlow', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #1565c0; margin: 0 0 6px; font-weight: 600;">${club.tagline}</p>
-            <p style="font-family: 'Roboto', sans-serif; font-size: 12px; color: #546e7a; margin: 0; line-height: 1.4;">${club.description}</p>
+            <h4 style="font-family: 'Archivo', sans-serif; font-weight: 600; font-size: 14px; margin: 0 0 2px; color: #0f1c2e;">${club.name}</h4>
+            <p style="font-family: 'Archivo', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #1565c0; margin: 0 0 6px; font-weight: 600;">${club.tagline}</p>
+            <p style="font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; color: #546e7a; margin: 0; line-height: 1.4;">${club.description}</p>
           </div>
         `);
 
