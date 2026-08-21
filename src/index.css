@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -71,8 +71,12 @@
     --shadow-glow-yellow: 0 8px 30px -6px hsl(327 75% 52% / 0.35);
     --shadow-glow-pink: 0 8px 30px -6px hsl(327 75% 52% / 0.35);
 
-    --font-display: 'League Spartan', sans-serif;
-    --font-body: 'Space Grotesk', sans-serif;
+    /* Brand type per the LTA spec: Flama Semibold headings (uppercase,
+       weight 400 on the semibold cut), Roboto 16/24 body. Flama is a
+       licensed font — it renders wherever the licensed files are available,
+       with Barlow (closest Google-Fonts equivalent) as the live fallback. */
+    --font-display: 'Flama Semibold', 'Flama', 'Barlow', sans-serif;
+    --font-body: 'Roboto', system-ui, Arial, sans-serif;
   }
 
   .dark {
@@ -105,9 +109,28 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
+    font-weight: 400;
+    line-height: 1.5;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
+    font-weight: 600; /* reads as ~Flama Semibold via the Barlow fallback */
+    letter-spacing: normal;
+  }
+  /* Headline style per the brand spec: uppercase, tight leading. Kept to the
+     top heading levels so small UI headings stay sentence case. */
+  h1, h2 {
+    text-transform: uppercase;
+    line-height: 0.95;
+  }
+}
+
+/* The old design leaned on 800/900 weights everywhere; the brand type uses a
+   single semibold cut. Cap the heavy Tailwind weight utilities so existing
+   markup renders at semibold without a full class sweep. */
+@layer utilities {
+  .font-black, .font-extrabold, .font-bold {
+    font-weight: 600;
   }
 }
 

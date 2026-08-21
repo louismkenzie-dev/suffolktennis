@@ -49,7 +49,7 @@ const appearance: Appearance = {
     colorTextPlaceholder: "hsl(220 20% 55%)",
     colorDanger: "hsl(0 84% 66%)",
     colorIcon: "hsl(220 20% 70%)",
-    fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+    fontFamily: "Roboto, system-ui, -apple-system, sans-serif",
     fontSizeBase: "15px",
     borderRadius: "10px",
   },
@@ -247,7 +247,14 @@ const BookingPage = () => {
     : "";
 
   const elementsOptions: StripeElementsOptions | null = setup
-    ? { clientSecret: setup.clientSecret, appearance, loader: "auto" }
+    ? {
+        clientSecret: setup.clientSecret,
+        appearance,
+        loader: "auto" as const,
+        // The Payment Element renders in Stripe's iframe — the brand font must
+        // be loaded inside it explicitly.
+        fonts: [{ cssSrc: "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" }],
+      }
     : null;
 
   return (
