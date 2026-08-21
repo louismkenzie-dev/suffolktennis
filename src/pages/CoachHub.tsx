@@ -18,10 +18,22 @@ const db = supabase as any;
 type SessionRow = { id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null };
 type EventRow = { id: string; title: string; event_date: string | null; location: string | null; programme_type: string; sessions: SessionRow[] };
 type Player = {
-  booking_id: string; child_id: string | null; child_name: string; parent_name: string | null;
+  booking_id: string; child_id: string | null; photo_url: string | null;
+  child_name: string; parent_name: string | null;
   session_slot: string | null; medical_notes: string | null; arrived: boolean;
   my_report: { stats: Record<string, number>; comment: string | null } | null;
 };
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+
+const PlayerAvatar = ({ player, size = "w-11 h-11" }: { player: Player; size?: string }) => (
+  <div className={`${size} rounded-full overflow-hidden bg-lta-cyan/15 border border-white/15 flex items-center justify-center shrink-0`}>
+    {player.photo_url
+      ? <img src={player.photo_url} alt={player.child_name} className="w-full h-full object-cover" loading="lazy" />
+      : <span className="text-lta-cyan font-bold text-sm">{initials(player.child_name)}</span>}
+  </div>
+);
 /** One selectable slot on the coach's schedule: an event session, or a
  *  session-less one-off event as a whole. */
 type Slot = { key: string; venue: string; date: string | null; event: EventRow; session: SessionRow | null };
@@ -419,11 +431,14 @@ const CoachHub = () => {
                         >
                           <Check size={18} strokeWidth={3} />
                         </button>
-                        <button onClick={() => openReport(p)} className="flex-1 min-w-0 text-left">
+                        <button onClick={() => openReport(p)} className="flex-1 min-w-0 text-left flex items-center gap-3">
+                          <PlayerAvatar player={p} />
+                          <div className="min-w-0">
                           <div className="font-semibold truncate">{p.child_name}</div>
                           <div className="text-xs text-primary-foreground/60 flex flex-wrap gap-2">
                             {p.session_slot && <span>{p.session_slot}</span>}
                             {p.medical_notes && <span className="text-lta-yellow inline-flex items-center gap-1"><AlertCircle size={11} /> Medical</span>}
+                          </div>
                           </div>
                         </button>
                         <button onClick={() => openReport(p)} className="shrink-0" aria-label={`Report for ${p.child_name}`}>
@@ -444,7 +459,10 @@ const CoachHub = () => {
       <Dialog open={!!openPlayer} onOpenChange={(o) => { if (!o) setOpenPlayer(null); }}>
         <DialogContent className="max-w-md max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display">{openPlayer?.child_name}</DialogTitle>
+            <DialogTitle className="font-display flex items-center gap-3">
+              {openPlayer && <PlayerAvatar player={openPlayer} size="w-12 h-12" />}
+              {openPlayer?.child_name}
+            </DialogTitle>
           </DialogHeader>
           {openPlayer?.medical_notes && (
             <div className="rounded-lg border border-yellow-300 bg-yellow-50 text-yellow-900 text-sm p-3 flex gap-2">

@@ -47,6 +47,16 @@ const AddChildForm = ({ onChildAdded, onCancel }: AddChildFormProps) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !name.trim()) return;
+    // A profile photo is required — coaches use it to identify players on
+    // the live session register.
+    if (!photoFile) {
+      toast({
+        title: "Photo required",
+        description: "Please add a photo of your child — coaches use it to identify players at sessions.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
 
     try {
@@ -121,8 +131,8 @@ const AddChildForm = ({ onChildAdded, onCancel }: AddChildFormProps) => {
             <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
           </label>
           <div>
-            <p className="text-sm font-medium text-foreground">Player Photo</p>
-            <p className="text-xs text-muted-foreground">Click to upload (optional)</p>
+            <p className="text-sm font-medium text-foreground">Player Photo *</p>
+            <p className="text-xs text-muted-foreground">Required — coaches use it to identify players at sessions.</p>
           </div>
         </div>
 

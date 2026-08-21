@@ -1,4 +1,3 @@
-import { Instagram, Facebook, Youtube, Twitter, Mail } from "lucide-react";
 import logoAsset from "@/assets/suffolk-tennis-logo-v7.png";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsWhite from "@/assets/ipswich-sports-white.png";
@@ -11,46 +10,12 @@ const venueLogos = [
   { src: culfordWhite, alt: "Culford Sports & Tennis Centre", invert: false },
 ];
 
-const socials = [
-  { icon: Instagram, label: "Instagram", url: "https://www.instagram.com/suffolktennis", color: "hover:text-pink-400" },
-  { icon: Facebook, label: "Facebook", url: "https://www.facebook.com/suffolktennis", color: "hover:text-blue-400" },
-  { icon: Twitter, label: "X / Twitter", url: "https://x.com/suffolktennis", color: "hover:text-sky-400" },
-  { icon: Youtube, label: "YouTube", url: "https://www.youtube.com/@suffolktennis", color: "hover:text-red-400" },
-  { icon: Mail, label: "Email", url: "mailto:enquiries@suffolktennis.online", color: "hover:text-lta-yellow" },
-];
-
 const Footer = () => (
   <footer className="relative bg-suffolk-navy border-t border-lta-cyan/10 py-12 overflow-hidden">
     {/* Subtle LTA accent line */}
     <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-lta-cyan via-lta-yellow to-lta-cyan" />
 
     <div className="container mx-auto px-6 relative z-10">
-      {/* Serve Me Socials */}
-      <div className="text-center mb-10">
-        <h3
-          className="font-display text-lg font-bold text-lta-cyan tracking-wide uppercase mb-1"
-        >
-          🎾 Serve Me Socials
-        </h3>
-        <p className="text-primary-foreground/40 text-xs font-body mb-5">
-          Follow us for the latest results, events & junior tennis updates
-        </p>
-        <div className="flex items-center justify-center gap-4">
-          {socials.map((s) => (
-            <a
-              key={s.label}
-              href={s.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={s.label}
-              className={`group relative p-3 rounded-xl bg-white/5 border border-white/10 text-primary-foreground/50 transition-all duration-300 hover:scale-110 hover:bg-white/10 hover:border-lta-cyan/30 ${s.color}`}
-            >
-              <s.icon size={20} />
-            </a>
-          ))}
-        </div>
-      </div>
-
       <div className="flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-6 flex-wrap justify-center md:justify-start">
           <img src={logo} alt="Suffolk Tennis" className="h-20 w-auto" />

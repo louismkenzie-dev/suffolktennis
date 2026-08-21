@@ -104,6 +104,22 @@ Deno.serve(async (req) => {
     .eq("status", "paid")
     .order("child_name");
 
+  // Child profile photos for the register — signed here (service role) so
+  // coaches see them without widening the storage policies.
+  const photoByChild = new Map<string, string>();
+  const childIds = [...new Set((bookings ?? []).map((b) => b.child_id).filter(Boolean))] as string[];
+  if (childIds.length > 0) {
+    const { data: children } = await admin
+      .from("children").select("id, photo_url").in("id", childIds);
+    const withPhotos = (children ?? []).filter((c) => c.photo_url);
+    await Promise.all(withPhotos.map(async (c) => {
+      const { data: signed } = await admin.storage
+        .from("child-photos")
+        .createSignedUrl(c.photo_url as string, 3600);
+      if (signed?.signedUrl) photoByChild.set(c.id, signed.signedUrl);
+    }));
+  }
+
   const bookingIds = (bookings ?? []).map((b) => b.id);
   let arrived = new Set<string>();
   if (bookingIds.length > 0) {
@@ -143,6 +159,7 @@ Deno.serve(async (req) => {
     players: (bookings ?? []).map((b) => ({
       booking_id: b.id,
       child_id: b.child_id,
+      photo_url: b.child_id ? photoByChild.get(b.child_id) ?? null : null,
       child_name: b.child_name,
       parent_name: b.parent_name,
       session_slot: b.session_slot,

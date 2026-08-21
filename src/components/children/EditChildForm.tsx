@@ -212,6 +212,15 @@ const EditChildForm = ({ child, onSaved, onCancel }: EditChildFormProps) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !name.trim()) return;
+    // Photos are mandatory — prompt existing profiles without one to add it.
+    if (!photoFile && !child.photo_url) {
+      toast({
+        title: "Photo required",
+        description: "Please add a photo of your child — coaches use it to identify players at sessions.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
 
     try {
@@ -288,8 +297,8 @@ const EditChildForm = ({ child, onSaved, onCancel }: EditChildFormProps) => {
             <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
           </label>
           <div>
-            <p className="text-sm font-medium text-foreground">Player Photo</p>
-            <p className="text-xs text-muted-foreground">Click to change</p>
+            <p className="text-sm font-medium text-foreground">Player Photo *</p>
+            <p className="text-xs text-muted-foreground">Required — coaches use it to identify players at sessions.</p>
           </div>
         </div>
 
