@@ -13,21 +13,21 @@ const hubs = [
   name: "David Lloyd Ipswich",
   tagline: "Premium Rackets Facility",
   description: "6 indoor courts, 3 outdoor courts, progressive junior programme & extensive fitness suite.",
-  coords: [1.1879, 52.0638] as [number, number],
+  coords: [1.2135, 52.0273] as [number, number],
   path: "/venues/david-lloyd"
 },
 {
   name: "Ipswich Sports Club",
   tagline: "Community Rackets & Sports Club",
   description: "3 indoor courts, 7 outdoor courts, 3 bubble courts, active junior programme & competitive match play.",
-  coords: [1.1635, 52.0565] as [number, number],
+  coords: [1.1535, 52.0731] as [number, number],
   path: "/venues/ipswich-sports-club"
 },
 {
   name: "Culford Sports & Tennis Centre",
   tagline: "LTA Regional Player Development Centre",
   description: "6-court indoor centre, 7 outdoor courts, S&C suite, integrated school performance programme.",
-  coords: [0.7342, 52.3108] as [number, number],
+  coords: [0.6866, 52.3018] as [number, number],
   path: "/venues/culford"
 }];
 
@@ -37,42 +37,42 @@ const feederClubs = [
   name: "East Bergholt Tennis Club",
   tagline: "Award-Winning Community Club",
   description: "3 floodlit hardcourts, LTA coaching programmes for all ages, and a welcoming community club.",
-  coords: [1.0485, 51.9725] as [number, number],
+  coords: [1.0255, 51.9701] as [number, number],
   path: "/clubs/east-bergholt"
 },
 {
   name: "Newmarket Tennis Club",
   tagline: "Community Tennis Since 1948",
   description: "7 premium courts including 3 with winter air hall, floodlit ITF-rated synthetic clay courts.",
-  coords: [0.4050, 52.2440] as [number, number],
+  coords: [0.3927, 52.2411] as [number, number],
   path: "/clubs/newmarket"
 },
 {
   name: "Stowmarket Lawn Tennis Club",
   tagline: "Tennis for All",
   description: "5 resurfaced hardcourts with winter airdome, 4 pickleball courts, strong juniors section.",
-  coords: [1.0000, 52.1890] as [number, number],
+  coords: [0.9744, 52.1962] as [number, number],
   path: "/clubs/stowmarket"
 },
 {
   name: "Felixstowe Lawn Tennis Club",
   tagline: "Bringing Tennis Since 1884",
   description: "Historic club with floodlit courts, Makeaball Tennis Academy coaching for all ages.",
-  coords: [1.3510, 51.9630] as [number, number],
+  coords: [1.3593, 51.9642] as [number, number],
   path: "/clubs/felixstowe"
 },
 {
   name: "Woodbridge Tennis Club",
   tagline: "All Year Round Tennis",
   description: "6 all-weather floodlit courts, coaching programmes, and competitive match play.",
-  coords: [1.2680, 52.0940] as [number, number],
+  coords: [1.3144, 52.0883] as [number, number],
   path: "/clubs/woodbridge"
 },
 {
   name: "Framlingham College",
   tagline: "Sports Centre & Tennis Programme",
   description: "Premium sports centre with tennis facilities, fitness suite, and coaching for all ages within Framlingham College grounds.",
-  coords: [1.2870, 52.2220] as [number, number],
+  coords: [1.3396, 52.2277] as [number, number],
   path: "/clubs/framlingham"
 }];
 
@@ -164,7 +164,9 @@ const SuffolkMapSection = () => {
           </div>
         `);
 
-        markerEl.addEventListener("mouseenter", () => popup.addTo(map));
+        // A popup needs a position before addTo — without it MapLibre cannot
+        // place it and the hover tooltip never appears.
+        markerEl.addEventListener("mouseenter", () => popup.setLngLat(hub.coords).addTo(map));
         markerEl.addEventListener("mouseleave", () => popup.remove());
 
         new maplibregl.Marker({ element: markerEl }).setLngLat(hub.coords).setPopup(popup).addTo(map);
@@ -188,7 +190,7 @@ const SuffolkMapSection = () => {
           </div>
         `);
 
-        markerEl.addEventListener("mouseenter", () => popup.addTo(map));
+        markerEl.addEventListener("mouseenter", () => popup.setLngLat(club.coords).addTo(map));
         markerEl.addEventListener("mouseleave", () => popup.remove());
 
         new maplibregl.Marker({ element: markerEl }).setLngLat(club.coords).setPopup(popup).addTo(map);
