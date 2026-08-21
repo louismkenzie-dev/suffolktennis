@@ -128,7 +128,7 @@ const PaymentStep = ({ setup, priceLabel, onBack }: {
       </div>
       {setup.mode === "subscription" && setup.monthsTotal && (
         <p className="text-sm text-primary-foreground/70">
-          Your card will be charged {gbp(setup.amountPence)} today and then monthly — {setup.monthsTotal} payments in total. It stops automatically after the programme.
+          You're signing up for the full programme — every session included. Your card is charged {gbp(setup.amountPence)} today and then monthly, {setup.monthsTotal} payments in total; billing stops automatically once the programme is paid.
         </p>
       )}
       <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
@@ -279,7 +279,9 @@ const BookingPage = () => {
               <div className="text-lta-yellow font-bold mt-2">{priceLabel}</div>
               {isProgramme && (
                 <p className="text-primary-foreground/60 text-xs">
-                  Paid monthly by card. Signing up commits you to the full {data.event.programme_months}-month programme.
+                  One sign-up covers the <strong className="text-primary-foreground/90">whole programme</strong> — every
+                  session listed below is included. Your card is simply billed monthly
+                  ({data.event.programme_months} payments in total).
                 </p>
               )}
             </div>
@@ -288,7 +290,9 @@ const BookingPage = () => {
             )}
             {data.sessions.length > 0 && (
               <div className="mt-5 bg-white/5 border border-white/10 rounded-xl p-4">
-                <h3 className="font-display font-bold text-sm mb-2">Session dates</h3>
+                <h3 className="font-display font-bold text-sm mb-2">
+                  {isProgramme ? `Programme sessions (${data.sessions.length}) — all included in your sign-up` : "Session dates"}
+                </h3>
                 <ul className="text-sm text-primary-foreground/80 space-y-1">
                   {data.sessions.map((s) => (
                     <li key={s.id}>

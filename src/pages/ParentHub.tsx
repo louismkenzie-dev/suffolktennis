@@ -68,7 +68,15 @@ const ParentHub = () => {
   const [ltaEvents, setLtaEvents] = useState<LtaEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsFilter, setEventsFilter] = useState<"upcoming" | "past">("upcoming");
-  const [activeTab, setActiveTab] = useState<"children" | "bookings" | "parent" | "timetable" | "pathway" | "news" | "events">("children");
+  // Deep-linkable tabs: /parent-hub?tab=bookings (used by ticket/confirmation
+  // pages to send parents straight back to their bookings).
+  type HubTab = "children" | "bookings" | "parent" | "timetable" | "pathway" | "news" | "events";
+  const [activeTab, setActiveTab] = useState<HubTab>(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return ["children", "bookings", "parent", "timetable", "pathway", "news", "events"].includes(t ?? "")
+      ? (t as HubTab)
+      : "children";
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [pathwaySection, setPathwaySection] = useState<"overview" | "9u10u" | "11u14u" | "context" | "competition" | "parents">("overview");

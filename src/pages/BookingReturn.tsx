@@ -72,11 +72,16 @@ const BookingReturn = () => {
               <strong>{status!.booking.child_name}</strong> is booked on <strong>{status!.event?.title}</strong>
               {status!.booking.session_slot ? ` (${status!.booking.session_slot})` : ""}.
             </p>
-            {status!.ticket && (
-              <Button asChild className="mt-6 bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-8">
-                <Link to={`/ticket/${status!.ticket.qr_token}`}><Ticket className="w-4 h-4 mr-2" /> View entry ticket</Link>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+              {status!.ticket && (
+                <Button asChild className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-8">
+                  <Link to={`/ticket/${status!.ticket.qr_token}`}><Ticket className="w-4 h-4 mr-2" /> View entry ticket</Link>
+                </Button>
+              )}
+              <Button asChild variant="outline" className="h-12 px-8 border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 hover:text-primary-foreground font-bold">
+                <Link to="/parent-hub?tab=bookings">My bookings</Link>
               </Button>
-            )}
+            </div>
             <p className="text-primary-foreground/60 text-xs mt-4">A confirmation with your ticket link has also been emailed to you.</p>
           </div>
         ) : (

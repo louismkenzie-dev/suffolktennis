@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
 
 type TicketData = {
@@ -30,8 +30,14 @@ const TicketPage = () => {
 
   return (
     <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
-      <header className="container mx-auto px-6 py-6">
+      <header className="container mx-auto px-6 py-6 flex items-center justify-between">
         <Link to="/"><img src={logo} alt="Suffolk Tennis" className="h-12" /></Link>
+        <Link
+          to="/parent-hub?tab=bookings"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-lta-cyan hover:text-lta-cyan/80"
+        >
+          <ArrowLeft size={15} /> My bookings
+        </Link>
       </header>
       <main className="container mx-auto px-6 pb-20 max-w-md">
         {error ? (
