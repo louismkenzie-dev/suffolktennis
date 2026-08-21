@@ -342,3 +342,14 @@ Verified without keys: `get-invitation` serves private events by token
 (HTTP 200 end-to-end), and `create-booking-checkout` fails cleanly when
 Stripe is unconfigured (booking rolled back to cancelled — no capacity
 leak). With keys set, the same call returns the hosted checkout URL.
+
+### Player roster (added 21 Aug 2026)
+
+`player_roster` (migration `20260821110000`) holds the county's player
+database — 716 players imported from the LTA RCP report (checksum-verified),
+admin-only RLS. The admin Bookings tab's invite picker draws from the roster
+merged with registered families, filterable by age group (8U–Open) and
+gender, and a CSV re-import button accepts future RCP exports (upsert on LTA
+number). `booking_invitations.roster_id` anchors re-invite dedupe for roster
+players. Parents see their invitations, bookings and tickets in the Parent
+Hub's "Bookings & Invitations" tab.

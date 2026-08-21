@@ -45,6 +45,7 @@ export type Database = {
           parent_name: string | null
           parent_user_id: string | null
           reminded_at: string | null
+          roster_id: string | null
           sent_at: string | null
           status: string
           token: string
@@ -62,6 +63,7 @@ export type Database = {
           parent_name?: string | null
           parent_user_id?: string | null
           reminded_at?: string | null
+          roster_id?: string | null
           sent_at?: string | null
           status?: string
           token?: string
@@ -79,6 +81,7 @@ export type Database = {
           parent_name?: string | null
           parent_user_id?: string | null
           reminded_at?: string | null
+          roster_id?: string | null
           sent_at?: string | null
           status?: string
           token?: string
@@ -97,6 +100,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_invitations_roster_id_fkey"
+            columns: ["roster_id"]
+            isOneToOne: false
+            referencedRelation: "player_roster"
             referencedColumns: ["id"]
           },
         ]
@@ -865,6 +875,80 @@ export type Database = {
           {
             foreignKeyName: "player_reports_child_id_fkey"
             columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_roster: {
+        Row: {
+          age_group: string | null
+          contact_email: string | null
+          contact_name: string | null
+          created_at: string
+          doubles_wtn: number | null
+          first_name: string
+          gender: string | null
+          id: string
+          last_name: string
+          linked_child_id: string | null
+          lta_number: string | null
+          marketing_opt_in: boolean | null
+          mobile: string | null
+          rcp_match_count: number | null
+          rcp_type: string | null
+          singles_wtn: number | null
+          source: string
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          age_group?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          created_at?: string
+          doubles_wtn?: number | null
+          first_name: string
+          gender?: string | null
+          id?: string
+          last_name: string
+          linked_child_id?: string | null
+          lta_number?: string | null
+          marketing_opt_in?: boolean | null
+          mobile?: string | null
+          rcp_match_count?: number | null
+          rcp_type?: string | null
+          singles_wtn?: number | null
+          source?: string
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          age_group?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          created_at?: string
+          doubles_wtn?: number | null
+          first_name?: string
+          gender?: string | null
+          id?: string
+          last_name?: string
+          linked_child_id?: string | null
+          lta_number?: string | null
+          marketing_opt_in?: boolean | null
+          mobile?: string | null
+          rcp_match_count?: number | null
+          rcp_type?: string | null
+          singles_wtn?: number | null
+          source?: string
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_roster_linked_child_id_fkey"
+            columns: ["linked_child_id"]
             isOneToOne: false
             referencedRelation: "children"
             referencedColumns: ["id"]

@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload } from "lucide-react";
 
 const db = supabase as any;
 
@@ -32,8 +32,15 @@ type Booking = {
   membership_id: string | null;
 };
 type Player = {
-  id: string; name: string; date_of_birth: string | null; gender: string | null;
-  home_club: string | null; parent_user_id: string; parent_email?: string; parent_name?: string;
+  key: string;                 // unique across both sources
+  roster_id?: string;          // player_roster row
+  child_id?: string;           // registered children row
+  name: string;
+  age_group: string;
+  gender: string | null;
+  contact_email: string | null;
+  parent_name: string | null;
+  wtn: number | null;
 };
 
 const AGE_GROUPS = [8, 9, 10, 11, 12, 14, 16, 18];
@@ -66,7 +73,9 @@ const BookingsPanel = () => {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerFilter, setPlayerFilter] = useState("all");
+  const [genderFilter, setGenderFilter] = useState("all");
   const [playerSearch, setPlayerSearch] = useState("");
+  const [importing, setImporting] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
 
@@ -117,38 +126,66 @@ const BookingsPanel = () => {
   };
 
   const loadPlayers = async () => {
-    const [{ data: kids }, { data: emails }, { data: profiles }] = await Promise.all([
-      db.from("children").select("id, name, date_of_birth, gender, home_club, parent_user_id").order("name"),
+    const [{ data: roster }, { data: kids }, { data: emails }, { data: profiles }] = await Promise.all([
+      db.from("player_roster").select("id, first_name, last_name, gender, age_group, contact_email, contact_name, singles_wtn, linked_child_id").order("last_name"),
+      db.from("children").select("id, name, date_of_birth, gender, parent_user_id").order("name"),
       db.rpc("get_parent_emails"),
       db.from("profiles").select("user_id, first_name, last_name"),
     ]);
     const emailMap = new Map<string, string>((emails ?? []).map((e: any) => [e.user_id, e.email]));
     const nameMap = new Map<string, string>((profiles ?? []).map((p: any) => [p.user_id, `${p.first_name} ${p.last_name}`.trim()]));
-    setPlayers(
-      (kids ?? []).map((k: any) => ({
-        ...k,
-        parent_email: emailMap.get(k.parent_user_id),
-        parent_name: nameMap.get(k.parent_user_id),
-      })),
-    );
+
+    const rosterPlayers: Player[] = (roster ?? []).map((r: any) => ({
+      key: `r:${r.id}`,
+      roster_id: r.id,
+      child_id: r.linked_child_id ?? undefined,
+      name: `${r.first_name} ${r.last_name}`.trim(),
+      age_group: r.age_group ?? "?",
+      gender: r.gender,
+      contact_email: r.contact_email,
+      parent_name: r.contact_name,
+      wtn: r.singles_wtn != null ? Number(r.singles_wtn) : null,
+    }));
+
+    // Registered families not already represented in the roster (matched by
+    // linked_child_id or by same player name + parent email).
+    const seen = new Set(rosterPlayers.map((p) => `${p.name.toLowerCase()}|${(p.contact_email ?? "").toLowerCase()}`));
+    const linkedChildIds = new Set(rosterPlayers.map((p) => p.child_id).filter(Boolean));
+    const childPlayers: Player[] = (kids ?? [])
+      .filter((k: any) => !linkedChildIds.has(k.id))
+      .map((k: any) => ({
+        key: `c:${k.id}`,
+        child_id: k.id,
+        name: k.name,
+        age_group: ageGroupOf(k.date_of_birth),
+        gender: k.gender,
+        contact_email: emailMap.get(k.parent_user_id) ?? null,
+        parent_name: nameMap.get(k.parent_user_id) ?? null,
+        wtn: null,
+      }))
+      .filter((p: Player) => !seen.has(`${p.name.toLowerCase()}|${(p.contact_email ?? "").toLowerCase()}`));
+
+    setPlayers([...rosterPlayers, ...childPlayers].sort((a, b) => a.name.localeCompare(b.name)));
   };
 
   const filteredPlayers = useMemo(() => {
     return players.filter((p) => {
-      if (playerFilter !== "all" && ageGroupOf(p.date_of_birth) !== playerFilter) return false;
+      if (playerFilter !== "all" && p.age_group !== playerFilter) return false;
+      if (genderFilter !== "all" && (p.gender ?? "").toLowerCase() !== genderFilter) return false;
       if (playerSearch && !p.name.toLowerCase().includes(playerSearch.toLowerCase())) return false;
       return true;
     });
-  }, [players, playerFilter, playerSearch]);
+  }, [players, playerFilter, genderFilter, playerSearch]);
 
   const sendInvites = async () => {
     if (!selected) return;
     const invitees = players
-      .filter((p) => checked.has(p.id) && p.parent_email)
+      .filter((p) => checked.has(p.key) && p.contact_email)
       .map((p) => ({
-        child_id: p.id,
+        roster_id: p.roster_id,
+        child_id: p.child_id,
         child_name: p.name,
-        parent_email: p.parent_email!,
+        parent_email: p.contact_email!,
         parent_name: p.parent_name ?? "",
       }));
     if (invitees.length === 0) {
@@ -226,6 +263,79 @@ const BookingsPanel = () => {
     openEvent(selected);
   };
 
+  // Re-import the LTA RCP report, exported as CSV. Handles the report's
+  // preamble (real header is the row containing "First Name") and quoted
+  // fields; upserts on LTA Number so reloading a newer export just updates.
+  const importRosterCsv = async (file: File) => {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parseLine = (line: string): string[] => {
+        const out: string[] = [];
+        let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (inQ) {
+            if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+            else if (ch === '"') inQ = false;
+            else cur += ch;
+          } else if (ch === '"') inQ = true;
+          else if (ch === ",") { out.push(cur); cur = ""; }
+          else cur += ch;
+        }
+        out.push(cur);
+        return out.map((s) => s.trim());
+      };
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      const headerIdx = lines.findIndex((l) => l.includes("First Name") && l.includes("Last Name"));
+      if (headerIdx === -1) throw new Error('No header row found — export the RCP report as CSV with its normal columns.');
+      const header = parseLine(lines[headerIdx]);
+      const col = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+      const ix = {
+        lta: col("LTA Number"), first: col("First Name"), last: col("Last Name"),
+        gender: col("Gender"), mobile: col("Mobile"), email: col("Email"),
+        optin: col("LTA Marketing Opt-In"), age: col("Age Group"),
+        swtn: col("Singles WTN"), dwtn: col("Doubles WTN"),
+        matches: col("RCP Match Count"), type: col("RCP Type"),
+      };
+      if (ix.first === -1 || ix.last === -1) throw new Error("CSV is missing First Name / Last Name columns");
+
+      const num = (v: string) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+      const seen = new Set<string>();
+      const rows = lines.slice(headerIdx + 1).map(parseLine)
+        .filter((r) => r[ix.first] && r[ix.last])
+        .filter((r) => { const l = ix.lta >= 0 ? r[ix.lta] : ""; if (l && seen.has(l)) return false; if (l) seen.add(l); return true; })
+        .map((r) => ({
+          lta_number: ix.lta >= 0 ? r[ix.lta] || null : null,
+          first_name: r[ix.first], last_name: r[ix.last],
+          gender: ix.gender >= 0 ? r[ix.gender] || null : null,
+          age_group: ix.age >= 0 ? r[ix.age] || null : null,
+          contact_email: ix.email >= 0 && r[ix.email] ? r[ix.email].toLowerCase() : null,
+          mobile: ix.mobile >= 0 ? r[ix.mobile] || null : null,
+          marketing_opt_in: ix.optin >= 0 ? { Yes: true, No: false }[r[ix.optin]] ?? null : null,
+          singles_wtn: ix.swtn >= 0 ? num(r[ix.swtn]) : null,
+          doubles_wtn: ix.dwtn >= 0 ? num(r[ix.dwtn]) : null,
+          rcp_match_count: ix.matches >= 0 ? (num(r[ix.matches]) != null ? Math.round(num(r[ix.matches])!) : null) : null,
+          rcp_type: ix.type >= 0 ? r[ix.type] || null : null,
+        }));
+      if (rows.length === 0) throw new Error("No player rows found in the file");
+
+      let done = 0;
+      for (let i = 0; i < rows.length; i += 100) {
+        const { error } = await db.from("player_roster")
+          .upsert(rows.slice(i, i + 100), { onConflict: "lta_number" });
+        if (error) throw new Error(error.message);
+        done += Math.min(100, rows.length - i);
+      }
+      toast.success(`Imported ${done} players (existing LTA numbers updated)`);
+      loadPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const editEvent = (ev: EventRow) => {
     setForm({
       id: ev.id,
@@ -278,6 +388,11 @@ const BookingsPanel = () => {
         <h2 className="font-display text-xl font-bold">Bookable events &amp; programmes</h2>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm"><Link to="/admin/scan"><QrCode className="w-4 h-4 mr-1" /> Scanner</Link></Button>
+          <Button variant="outline" size="sm" disabled={importing} onClick={() => document.getElementById("roster-csv-input")?.click()}>
+            {importing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />} Import players (CSV)
+          </Button>
+          <input id="roster-csv-input" type="file" accept=".csv,text/csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importRosterCsv(f); e.target.value = ""; }} />
           <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4 mr-1" /> New event</Button>
         </div>
       </div>
@@ -337,6 +452,23 @@ const BookingsPanel = () => {
                   <Input type="time" value={newSessionTime} onChange={(e) => setNewSessionTime(e.target.value)} className="w-28" />
                   <Input placeholder="Venue" value={newSessionVenue} onChange={(e) => setNewSessionVenue(e.target.value)} className="w-44" />
                   <Button size="sm" variant="outline" onClick={addSession}>Add date</Button>
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    // A 12-week term in one click: weekly sessions from the chosen start date.
+                    if (!selected || !newSessionDate) { toast.error("Pick the first session's date"); return; }
+                    const start = new Date(newSessionDate + "T00:00:00");
+                    const rows = Array.from({ length: 12 }, (_, w) => {
+                      const d = new Date(start); d.setDate(d.getDate() + w * 7);
+                      return {
+                        event_id: selected.id,
+                        session_date: d.toISOString().slice(0, 10),
+                        start_time: newSessionTime || null,
+                        venue: newSessionVenue.trim() || null,
+                      };
+                    });
+                    const { error } = await db.from("event_sessions").insert(rows);
+                    if (error) toast.error(error.message);
+                    else { toast.success("12 weekly sessions added"); setNewSessionDate(""); openEvent(selected); }
+                  }}>Add weekly ×12</Button>
                 </div>
               </div>
             )}
@@ -403,10 +535,19 @@ const BookingsPanel = () => {
           <DialogHeader><DialogTitle>Invite players — {selected?.title}</DialogTitle></DialogHeader>
           <div className="flex gap-2">
             <Select value={playerFilter} onValueChange={setPlayerFilter}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All ages</SelectItem>
                 {AGE_GROUPS.map((g) => <SelectItem key={g} value={`${g}U`}>{g}U</SelectItem>)}
+                <SelectItem value="Open">Open</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={genderFilter} onValueChange={setGenderFilter}>
+              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="male">Boys</SelectItem>
+                <SelectItem value="female">Girls</SelectItem>
               </SelectContent>
             </Select>
             <Input placeholder="Search players…" value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} />
@@ -415,22 +556,23 @@ const BookingsPanel = () => {
             <span>{filteredPlayers.length} players · {checked.size} selected</span>
             <button className="underline" onClick={() => {
               const all = new Set(checked);
-              const allChecked = filteredPlayers.every((p) => all.has(p.id));
-              filteredPlayers.forEach((p) => allChecked ? all.delete(p.id) : all.add(p.id));
+              const allChecked = filteredPlayers.every((p) => all.has(p.key));
+              filteredPlayers.forEach((p) => allChecked ? all.delete(p.key) : all.add(p.key));
               setChecked(all);
             }}>Select all shown</button>
           </div>
           <div className="space-y-1 max-h-72 overflow-y-auto border rounded-md p-2">
             {filteredPlayers.map((p) => (
-              <label key={p.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
-                <Checkbox checked={checked.has(p.id)} onCheckedChange={(v) => {
+              <label key={p.key} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                <Checkbox checked={checked.has(p.key)} onCheckedChange={(v) => {
                   const next = new Set(checked);
-                  v === true ? next.add(p.id) : next.delete(p.id);
+                  v === true ? next.add(p.key) : next.delete(p.key);
                   setChecked(next);
                 }} />
                 <span className="font-medium">{p.name}</span>
-                <Badge variant="outline" className="text-[10px]">{ageGroupOf(p.date_of_birth)}</Badge>
-                <span className="text-muted-foreground text-xs truncate">{p.parent_email ?? "no parent email"}</span>
+                <Badge variant="outline" className="text-[10px]">{p.age_group}</Badge>
+                {p.wtn != null && <span className="text-[10px] text-muted-foreground">WTN {p.wtn}</span>}
+                <span className="text-muted-foreground text-xs truncate">{p.contact_email ?? "no parent email"}</span>
               </label>
             ))}
           </div>

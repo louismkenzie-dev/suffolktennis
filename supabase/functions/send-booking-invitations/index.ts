@@ -6,6 +6,7 @@ import { sendEmail } from "../_shared/resend.ts";
 
 const Invitee = z.object({
   child_id: z.string().uuid().optional(),
+  roster_id: z.string().uuid().optional(),
   child_name: z.string().trim().min(1).max(120),
   parent_email: z.string().trim().email().max(255),
   parent_name: z.string().trim().max(120).optional().or(z.literal("")),
@@ -90,20 +91,38 @@ Deno.serve(async (req) => {
   if (body.invitees) {
     for (const inv of body.invitees) {
       const email = inv.parent_email.toLowerCase();
-      // Upsert on (event, child, email) so re-inviting reuses the same token.
-      const { data: created, error } = await admin
+
+      // Re-inviting must reuse the existing invitation (same token). The
+      // (event, child, email) unique key can't cover roster players (NULL
+      // child_id rows are always distinct), so match explicitly by
+      // precedence: roster_id, then child_id, then email + player name.
+      let existingQuery = admin
         .from("booking_invitations")
-        .upsert({
-          event_id: eventRow.id,
-          child_id: inv.child_id ?? null,
-          child_name: inv.child_name,
-          parent_email: email,
-          parent_name: inv.parent_name || null,
-          parent_user_id: usersByEmail.get(email) ?? null,
-          invited_by: adminUserId,
-        }, { onConflict: "event_id,child_id,parent_email" })
         .select("id, token, status")
-        .single();
+        .eq("event_id", eventRow.id);
+      if (inv.roster_id) existingQuery = existingQuery.eq("roster_id", inv.roster_id);
+      else if (inv.child_id) existingQuery = existingQuery.eq("child_id", inv.child_id);
+      else existingQuery = existingQuery.eq("parent_email", email).eq("child_name", inv.child_name);
+      const { data: existing } = await existingQuery.limit(1).maybeSingle();
+
+      let created = existing ?? null;
+      let error: { message: string } | null = null;
+      if (!created) {
+        ({ data: created, error } = await admin
+          .from("booking_invitations")
+          .insert({
+            event_id: eventRow.id,
+            child_id: inv.child_id ?? null,
+            roster_id: inv.roster_id ?? null,
+            child_name: inv.child_name,
+            parent_email: email,
+            parent_name: inv.parent_name || null,
+            parent_user_id: usersByEmail.get(email) ?? null,
+            invited_by: adminUserId,
+          })
+          .select("id, token, status")
+          .single());
+      }
 
       if (error || !created) {
         results.push({ email, sent: false, error: error?.message ?? "insert failed" });

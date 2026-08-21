@@ -11,6 +11,8 @@ import MyChildrenSection from "@/components/children/MyChildrenSection";
 import { AdminLink } from "@/components/admin/AdminLink";
 import SportingTimetable from "@/components/timetable/SportingTimetable";
 import ParentDetailsSection from "@/components/parent/ParentDetailsSection";
+import MyBookingsSection from "@/components/parent/MyBookingsSection";
+import { Ticket as TicketIcon } from "lucide-react";
 import ProfileCompletionBanner from "@/components/parent/ProfileCompletionBanner";
 import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
 const logo = logoAsset;
@@ -66,7 +68,7 @@ const ParentHub = () => {
   const [ltaEvents, setLtaEvents] = useState<LtaEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsFilter, setEventsFilter] = useState<"upcoming" | "past">("upcoming");
-  const [activeTab, setActiveTab] = useState<"children" | "parent" | "timetable" | "pathway" | "news" | "events">("children");
+  const [activeTab, setActiveTab] = useState<"children" | "bookings" | "parent" | "timetable" | "pathway" | "news" | "events">("children");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [pathwaySection, setPathwaySection] = useState<"overview" | "9u10u" | "11u14u" | "context" | "competition" | "parents">("overview");
@@ -132,6 +134,7 @@ const ParentHub = () => {
 
   const tabs = [
     { id: "children" as const, label: "My Children", icon: Heart },
+    { id: "bookings" as const, label: "Bookings & Invitations", icon: TicketIcon },
     { id: "parent" as const, label: "Parent Details", icon: User },
     { id: "timetable" as const, label: "Sporting Timetable", icon: CalendarDays },
     { id: "pathway" as const, label: "LTA Pathway", icon: Trophy },
@@ -323,6 +326,7 @@ const ParentHub = () => {
           onGoToChildren={() => setActiveTab("children")}
         />
         {activeTab === "children" && <MyChildrenSection />}
+        {activeTab === "bookings" && <MyBookingsSection />}
         {activeTab === "parent" && <ParentDetailsSection />}
         {activeTab === "timetable" && <SportingTimetable />}
 
