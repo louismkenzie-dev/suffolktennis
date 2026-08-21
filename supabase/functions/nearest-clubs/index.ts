@@ -1,6 +1,8 @@
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 
-const GATEWAY_URL = 'https://connector-gateway.lovable.dev/google_maps';
+// Google Routes API, called directly (requires the Routes API to be enabled
+// on the Google Cloud project that owns GOOGLE_MAPS_API_KEY).
+const ROUTES_URL = 'https://routes.googleapis.com';
 
 type Club = { name: string; type: 'lead' | 'feeder'; lat: number; lng: number; postcode: string; slug?: string };
 
@@ -32,10 +34,8 @@ Deno.serve(async (req) => {
     const origin = { lat: pcJson.result.latitude, lng: pcJson.result.longitude };
     const formatted = `${pcJson.result.admin_ward ?? ''}, ${pcJson.result.admin_district ?? ''}, ${pcJson.result.postcode}`;
 
-    // 2. Call Google Routes computeRouteMatrix via gateway.
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    // 2. Call Google Routes computeRouteMatrix directly.
     const GOOGLE_MAPS_API_KEY = Deno.env.get('GOOGLE_MAPS_API_KEY');
-    if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY missing');
     if (!GOOGLE_MAPS_API_KEY) throw new Error('GOOGLE_MAPS_API_KEY missing');
 
     const body = {
@@ -47,11 +47,10 @@ Deno.serve(async (req) => {
       routingPreference: 'TRAFFIC_AWARE',
     };
 
-    const routesRes = await fetch(`${GATEWAY_URL}/routes/distanceMatrix/v2:computeRouteMatrix`, {
+    const routesRes = await fetch(`${ROUTES_URL}/distanceMatrix/v2:computeRouteMatrix`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'X-Connection-Api-Key': GOOGLE_MAPS_API_KEY,
+        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
         'Content-Type': 'application/json',
         'X-Goog-FieldMask': 'originIndex,destinationIndex,duration,distanceMeters,status,condition',
       },

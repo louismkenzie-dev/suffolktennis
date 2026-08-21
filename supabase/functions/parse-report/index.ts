@@ -14,7 +14,8 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!anthropicApiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Auth check
@@ -47,19 +48,25 @@ serve(async (req) => {
     }
     const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
 
-    // Use Gemini to parse the PDF
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Parse the PDF with Claude (Anthropic API, PDF document input).
+    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${lovableApiKey}`,
+        "x-api-key": anthropicApiKey,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "claude-opus-5",
+        max_tokens: 8000,
         messages: [
           {
             role: "user",
             content: [
+              {
+                type: "document",
+                source: { type: "base64", media_type: "application/pdf", data: pdfBase64 },
+              },
               {
                 type: "text",
                 text: `Parse this LTA Regional Performance Camp Progress Report PDF and extract the structured data. Return a JSON object with these exact fields:
@@ -94,17 +101,10 @@ For talent_characteristics ratings: map "Excelling" to 1, "Consistent" to 2, "Pr
 For programme_review: each row represents a time period. The ratings array should correspond to each talent characteristic in order. Use null for N/A or empty entries.
 
 Return ONLY valid JSON, no markdown, no code blocks.`
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:application/pdf;base64,${pdfBase64}`
-                }
               }
             ]
           }
         ],
-        max_tokens: 4000,
       }),
     });
 
@@ -114,7 +114,11 @@ Return ONLY valid JSON, no markdown, no code blocks.`
     }
 
     const aiData = await aiResponse.json();
-    const content = aiData.choices?.[0]?.message?.content;
+    if (aiData.stop_reason === "refusal") throw new Error("AI declined to process this PDF");
+    const content = (aiData.content ?? [])
+      .filter((b: { type: string }) => b.type === "text")
+      .map((b: { text: string }) => b.text)
+      .join("");
     if (!content) throw new Error("No content from AI");
 
     // Clean and parse the JSON response
