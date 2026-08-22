@@ -21,6 +21,7 @@ import {
   verifyWebhook,
 } from "../_shared/stripe.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -204,12 +205,19 @@ async function handleInvoiceFailed(invoice: any) {
       await sendEmail({
         to: ADMIN_NOTIFY_EMAIL,
         subject: `Payment failed — ${membership.child_name} (${eventRow?.title ?? "programme"})`,
-        html: `<p>A monthly programme payment has failed.</p>
-<p><strong>Player:</strong> ${membership.child_name}<br>
-<strong>Parent:</strong> ${membership.parent_email}<br>
-<strong>Programme:</strong> ${eventRow?.title ?? membership.event_id}</p>
-<p>The membership is now marked <strong>past due</strong> — their entry QR code will not admit them until the payment is resolved. Stripe retries the card automatically for about a week; this needs chasing only if it keeps failing.</p>
-<p><a href="${SITE_URL}/admin">Open the admin dashboard</a></p>`,
+        html: brandedEmail({
+          title: "Monthly payment failed",
+          preheader: `${membership.child_name} — ${eventRow?.title ?? "programme"}`,
+          body:
+            emailParagraph("A monthly programme payment has failed.") +
+            emailDetails([
+              ["Player", membership.child_name],
+              ["Parent", membership.parent_email],
+              ["Programme", eventRow?.title ?? membership.event_id],
+            ]) +
+            emailParagraph("The membership is now marked <strong>past due</strong> — their entry QR code will not admit them until the payment is resolved. Stripe retries the card automatically for about a week; this needs chasing only if it keeps failing.") +
+            emailButton(`${SITE_URL}/admin`, "Open the admin dashboard"),
+        }),
       }, { apiKey });
     } catch (e) {
       console.error("admin failure notification failed:", e);
@@ -261,11 +269,21 @@ async function settleBooking(bookingId: string, extra: Record<string, unknown>) 
       await sendEmail({
         to: booking.parent_email,
         subject: `Booking confirmed — ${eventRow?.title ?? "Suffolk Tennis"}`,
-        html: `<p>Hi ${firstName},</p>
-<p><strong>${booking.child_name}</strong> is booked on <strong>${eventRow?.title ?? "the session"}</strong>${booking.session_slot ? ` (${booking.session_slot})` : ""}${eventRow?.location ? ` at ${eventRow.location}` : ""}.</p>
-<p><a href="${ticketUrl}" style="display:inline-block;padding:12px 24px;background:#0f1c2e;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold">View your entry ticket</a></p>
-<p>Please have the QR code on that page ready to be scanned when you arrive.</p>
-<p>Suffolk Tennis</p>`,
+        html: brandedEmail({
+          title: "Booking confirmed",
+          preheader: `${booking.child_name} is booked on ${eventRow?.title ?? "the session"}`,
+          body:
+            emailParagraph(`Hi ${firstName},`) +
+            emailParagraph(`<strong>${booking.child_name}</strong> is booked on <strong>${eventRow?.title ?? "the session"}</strong>. Your entry ticket is ready.`) +
+            emailDetails([
+              ["Player", booking.child_name],
+              ["Event", eventRow?.title ?? ""],
+              ["Session", booking.session_slot ?? ""],
+              ["Venue", eventRow?.location ?? ""],
+            ]) +
+            emailButton(ticketUrl, "View your entry ticket") +
+            emailNote("Please have the QR code on that page ready to be scanned when you arrive — a coach will check your child in with it."),
+        }),
       }, { apiKey });
     } catch (e) {
       console.error("confirmation email failed:", e);

@@ -3,6 +3,7 @@
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
 
 const Invitee = z.object({
   child_id: z.string().uuid().optional(),
@@ -27,13 +28,24 @@ function invitationEmail(opts: {
   bookUrl: string; reminder: boolean;
 }) {
   const first = (opts.parentName || "there").split(" ")[0];
-  return `<p>Hi ${first},</p>
-<p>${opts.reminder ? "A quick reminder that " : ""}<strong>${opts.childName}</strong> has been invited to <strong>${opts.eventTitle}</strong>${opts.location ? ` at ${opts.location}` : ""}${opts.dateLabel ? ` on ${opts.dateLabel}` : ""}.</p>
-${opts.priceLabel ? `<p><strong>Cost:</strong> ${opts.priceLabel}</p>` : ""}
-<p>Places are limited and offered by invitation, so please book as soon as you can:</p>
-<p><a href="${opts.bookUrl}" style="display:inline-block;padding:12px 24px;background:#0f1c2e;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold">View details &amp; book</a></p>
-<p>This link is personal to ${opts.childName} — please don't forward it.</p>
-<p>Suffolk Tennis</p>`;
+  const lead = `${opts.reminder ? "A quick reminder that " : ""}<strong>${opts.childName}</strong> has been invited to <strong>${opts.eventTitle}</strong>.`;
+  return brandedEmail({
+    title: opts.reminder ? "Your invitation is waiting" : `${opts.childName} is invited`,
+    preheader: `${opts.eventTitle}${opts.dateLabel ? ` — ${opts.dateLabel}` : ""}`,
+    body:
+      emailParagraph(`Hi ${first},`) +
+      emailParagraph(lead) +
+      emailDetails([
+        ["Player", opts.childName],
+        ["Event", opts.eventTitle],
+        ["Date", opts.dateLabel ?? ""],
+        ["Venue", opts.location ?? ""],
+        ["Cost", opts.priceLabel ?? ""],
+      ]) +
+      emailParagraph("Places are limited and offered by invitation, so please book as soon as you can.") +
+      emailButton(opts.bookUrl, "View details &amp; book") +
+      emailNote(`This link is personal to ${opts.childName} — please don’t forward it. You’ll be asked to sign in (or create your free account) before paying.`),
+  });
 }
 
 Deno.serve(async (req) => {

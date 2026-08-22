@@ -8,60 +8,23 @@
 // SEND_EMAIL_HOOK_SECRET.
 import { Webhook } from "npm:standardwebhooks@1.0.0";
 import { sendEmail } from "../_shared/resend.ts";
+import { brandedEmail, emailButton, emailCode, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
 
-const NAVY = "#0e1d39";
-const CYAN = "#00a8e0";
+const codeEmail = (title: string, intro: string, code: string) =>
+  brandedEmail({
+    title,
+    preheader: `Your verification code is ${code}`,
+    body: emailParagraph(intro) + emailCode(code) +
+      emailNote("The code expires shortly. If you didn\u2019t request it, you can safely ignore this email."),
+  });
 
-type HookPayload = {
-  user: { email: string };
-  email_data: {
-    token: string;
-    token_hash: string;
-    redirect_to: string;
-    email_action_type: string;
-    site_url: string;
-    token_new?: string;
-    token_hash_new?: string;
-  };
-};
-
-function codeEmail(title: string, intro: string, code: string): string {
-  return `
-  <div style="font-family: 'Hanken Grotesk', system-ui, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-    <div style="background:${NAVY}; border-radius: 16px 16px 0 0; padding: 28px 32px; text-align:center;">
-      <div style="color:#ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">Suffolk Tennis</div>
-      <div style="color:${CYAN}; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 4px;">Partnership</div>
-    </div>
-    <div style="border:1px solid #e2e8f0; border-top:none; border-radius: 0 0 16px 16px; padding: 32px;">
-      <h1 style="font-size: 20px; margin: 0 0 8px; color:${NAVY};">${title}</h1>
-      <p style="color:#475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">${intro}</p>
-      <div style="background:#f1f5f9; border-radius: 12px; padding: 20px; text-align:center; margin-bottom: 20px;">
-        <div style="font-size: 34px; font-weight: 700; letter-spacing: 0.3em; color:${NAVY};">${code}</div>
-      </div>
-      <p style="color:#94a3b8; font-size: 12px; line-height: 1.6; margin: 0;">
-        The code expires shortly. If you didn't request it, you can safely ignore this email.
-      </p>
-    </div>
-  </div>`;
-}
-
-function linkEmail(title: string, intro: string, url: string, cta: string): string {
-  return `
-  <div style="font-family: 'Hanken Grotesk', system-ui, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-    <div style="background:${NAVY}; border-radius: 16px 16px 0 0; padding: 28px 32px; text-align:center;">
-      <div style="color:#ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">Suffolk Tennis</div>
-      <div style="color:${CYAN}; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 4px;">Partnership</div>
-    </div>
-    <div style="border:1px solid #e2e8f0; border-top:none; border-radius: 0 0 16px 16px; padding: 32px;">
-      <h1 style="font-size: 20px; margin: 0 0 8px; color:${NAVY};">${title}</h1>
-      <p style="color:#475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">${intro}</p>
-      <a href="${url}" style="display:inline-block; background:${CYAN}; color:${NAVY}; font-weight: 700; padding: 13px 26px; border-radius: 10px; text-decoration: none;">${cta}</a>
-      <p style="color:#94a3b8; font-size: 12px; line-height: 1.6; margin: 20px 0 0;">
-        If you didn't request this, you can safely ignore this email.
-      </p>
-    </div>
-  </div>`;
-}
+const linkEmail = (title: string, intro: string, url: string, cta: string) =>
+  brandedEmail({
+    title,
+    preheader: intro,
+    body: emailParagraph(intro) + emailButton(url, cta) +
+      emailNote("If you didn\u2019t request this, you can safely ignore this email."),
+  });
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
