@@ -29,15 +29,24 @@ import { serviceClient, CORS, json } from "../_shared/adminAuth.ts";
 const Body = z.object({
   invitation_token: z.string().regex(/^[a-f0-9]{16,}$/).optional(),
   event_id: z.string().uuid().optional(),
+  child_id: z.string().uuid(),
   parent_name: z.string().trim().min(1).max(120),
-  parent_email: z.string().trim().email().max(255),
   parent_phone: z.string().trim().max(40).optional().or(z.literal("")),
-  child_name: z.string().trim().min(1).max(120),
-  child_dob: z.string().trim().max(20).optional().or(z.literal("")),
   session_slot: z.string().trim().max(200).optional().or(z.literal("")),
   medical_notes: z.string().trim().max(1000).optional().or(z.literal("")),
   photo_consent: z.boolean().optional(),
 });
+
+/** Booking requires a signed-in parent: resolve the caller from their JWT. */
+async function requireUser(req: Request): Promise<{ id: string; email: string } | null> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const { createClient } = await import("npm:@supabase/supabase-js@2");
+  const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!);
+  const { data: { user }, error } = await anon.auth.getUser(authHeader.slice("Bearer ".length));
+  if (error || !user?.email) return null;
+  return { id: user.id, email: user.email };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -55,6 +64,21 @@ Deno.serve(async (req) => {
   }
 
   const admin = serviceClient();
+
+  // --- Onboarding gate: parents must have an account and a registered child
+  // profile (photo included) before they can pay. ---
+  const user = await requireUser(req);
+  if (!user) {
+    return json({ error: "Please sign in or create your account before booking." }, 401);
+  }
+  const { data: child } = await admin
+    .from("children")
+    .select("id, name, date_of_birth, medical_details, medical_needs, parent_user_id")
+    .eq("id", body.child_id)
+    .maybeSingle();
+  if (!child || child.parent_user_id !== user.id) {
+    return json({ error: "Please add this child to your account before booking." }, 403);
+  }
 
   // --- Resolve the event, via invitation token or directly (public only) ---
   let invitation: { id: string; event_id: string; status: string; child_id: string | null } | null = null;
@@ -113,17 +137,11 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Link the booking to a known parent account when the email matches one,
-  // so the booking and ticket show up in their Parent Hub too.
-  let parentUserId: string | null = null;
-  try {
-    const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    parentUserId = users?.users?.find((u) => u.email?.toLowerCase() === body.parent_email.toLowerCase())?.id ?? null;
-  } catch {
-    parentUserId = null;
-  }
-
   const env: StripeEnv = await getActiveStripeEnv(admin);
+  const parentUserId = user.id;
+  const parentEmail = user.email.toLowerCase();
+  const childName = child.name;
+  const childMedical = body.medical_notes || child.medical_details || child.medical_needs || null;
 
   // --- Pending booking row (fulfilled by the webhook) ---
   const { data: booking, error: bookingErr } = await admin
@@ -133,13 +151,13 @@ Deno.serve(async (req) => {
       invitation_id: invitation?.id ?? null,
       parent_user_id: parentUserId,
       parent_name: body.parent_name,
-      parent_email: body.parent_email.toLowerCase(),
+      parent_email: parentEmail,
       parent_phone: body.parent_phone || null,
-      child_id: invitation?.child_id ?? null,
-      child_name: body.child_name,
-      child_dob: body.child_dob || null,
+      child_id: child.id,
+      child_name: childName,
+      child_dob: child.date_of_birth ?? null,
       session_slot: body.session_slot || null,
-      medical_notes: body.medical_notes || null,
+      medical_notes: childMedical,
       photo_consent: !!body.photo_consent,
       amount_pence: amountPence,
       status: "pending",
@@ -164,7 +182,7 @@ Deno.serve(async (req) => {
       ? `${event.title} — monthly programme`
       : event.title;
     const description = [
-      `Player: ${body.child_name}`,
+      `Player: ${childName}`,
       body.session_slot || null,
       event.location || null,
       isProgramme ? `${event.programme_months} monthly payments` : null,
@@ -183,7 +201,7 @@ Deno.serve(async (req) => {
       const feePercent = getConnectedAccountId(env) ? getPlatformFeePercent() : null;
 
       const customer = await stripe.customers.create(
-        { email: body.parent_email, name: body.parent_name, metadata },
+        { email: parentEmail, name: body.parent_name, metadata },
         connectOpts,
       );
       const price = await stripe.prices.create(
@@ -225,8 +243,8 @@ Deno.serve(async (req) => {
           booking_id: booking.id,
           event_id: event.id,
           parent_user_id: parentUserId,
-          parent_email: body.parent_email.toLowerCase(),
-          child_name: body.child_name,
+          parent_email: parentEmail,
+          child_name: childName,
           stripe_subscription_id: subscription.id,
           stripe_customer_id: customer.id,
           stripe_env: env,
@@ -252,7 +270,7 @@ Deno.serve(async (req) => {
           currency: "gbp",
           payment_method_types: ["card"],
           description: `${productName} · ${description}`,
-          receipt_email: body.parent_email,
+          receipt_email: parentEmail,
           ...(applicationFee != null && { application_fee_amount: applicationFee }),
           metadata,
         },

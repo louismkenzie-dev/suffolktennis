@@ -27,10 +27,20 @@ const Auth = () => {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // Deep-link support: /auth?redirect=/book/<token> sends the user back to
+  // where they came from (e.g. an invitation link) after signing in.
+  const redirectTarget = (() => {
+    const r = new URLSearchParams(window.location.search).get("redirect");
+    return r && r.startsWith("/") && !r.startsWith("//") ? r : null;
+  })();
+
   useEffect(() => {
-    // Land each user on their role's dashboard (admin/coach/parent).
-    if (user) roleHomePath(user.id).then((path) => navigate(path));
-  }, [user, navigate]);
+    // Land each user on their role's dashboard (admin/coach/parent), unless
+    // they arrived with an explicit destination.
+    if (!user) return;
+    if (redirectTarget) navigate(redirectTarget);
+    else roleHomePath(user.id).then((path) => navigate(path));
+  }, [user, navigate, redirectTarget]);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +75,7 @@ const Auth = () => {
         if (!rememberMe) {
           // Session will naturally expire if not remembered
         }
-        navigate(data.user ? await roleHomePath(data.user.id) : "/parent-hub");
+        navigate(redirectTarget ?? (data.user ? await roleHomePath(data.user.id) : "/parent-hub"));
       } else {
         const { error } = await supabase.auth.signUp({
           email,

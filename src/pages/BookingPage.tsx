@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import type { Appearance, Stripe, StripeElementsOptions } from "@stripe/stripe-js";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { getStripeFor, type PaymentsEnvironment } from "@/lib/stripe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck } from "lucide-react";
+import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw } from "lucide-react";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
 
 type InvitationPayload = {
@@ -144,17 +145,20 @@ const PaymentStep = ({ setup, priceLabel, onBack }: {
   );
 };
 
+type ChildOption = { id: string; name: string };
+
 const BookingPage = () => {
   const { token } = useParams<{ token: string }>();
+  const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<InvitationPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  const [children, setChildren] = useState<ChildOption[] | null>(null);
+  const [childId, setChildId] = useState("");
   const [parentName, setParentName] = useState("");
-  const [parentEmail, setParentEmail] = useState("");
   const [parentPhone, setParentPhone] = useState("");
-  const [childName, setChildName] = useState("");
   const [sessionSlot, setSessionSlot] = useState("");
   const [medicalNotes, setMedicalNotes] = useState("");
   const [photoConsent, setPhotoConsent] = useState(false);
@@ -171,19 +175,46 @@ const BookingPage = () => {
           setError(data?.error || "This invitation link could not be opened.");
         } else {
           setData(data as InvitationPayload);
-          setParentName(data.invitation.parent_name ?? "");
-          setParentEmail(data.invitation.parent_email ?? "");
-          setChildName(data.invitation.child_name ?? "");
+          setParentName((prev) => prev || (data.invitation.parent_name ?? ""));
         }
       })
       .catch(() => setError("Something went wrong loading your invitation."))
       .finally(() => setLoading(false));
   }, [token]);
 
+  // The signed-in parent's registered children — booking requires picking one.
+  const loadChildren = () => {
+    if (!user) return;
+    (supabase as any)
+      .from("children")
+      .select("id, name")
+      .eq("parent_user_id", user.id)
+      .order("name")
+      .then(({ data: kids }: { data: ChildOption[] | null }) => setChildren(kids ?? []));
+  };
+  useEffect(() => {
+    if (!user) { setChildren(null); return; }
+    loadChildren();
+    setParentName((prev) => prev || ((user.user_metadata?.full_name as string | undefined) ?? ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Preselect the invited child when the names line up.
+  useEffect(() => {
+    if (!children || childId) return;
+    const invited = data?.invitation.child_name?.trim().toLowerCase();
+    const match = invited ? children.find((c) => c.name.trim().toLowerCase() === invited) : null;
+    setChildId(match?.id ?? (children.length === 1 ? children[0].id : ""));
+  }, [children, data, childId]);
+
   const handleContinue = async () => {
     if (!data) return;
-    if (!parentName.trim() || !parentEmail.trim() || !childName.trim()) {
-      setError("Please fill in your name, email and the player's name.");
+    if (!childId) {
+      setError("Please choose which child this booking is for.");
+      return;
+    }
+    if (!parentName.trim()) {
+      setError("Please fill in your name.");
       return;
     }
     setError(null);
@@ -192,10 +223,9 @@ const BookingPage = () => {
       const { data: res, error } = await supabase.functions.invoke("create-booking-checkout", {
         body: {
           invitation_token: token,
+          child_id: childId,
           parent_name: parentName.trim(),
-          parent_email: parentEmail.trim(),
           parent_phone: parentPhone.trim(),
-          child_name: childName.trim(),
           session_slot: sessionSlot,
           medical_notes: medicalNotes.trim(),
           photo_consent: photoConsent,
@@ -273,7 +303,7 @@ const BookingPage = () => {
         ) : (
           <>
             <span className="inline-block px-3 py-1 rounded-full bg-lta-yellow/15 text-lta-yellow text-[11px] font-bold uppercase tracking-widest mb-3">
-              Invitation for {data.invitation.child_name || childName || "your player"}
+              Invitation for {data.invitation.child_name || "your player"}
             </span>
             <h1 className="font-display text-3xl md:text-4xl font-black">{data.event.title}</h1>
             <div className="mt-3 space-y-1.5 text-sm text-primary-foreground/80">
@@ -322,25 +352,70 @@ const BookingPage = () => {
               <Elements stripe={stripePromise} options={elementsOptions}>
                 <PaymentStep setup={setup} priceLabel={payLabel} onBack={() => setSetup(null)} />
               </Elements>
+            ) : authLoading ? (
+              <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>
+            ) : !user ? (
+              /* Onboarding gate 1: an account is required before booking. */
+              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
+                <h3 className="font-display font-bold text-lg">Sign in to book this place</h3>
+                <p className="text-sm text-primary-foreground/70">
+                  Bookings are made through your Suffolk Tennis account, so your child's
+                  profile, tickets and coach feedback all live in one place. It takes a
+                  minute to set up.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button asChild className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-6">
+                    <Link to={`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`}><UserPlus className="w-4 h-4 mr-2" /> Create free account</Link>
+                  </Button>
+                  <Button asChild variant="outline" className="h-12 px-6 border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 hover:text-primary-foreground font-bold">
+                    <Link to={`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`}><LogIn className="w-4 h-4 mr-2" /> Sign in</Link>
+                  </Button>
+                </div>
+                <p className="text-[11px] text-primary-foreground/50">You'll come straight back here to finish booking.</p>
+              </div>
+            ) : children && children.length === 0 ? (
+              /* Onboarding gate 2: the child must be registered (photo included). */
+              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
+                <h3 className="font-display font-bold text-lg">
+                  Add {data.invitation.child_name ?? "your child"} to your account
+                </h3>
+                <p className="text-sm text-primary-foreground/70">
+                  Before booking, add your child's profile (including a photo — coaches
+                  use it on the session register). Then come back to this page to pay.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button asChild className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-6">
+                    <a href="/parent-hub?tab=children" target="_blank" rel="noreferrer"><UserPlus className="w-4 h-4 mr-2" /> Add my child</a>
+                  </Button>
+                  <Button variant="outline" onClick={loadChildren} className="h-12 px-6 border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 hover:text-primary-foreground font-bold">
+                    <RefreshCcw className="w-4 h-4 mr-2" /> I've added them
+                  </Button>
+                </div>
+              </div>
             ) : (
               <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <h3 className="font-display font-bold text-lg">Book this place</h3>
+                <p className="text-xs text-primary-foreground/50 -mt-2">Booking as {user.email}</p>
                 <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-primary-foreground/80">Which child is this for?</Label>
+                    <Select value={childId} onValueChange={setChildId}>
+                      <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground"><SelectValue placeholder="Choose your child" /></SelectTrigger>
+                      <SelectContent>
+                        {(children ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <a href="/parent-hub?tab=children" target="_blank" rel="noreferrer" className="text-[11px] text-lta-cyan hover:underline mt-1 inline-block">
+                      Add another child
+                    </a>
+                  </div>
                   <div>
                     <Label className="text-primary-foreground/80">Your name</Label>
                     <Input value={parentName} onChange={(e) => setParentName(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
                   </div>
                   <div>
-                    <Label className="text-primary-foreground/80">Your email</Label>
-                    <Input type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
-                  </div>
-                  <div>
                     <Label className="text-primary-foreground/80">Phone (optional)</Label>
                     <Input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
-                  </div>
-                  <div>
-                    <Label className="text-primary-foreground/80">Player's name</Label>
-                    <Input value={childName} onChange={(e) => setChildName(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
                   </div>
                 </div>
                 {Array.isArray(data.event.session_slots) && data.event.session_slots.length > 0 && (
@@ -355,7 +430,7 @@ const BookingPage = () => {
                   </div>
                 )}
                 <div>
-                  <Label className="text-primary-foreground/80">Medical needs we should know about (optional)</Label>
+                  <Label className="text-primary-foreground/80">Anything else for the coaches? (optional — your child's profile medical info is already shared)</Label>
                   <Textarea value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" rows={2} />
                 </div>
                 <label className="flex items-start gap-2 text-sm text-primary-foreground/80 cursor-pointer">
