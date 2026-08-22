@@ -149,7 +149,7 @@ type ChildOption = { id: string; name: string };
 
 const BookingPage = () => {
   const { token } = useParams<{ token: string }>();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const [data, setData] = useState<InvitationPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -372,6 +372,24 @@ const BookingPage = () => {
                   </Button>
                 </div>
                 <p className="text-[11px] text-primary-foreground/50">You'll come straight back here to finish booking.</p>
+              </div>
+            ) : data.invitation.parent_email &&
+              user.email?.toLowerCase() !== data.invitation.parent_email.toLowerCase() ? (
+              /* Personal invitation: only the invited account can book with it. */
+              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
+                <AlertCircle className="w-8 h-8 text-lta-yellow mx-auto" />
+                <h3 className="font-display font-bold text-lg">This invitation isn't for this account</h3>
+                <p className="text-sm text-primary-foreground/70">
+                  It was sent to <strong className="text-primary-foreground">{data.invitation.parent_email}</strong>, but
+                  you're signed in as <strong className="text-primary-foreground">{user.email}</strong>. Please switch to
+                  the invited account to book.
+                </p>
+                <Button
+                  onClick={async () => { await signOut(); window.location.assign(`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`); }}
+                  className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-6"
+                >
+                  <LogIn className="w-4 h-4 mr-2" /> Switch account
+                </Button>
               </div>
             ) : children && children.length === 0 ? (
               /* Onboarding gate 2: the child must be registered (photo included). */

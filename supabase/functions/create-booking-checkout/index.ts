@@ -87,12 +87,22 @@ Deno.serve(async (req) => {
   if (body.invitation_token) {
     const { data } = await admin
       .from("booking_invitations")
-      .select("id, event_id, status, child_id")
+      .select("id, event_id, status, child_id, parent_email, parent_user_id")
       .eq("token", body.invitation_token)
       .maybeSingle();
     if (!data) return json({ error: "Invitation not found" }, 404);
     if (data.status === "revoked" || data.status === "expired") {
       return json({ error: "This invitation is no longer valid" }, 410);
+    }
+    // The invitation is personal: only the account it was addressed to can
+    // book with it (linked account id, or the invited email address).
+    const invitedEmail = (data.parent_email ?? "").toLowerCase();
+    const isInvitee = data.parent_user_id === user.id
+      || (invitedEmail !== "" && invitedEmail === user.email.toLowerCase());
+    if (!isInvitee) {
+      return json({
+        error: "This invitation was sent to a different email address — please sign in with the account it was emailed to.",
+      }, 403);
     }
     invitation = data;
     eventId = data.event_id;
