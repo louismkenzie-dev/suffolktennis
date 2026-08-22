@@ -1,319 +1,155 @@
-import * as React from 'npm:react@18.3.1'
-import { renderAsync } from 'npm:@react-email/components@0.0.22'
-import { parseEmailWebhookPayload } from 'npm:@lovable.dev/email-js'
-import { WebhookError, verifyWebhookRequest } from 'npm:@lovable.dev/webhooks-js'
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { SignupEmail } from '../_shared/email-templates/signup.tsx'
-import { InviteEmail } from '../_shared/email-templates/invite.tsx'
-import { MagicLinkEmail } from '../_shared/email-templates/magic-link.tsx'
-import { RecoveryEmail } from '../_shared/email-templates/recovery.tsx'
-import { EmailChangeEmail } from '../_shared/email-templates/email-change.tsx'
-import { ReauthenticationEmail } from '../_shared/email-templates/reauthentication.tsx'
+// Supabase Auth "Send Email" hook: GoTrue calls this instead of sending its
+// own emails, and we deliver branded messages via Resend. Signups (and magic
+// links / email changes) get a 6-digit verification CODE the user types into
+// the site; password recovery gets an action link back to /reset-password.
+//
+// Setup (dashboard): Authentication → Hooks → Send Email → this function,
+// and paste the generated secret into Edge Function secrets as
+// SEND_EMAIL_HOOK_SECRET.
+import { Webhook } from "npm:standardwebhooks@1.0.0";
+import { sendEmail } from "../_shared/resend.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-lovable-signature, x-lovable-timestamp, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+const NAVY = "#0e1d39";
+const CYAN = "#00a8e0";
+
+type HookPayload = {
+  user: { email: string };
+  email_data: {
+    token: string;
+    token_hash: string;
+    redirect_to: string;
+    email_action_type: string;
+    site_url: string;
+    token_new?: string;
+    token_hash_new?: string;
+  };
+};
+
+function codeEmail(title: string, intro: string, code: string): string {
+  return `
+  <div style="font-family: 'Hanken Grotesk', system-ui, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+    <div style="background:${NAVY}; border-radius: 16px 16px 0 0; padding: 28px 32px; text-align:center;">
+      <div style="color:#ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">Suffolk Tennis</div>
+      <div style="color:${CYAN}; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 4px;">Partnership</div>
+    </div>
+    <div style="border:1px solid #e2e8f0; border-top:none; border-radius: 0 0 16px 16px; padding: 32px;">
+      <h1 style="font-size: 20px; margin: 0 0 8px; color:${NAVY};">${title}</h1>
+      <p style="color:#475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">${intro}</p>
+      <div style="background:#f1f5f9; border-radius: 12px; padding: 20px; text-align:center; margin-bottom: 20px;">
+        <div style="font-size: 34px; font-weight: 700; letter-spacing: 0.3em; color:${NAVY};">${code}</div>
+      </div>
+      <p style="color:#94a3b8; font-size: 12px; line-height: 1.6; margin: 0;">
+        The code expires shortly. If you didn't request it, you can safely ignore this email.
+      </p>
+    </div>
+  </div>`;
 }
 
-const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: 'Confirm your email',
-  invite: "You've been invited",
-  magiclink: 'Your login link',
-  recovery: 'Reset your password',
-  email_change: 'Confirm your new email',
-  reauthentication: 'Your verification code',
-}
-
-// Template mapping
-const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
-  signup: SignupEmail,
-  invite: InviteEmail,
-  magiclink: MagicLinkEmail,
-  recovery: RecoveryEmail,
-  email_change: EmailChangeEmail,
-  reauthentication: ReauthenticationEmail,
-}
-
-// Configuration
-const SITE_NAME = "suffolk-tennis-hub"
-const SENDER_DOMAIN = "notify.suffolktennis.online"
-const ROOT_DOMAIN = "suffolktennis.online"
-const FROM_DOMAIN = "suffolktennis.online" // Domain shown in From address (may be root or sender subdomain)
-
-// Sample data for preview mode ONLY (not used in actual email sending).
-// URLs are baked in at scaffold time from the project's real data.
-// The sample email uses a fixed placeholder (RFC 6761 .test TLD) so the Go backend
-// can always find-and-replace it with the actual recipient when sending test emails,
-// even if the project's domain has changed since the template was scaffolded.
-const SAMPLE_PROJECT_URL = "https://suffolk-tennis-hub.lovable.app"
-const SAMPLE_EMAIL = "user@example.test"
-const SAMPLE_DATA: Record<string, object> = {
-  signup: {
-    siteName: SITE_NAME,
-    siteUrl: SAMPLE_PROJECT_URL,
-    recipient: SAMPLE_EMAIL,
-    confirmationUrl: SAMPLE_PROJECT_URL,
-  },
-  magiclink: {
-    siteName: SITE_NAME,
-    confirmationUrl: SAMPLE_PROJECT_URL,
-  },
-  recovery: {
-    siteName: SITE_NAME,
-    confirmationUrl: SAMPLE_PROJECT_URL,
-  },
-  invite: {
-    siteName: SITE_NAME,
-    siteUrl: SAMPLE_PROJECT_URL,
-    confirmationUrl: SAMPLE_PROJECT_URL,
-  },
-  email_change: {
-    siteName: SITE_NAME,
-    oldEmail: SAMPLE_EMAIL,
-    email: SAMPLE_EMAIL,
-    newEmail: SAMPLE_EMAIL,
-    confirmationUrl: SAMPLE_PROJECT_URL,
-  },
-  reauthentication: {
-    token: '123456',
-  },
-}
-
-// Preview endpoint handler - returns rendered HTML without sending email
-async function handlePreview(req: Request): Promise<Response> {
-  const previewCorsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, content-type',
-  }
-
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: previewCorsHeaders })
-  }
-
-  const apiKey = Deno.env.get('LOVABLE_API_KEY')
-  const authHeader = req.headers.get('Authorization')
-
-  if (!apiKey || authHeader !== `Bearer ${apiKey}`) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-      headers: { ...previewCorsHeaders, 'Content-Type': 'application/json' },
-    })
-  }
-
-  let type: string
-  try {
-    const body = await req.json()
-    type = body.type
-  } catch (error) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), {
-      status: 400,
-      headers: { ...previewCorsHeaders, 'Content-Type': 'application/json' },
-    })
-  }
-
-  const EmailTemplate = EMAIL_TEMPLATES[type]
-
-  if (!EmailTemplate) {
-    return new Response(JSON.stringify({ error: `Unknown email type: ${type}` }), {
-      status: 400,
-      headers: { ...previewCorsHeaders, 'Content-Type': 'application/json' },
-    })
-  }
-
-  const sampleData = SAMPLE_DATA[type] || {}
-  const html = await renderAsync(React.createElement(EmailTemplate, sampleData))
-
-  return new Response(html, {
-    status: 200,
-    headers: { ...previewCorsHeaders, 'Content-Type': 'text/html; charset=utf-8' },
-  })
-}
-
-// Webhook handler - verifies signature and sends email
-async function handleWebhook(req: Request): Promise<Response> {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY')
-
-  if (!apiKey) {
-    console.error('LOVABLE_API_KEY not configured')
-    return new Response(
-      JSON.stringify({ error: 'Server configuration error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-
-  // Verify signature + timestamp, then parse payload.
-  let payload: any
-  let run_id = ''
-  try {
-    const verified = await verifyWebhookRequest({
-      req,
-      secret: apiKey,
-      parser: parseEmailWebhookPayload,
-    })
-    payload = verified.payload
-    run_id = payload.run_id
-  } catch (error) {
-    if (error instanceof WebhookError) {
-      switch (error.code) {
-        case 'invalid_signature':
-        case 'missing_timestamp':
-        case 'invalid_timestamp':
-        case 'stale_timestamp':
-          console.error('Invalid webhook signature', { error: error.message })
-          return new Response(JSON.stringify({ error: 'Invalid signature' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        case 'invalid_payload':
-        case 'invalid_json':
-          console.error('Invalid webhook payload', { error: error.message })
-          return new Response(
-            JSON.stringify({ error: 'Invalid webhook payload' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-      }
-    }
-
-    console.error('Webhook verification failed', { error })
-    return new Response(
-      JSON.stringify({ error: 'Invalid webhook payload' }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-
-  if (!run_id) {
-    console.error('Webhook payload missing run_id')
-    return new Response(
-      JSON.stringify({ error: 'Invalid webhook payload' }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
-  }
-
-  if (payload.version !== '1') {
-    console.error('Unsupported payload version', { version: payload.version, run_id })
-    return new Response(
-      JSON.stringify({ error: `Unsupported payload version: ${payload.version}` }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
-  }
-
-  // The email action type is in payload.data.action_type (e.g., "signup", "recovery")
-  // payload.type is the hook event type ("auth")
-  const emailType = payload.data.action_type
-  console.log('Received auth event', { emailType, email: payload.data.email, run_id })
-
-  const EmailTemplate = EMAIL_TEMPLATES[emailType]
-  if (!EmailTemplate) {
-    console.error('Unknown email type', { emailType, run_id })
-    return new Response(
-      JSON.stringify({ error: `Unknown email type: ${emailType}` }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-
-  // Build template props from payload.data (HookData structure)
-  const templateProps = {
-    siteName: SITE_NAME,
-    siteUrl: `https://${ROOT_DOMAIN}`,
-    recipient: payload.data.email,
-    confirmationUrl: payload.data.url,
-    token: payload.data.token,
-    email: payload.data.email,
-    oldEmail: payload.data.old_email,
-    newEmail: payload.data.new_email,
-  }
-
-  // Render React Email to HTML and plain text
-  const html = await renderAsync(React.createElement(EmailTemplate, templateProps))
-  const text = await renderAsync(React.createElement(EmailTemplate, templateProps), {
-    plainText: true,
-  })
-
-  // Enqueue email for async processing by the dispatcher (process-email-queue).
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  )
-
-  const messageId = crypto.randomUUID()
-
-  // Log pending BEFORE enqueue so we have a record even if enqueue crashes
-  await supabase.from('email_send_log').insert({
-    message_id: messageId,
-    template_name: emailType,
-    recipient_email: payload.data.email,
-    status: 'pending',
-  })
-
-  const { error: enqueueError } = await supabase.rpc('enqueue_email', {
-    queue_name: 'auth_emails',
-    payload: {
-      run_id,
-      message_id: messageId,
-      to: payload.data.email,
-      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-      sender_domain: SENDER_DOMAIN,
-      subject: EMAIL_SUBJECTS[emailType] || 'Notification',
-      html,
-      text,
-      purpose: 'transactional',
-      label: emailType,
-      queued_at: new Date().toISOString(),
-    },
-  })
-
-  if (enqueueError) {
-    console.error('Failed to enqueue auth email', { error: enqueueError, run_id, emailType })
-    await supabase.from('email_send_log').insert({
-      message_id: messageId,
-      template_name: emailType,
-      recipient_email: payload.data.email,
-      status: 'failed',
-      error_message: 'Failed to enqueue email',
-    })
-    return new Response(JSON.stringify({ error: 'Failed to enqueue email' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  }
-
-  console.log('Auth email enqueued', { emailType, email: payload.data.email, run_id })
-
-  return new Response(
-    JSON.stringify({ success: true, queued: true }),
-    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  )
+function linkEmail(title: string, intro: string, url: string, cta: string): string {
+  return `
+  <div style="font-family: 'Hanken Grotesk', system-ui, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+    <div style="background:${NAVY}; border-radius: 16px 16px 0 0; padding: 28px 32px; text-align:center;">
+      <div style="color:#ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">Suffolk Tennis</div>
+      <div style="color:${CYAN}; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 4px;">Partnership</div>
+    </div>
+    <div style="border:1px solid #e2e8f0; border-top:none; border-radius: 0 0 16px 16px; padding: 32px;">
+      <h1 style="font-size: 20px; margin: 0 0 8px; color:${NAVY};">${title}</h1>
+      <p style="color:#475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">${intro}</p>
+      <a href="${url}" style="display:inline-block; background:${CYAN}; color:${NAVY}; font-weight: 700; padding: 13px 26px; border-radius: 10px; text-decoration: none;">${cta}</a>
+      <p style="color:#94a3b8; font-size: 12px; line-height: 1.6; margin: 20px 0 0;">
+        If you didn't request this, you can safely ignore this email.
+      </p>
+    </div>
+  </div>`;
 }
 
 Deno.serve(async (req) => {
-  const url = new URL(req.url)
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
-  // Handle CORS preflight for main endpoint
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+  const hookSecret = Deno.env.get("SEND_EMAIL_HOOK_SECRET");
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  if (!hookSecret || !resendKey) {
+    console.error("auth-email-hook missing SEND_EMAIL_HOOK_SECRET or RESEND_API_KEY");
+    return new Response(JSON.stringify({ error: "Hook not configured" }), { status: 500 });
   }
 
-  // Route to preview handler for /preview path
-  if (url.pathname.endsWith('/preview')) {
-    return handlePreview(req)
-  }
-
-  // Main webhook handler
+  let payload: HookPayload;
   try {
-    return await handleWebhook(req)
-  } catch (error) {
-    console.error('Webhook handler error:', error)
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    const raw = await req.text();
+    const headers = Object.fromEntries(req.headers.entries());
+    const wh = new Webhook(hookSecret.replace(/^v1,whsec_/, "").replace(/^whsec_/, ""));
+    payload = wh.verify(raw, headers) as HookPayload;
+  } catch (e) {
+    console.error("auth-email-hook signature verification failed:", e);
+    return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401 });
   }
-})
+
+  const { user, email_data } = payload;
+  const action = email_data.email_action_type;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+
+  let subject: string;
+  let html: string;
+
+  switch (action) {
+    case "signup":
+      subject = "Your Suffolk Tennis verification code";
+      html = codeEmail(
+        "Confirm your email",
+        "Welcome to Suffolk Tennis! Enter this code on the sign-up page to verify your email address:",
+        email_data.token,
+      );
+      break;
+    case "magic_link":
+    case "magiclink":
+      subject = "Your Suffolk Tennis sign-in code";
+      html = codeEmail("Sign in to Suffolk Tennis", "Enter this code to sign in:", email_data.token);
+      break;
+    case "email_change":
+      subject = "Confirm your new email address";
+      html = codeEmail(
+        "Confirm your new email",
+        "Enter this code to confirm the change to your Suffolk Tennis account email:",
+        email_data.token_new ?? email_data.token,
+      );
+      break;
+    case "reauthentication":
+      subject = "Your Suffolk Tennis verification code";
+      html = codeEmail("Verify it's you", "Enter this code to continue:", email_data.token);
+      break;
+    case "recovery": {
+      const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(email_data.token_hash)}&type=recovery&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
+      subject = "Reset your Suffolk Tennis password";
+      html = linkEmail(
+        "Reset your password",
+        "Click the button below to choose a new password for your Suffolk Tennis account.",
+        verifyUrl,
+        "Reset password",
+      );
+      break;
+    }
+    case "invite": {
+      const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(email_data.token_hash)}&type=invite&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
+      subject = "You've been invited to Suffolk Tennis";
+      html = linkEmail(
+        "You're invited",
+        "You've been invited to join Suffolk Tennis. Click below to set up your account.",
+        verifyUrl,
+        "Accept invitation",
+      );
+      break;
+    }
+    default:
+      subject = "Your Suffolk Tennis verification code";
+      html = codeEmail("Verification code", "Enter this code to continue:", email_data.token);
+  }
+
+  try {
+    await sendEmail({ to: user.email, subject, html }, { apiKey: resendKey });
+  } catch (e) {
+    console.error("auth email send failed:", e);
+    return new Response(JSON.stringify({ error: "Email send failed" }), { status: 500 });
+  }
+
+  return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } });
+});

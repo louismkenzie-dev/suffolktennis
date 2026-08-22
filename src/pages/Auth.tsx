@@ -23,6 +23,11 @@ const Auth = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [forgotPassword, setForgotPassword] = useState(false);
+  // Signup email verification: code entry step (6-digit OTP sent via Resend).
+  const [verifyStep, setVerifyStep] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -77,7 +82,7 @@ const Auth = () => {
         }
         navigate(redirectTarget ?? (data.user ? await roleHomePath(data.user.id) : "/parent-hub"));
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -85,15 +90,60 @@ const Auth = () => {
           },
         });
         if (error) throw error;
-        toast({
-          title: "Check your email",
-          description: "We've sent you a verification link. Please check your email to confirm your account.",
-        });
+        if (data.session) {
+          // Confirmations disabled — signed straight in.
+          navigate(redirectTarget ?? "/parent-hub");
+        } else {
+          // Email verification: a 6-digit code is sent via Resend (auth email
+          // hook); the user types it here instead of clicking a link.
+          setVerifyStep(true);
+          toast({
+            title: "Check your email",
+            description: "We've emailed you a 6-digit verification code.",
+          });
+        }
       }
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otpCode.trim().length < 6) {
+      toast({ title: "Enter the code", description: "Please enter the 6-digit code from your email.", variant: "destructive" });
+      return;
+    }
+    setVerifying(true);
+    try {
+      // 'signup' covers signup-confirmation OTPs; fall back to 'email' for
+      // projects where GoTrue expects the generic email type.
+      let { data, error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: "signup" });
+      if (error) {
+        ({ data, error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: "email" }));
+      }
+      if (error) throw error;
+      toast({ title: "Email verified", description: "Welcome to Suffolk Tennis!" });
+      navigate(redirectTarget ?? (data.user ? await roleHomePath(data.user.id) : "/parent-hub"));
+    } catch (error: any) {
+      toast({ title: "Invalid code", description: error.message ?? "Please check the code and try again.", variant: "destructive" });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: "signup", email });
+      if (error) throw error;
+      toast({ title: "Code resent", description: `We've emailed a new code to ${email}.` });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -149,12 +199,43 @@ const Auth = () => {
           </div>
 
           <h2 className="font-display text-3xl font-black text-primary-foreground mb-2">
-            {forgotPassword ? "Reset Password" : isLogin ? "Welcome Back" : "Create Account"}
+            {verifyStep ? "Check Your Email" : forgotPassword ? "Reset Password" : isLogin ? "Welcome Back" : "Create Account"}
           </h2>
           <p className="text-primary-foreground/50 font-body mb-8">
-            {forgotPassword ? "Enter your email and we'll send you a reset link" : isLogin ? "Sign in to access your Parent Hub" : "Join the Suffolk Tennis community"}
+            {verifyStep
+              ? `Enter the 6-digit code we sent to ${email}`
+              : forgotPassword ? "Enter your email and we'll send you a reset link" : isLogin ? "Sign in to access your Parent Hub" : "Join the Suffolk Tennis community"}
           </p>
 
+          {verifyStep ? (
+            <form onSubmit={handleVerifyCode} className="space-y-4">
+              <input
+                autoFocus
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                className="w-full text-center text-3xl tracking-[0.5em] font-bold rounded-xl bg-white/5 border border-white/15 text-primary-foreground py-4 focus:outline-none focus:border-lta-cyan"
+              />
+              <button
+                type="submit"
+                disabled={verifying}
+                className="w-full py-3.5 rounded-xl bg-lta-cyan text-suffolk-navy font-display font-bold hover:brightness-110 transition-all disabled:opacity-60"
+              >
+                {verifying ? "Verifying..." : "Verify & Continue"}
+              </button>
+              <div className="flex justify-between text-sm">
+                <button type="button" onClick={handleResendCode} disabled={resending} className="text-lta-cyan hover:underline disabled:opacity-60">
+                  {resending ? "Sending..." : "Resend code"}
+                </button>
+                <button type="button" onClick={() => { setVerifyStep(false); setOtpCode(""); }} className="text-primary-foreground/50 hover:text-primary-foreground">
+                  Back
+                </button>
+              </div>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <>
@@ -257,6 +338,7 @@ const Auth = () => {
               <ArrowRight size={18} />
             </button>
           </form>
+          )}
 
           <p className="text-center text-primary-foreground/40 font-body mt-6">
             {forgotPassword ? (
