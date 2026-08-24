@@ -116,3 +116,14 @@ Deno.serve(async (req) => {
 
   return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } });
 });
+
+interface HookPayload {
+  user: { email: string };
+  email_data: {
+    token: string;
+    token_hash: string;
+    token_new?: string;
+    redirect_to: string;
+    email_action_type: string;
+  };
+}
