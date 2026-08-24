@@ -53,9 +53,21 @@ export function emailDetails(rows: Array<[string, string]>): string {
 /**
  * Wraps content in the Suffolk Tennis Partnership shell.
  * `preheader` is the grey preview line email clients show next to the subject.
+ * `hero` renders a full-bleed image between the header and the content —
+ * pass a file that lives in public/email/ (absolute URLs required in email).
  */
-export function brandedEmail(opts: { title: string; preheader?: string; body: string }): string {
-  const { title, preheader = "", body } = opts;
+export function brandedEmail(opts: {
+  title: string;
+  preheader?: string;
+  body: string;
+  hero?: { file: string; alt: string };
+}): string {
+  const { title, preheader = "", body, hero } = opts;
+  const heroRow = hero
+    ? `<tr><td style="padding: 0; font-size: 0; line-height: 0;">
+          <img src="${asset(hero.file)}" width="600" alt="${hero.alt}" style="display: block; width: 100%; height: auto; border: 0;">
+        </td></tr>`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -77,7 +89,7 @@ export function brandedEmail(opts: { title: string; preheader?: string; body: st
           <img src="${asset("logo.png")}" width="240" alt="LTA Suffolk Tennis Partnership" style="display: block; width: 240px; max-width: 70%; height: auto; border: 0;">
         </td></tr>
         <tr><td style="height: 4px; background: ${PINK}; font-size: 0; line-height: 0;">&nbsp;</td></tr>
-
+        ${heroRow}
         <!-- Content -->
         <tr><td bgcolor="#FFFFFF" style="padding: 32px 32px 34px; font-family: ${FONT}; color: ${INK};">
           <h1 style="margin: 0 0 12px; font-size: 22px; line-height: 1.25; font-weight: 700; color: ${NAVY};">${title}</h1>
