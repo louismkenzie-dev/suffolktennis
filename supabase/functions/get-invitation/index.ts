@@ -3,6 +3,7 @@
 // its sessions, even for private events an anonymous visitor could never
 // select directly. Marks the invitation as opened on first view.
 import { serviceClient, CORS, json } from "../_shared/adminAuth.ts";
+import { getBookingsStatus } from "../_shared/paymentsMode.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -62,7 +63,12 @@ Deno.serve(async (req) => {
       .eq("status", "invited");
   }
 
+  // Pre-launch wall: the page renders a "coming soon" panel rather than the
+  // checkout. create-booking-checkout enforces the same switch server-side.
+  const bookingsStatus = await getBookingsStatus(admin);
+
   return json({
+    bookings_status: bookingsStatus,
     invitation: {
       id: invitation.id,
       status: invitation.status,

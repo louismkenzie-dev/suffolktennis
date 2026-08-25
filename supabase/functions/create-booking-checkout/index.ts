@@ -23,7 +23,7 @@ import {
   getConnectedAccountId,
   getPlatformFeePercent,
 } from "../_shared/stripe.ts";
-import { getActiveStripeEnv } from "../_shared/paymentsMode.ts";
+import { BOOKINGS_COMING_SOON_MESSAGE, getActiveStripeEnv, getBookingsStatus } from "../_shared/paymentsMode.ts";
 import { serviceClient, CORS, json } from "../_shared/adminAuth.ts";
 
 const Body = z.object({
@@ -64,6 +64,13 @@ Deno.serve(async (req) => {
   }
 
   const admin = serviceClient();
+
+  // --- Pre-launch wall: no checkout can be created while bookings are marked
+  // coming soon. Enforced here, not just in the UI, so a shared link or a
+  // direct API call can't reach the sandbox payment form. ---
+  if (await getBookingsStatus(admin) !== "open") {
+    return json({ error: BOOKINGS_COMING_SOON_MESSAGE, coming_soon: true }, 503);
+  }
 
   // --- Onboarding gate: parents must have an account and a registered child
   // profile (photo included) before they can pay. ---

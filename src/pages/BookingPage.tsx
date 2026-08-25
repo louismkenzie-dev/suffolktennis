@@ -11,10 +11,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw } from "lucide-react";
+import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, Clock } from "lucide-react";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
 
 type InvitationPayload = {
+  /** Pre-launch wall — "coming_soon" until Suffolk Tennis opens bookings. */
+  bookings_status?: "coming_soon" | "open";
   invitation: { id: string; status: string; child_name: string | null; parent_name: string | null; parent_email: string };
   event: {
     id: string; title: string; description: string | null; event_date: string | null;
@@ -347,6 +349,24 @@ const BookingPage = () => {
                 <Ticket className="w-8 h-8 text-lta-cyan mx-auto mb-3" />
                 <p className="font-bold">This place is already booked.</p>
                 <p className="text-sm text-primary-foreground/70 mt-1">Your entry ticket was emailed to you — check your inbox for the confirmation.</p>
+              </div>
+            ) : data.bookings_status !== "open" ? (
+              /* Pre-launch wall: bookings (and payment) are not open yet. */
+              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
+                <Clock className="w-8 h-8 text-lta-cyan mx-auto" />
+                <h3 className="font-display font-bold text-lg">Booking opens soon</h3>
+                <p className="text-sm text-primary-foreground/70">
+                  We're putting the finishing touches to the new Suffolk Tennis booking
+                  system. Your place is noted against this invitation — you'll be able to
+                  confirm and pay for it here shortly, and we'll email you the moment
+                  booking opens.
+                </p>
+                <p className="text-xs text-primary-foreground/50">
+                  Keep this link — it stays valid. Questions in the meantime:{" "}
+                  <a href="mailto:enquiries@suffolktennis.online" className="text-lta-cyan hover:underline">
+                    enquiries@suffolktennis.online
+                  </a>
+                </p>
               </div>
             ) : setup && elementsOptions && stripePromise ? (
               <Elements stripe={stripePromise} options={elementsOptions}>
