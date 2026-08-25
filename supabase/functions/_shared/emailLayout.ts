@@ -207,7 +207,7 @@ export function brandedEmail(opts: {
       </table>
 
       <div style="font-family: ${FONT}; font-size: 11px; color: ${MUTED}; padding: 14px 8px 0; max-width: 600px;">
-        You're receiving this because you have a Suffolk Tennis Partnership account or were invited to one of our sessions.
+        You're receiving this because you have a Suffolk Tennis Partnership account or are a regularly competing Suffolk junior.
       </div>
 
     </td></tr>
