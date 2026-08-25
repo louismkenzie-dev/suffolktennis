@@ -128,8 +128,14 @@ export function brandedEmail(opts: {
   body?: string;
   sections?: EmailSection[];
   hero?: { file: string; alt: string };
+  /**
+   * Campaign email only. Transactional mail (verification codes, booking
+   * confirmations, tickets) must NOT pass this: those are service messages
+   * nobody can opt out of while they still hold a booking.
+   */
+  unsubscribeUrl?: string;
 }): string {
-  const { title, preheader = "", body, sections, hero } = opts;
+  const { title, preheader = "", body, sections, hero, unsubscribeUrl } = opts;
 
   const heroRow = hero
     ? `<tr><td style="padding: 0; font-size: 0; line-height: 0;">
@@ -206,8 +212,12 @@ export function brandedEmail(opts: {
 
       </table>
 
-      <div style="font-family: ${FONT}; font-size: 11px; color: ${MUTED}; padding: 14px 8px 0; max-width: 600px;">
-        You're receiving this because you have a Suffolk Tennis Partnership account or are a regularly competing Suffolk junior.
+      <div style="font-family: ${FONT}; font-size: 11px; line-height: 1.7; color: ${MUTED}; padding: 14px 8px 0; max-width: 600px;">
+        You're receiving this because you have a Suffolk Tennis Partnership account or are a regularly competing Suffolk junior.${
+          unsubscribeUrl
+            ? `<br><a href="${unsubscribeUrl}" style="color: ${MUTED}; text-decoration: underline;">Unsubscribe from county programme updates</a>`
+            : ""
+        }
       </div>
 
     </td></tr>
