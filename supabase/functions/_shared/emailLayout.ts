@@ -129,9 +129,14 @@ export function brandedEmail(opts: {
   sections?: EmailSection[];
   hero?: { file: string; alt: string };
   /**
-   * Campaign email only. Transactional mail (verification codes, booking
-   * confirmations, tickets) must NOT pass this: those are service messages
-   * nobody can opt out of while they still hold a booking.
+   * Per-recipient unsubscribe link, shown in the footer. Every outgoing email
+   * carries one so nobody is ever stuck replying to opt out.
+   *
+   * Unsubscribing means "no more county programme updates" — it does not stop
+   * verification codes, booking confirmations or entry tickets, which are the
+   * recipient's own account and bookings rather than updates. The confirmation
+   * page spells that out, and the campaign send filters on it via
+   * public.campaign_recipients.
    */
   unsubscribeUrl?: string;
 }): string {

@@ -4,6 +4,7 @@ import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
 import { sendEmail } from "../_shared/resend.ts";
 import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
+import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
 
 const Invitee = z.object({
   child_id: z.string().uuid().optional(),
@@ -25,11 +26,12 @@ const SITE_URL = Deno.env.get("SITE_URL") ?? "https://suffolktennis.online";
 function invitationEmail(opts: {
   parentName: string; childName: string; eventTitle: string;
   dateLabel: string | null; location: string | null; priceLabel: string | null;
-  bookUrl: string; reminder: boolean;
+  bookUrl: string; reminder: boolean; unsubscribeUrl?: string;
 }) {
   const first = (opts.parentName || "there").split(" ")[0];
   const lead = `${opts.reminder ? "A quick reminder that " : ""}<strong>${opts.childName}</strong> has been invited to <strong>${opts.eventTitle}</strong>.`;
   return brandedEmail({
+    unsubscribeUrl: opts.unsubscribeUrl,
     title: opts.reminder ? "Your invitation is waiting" : `${opts.childName} is invited`,
     preheader: `${opts.eventTitle}${opts.dateLabel ? ` — ${opts.dateLabel}` : ""}`,
     body:
@@ -149,10 +151,13 @@ Deno.serve(async (req) => {
       let sendError: string | undefined;
       if (apiKey) {
         try {
+          const unsubToken = await unsubscribeTokenFor(admin, email, "invitation");
           await sendEmail({
             to: email,
             subject: `Invitation: ${eventRow.title} — ${inv.child_name}`,
+            unsubscribe_token: unsubToken ?? undefined,
             html: invitationEmail({
+              unsubscribeUrl: unsubscribeUrlFor(unsubToken),
               parentName: inv.parent_name || "",
               childName: inv.child_name,
               eventTitle: eventRow.title,
@@ -161,7 +166,7 @@ Deno.serve(async (req) => {
               reminder: false,
             }),
             idempotency_key: `invite-${created.id}`,
-          }, { apiKey });
+          }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
           sent = true;
         } catch (e) {
           sendError = e instanceof Error ? e.message : String(e);
@@ -196,10 +201,13 @@ Deno.serve(async (req) => {
         continue;
       }
       try {
+        const unsubToken = await unsubscribeTokenFor(admin, inv.parent_email, "invitation");
         await sendEmail({
           to: inv.parent_email,
           subject: `Reminder: ${eventRow.title} — ${inv.child_name}`,
+          unsubscribe_token: unsubToken ?? undefined,
           html: invitationEmail({
+            unsubscribeUrl: unsubscribeUrlFor(unsubToken),
             parentName: inv.parent_name || "",
             childName: inv.child_name || "your child",
             eventTitle: eventRow.title,
@@ -207,7 +215,7 @@ Deno.serve(async (req) => {
             bookUrl: `${SITE_URL}/book/${inv.token}`,
             reminder: true,
           }),
-        }, { apiKey });
+        }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
         await admin.from("booking_invitations")
           .update({ reminded_at: new Date().toISOString() })
           .eq("id", inv.id);

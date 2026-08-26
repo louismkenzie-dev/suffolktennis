@@ -9,17 +9,21 @@
 import { Webhook } from "npm:standardwebhooks@1.0.0";
 import { sendEmail } from "../_shared/resend.ts";
 import { brandedEmail, emailButton, emailCode, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
 
-const codeEmail = (title: string, intro: string, code: string) =>
+const codeEmail = (title: string, intro: string, code: string, unsubscribeUrl?: string) =>
   brandedEmail({
+    unsubscribeUrl,
     title,
     preheader: `Your verification code is ${code}`,
     body: emailParagraph(intro) + emailCode(code) +
       emailNote("The code expires shortly. If you didn\u2019t request it, you can safely ignore this email."),
   });
 
-const linkEmail = (title: string, intro: string, url: string, cta: string) =>
+const linkEmail = (title: string, intro: string, url: string, cta: string, unsubscribeUrl?: string) =>
   brandedEmail({
+    unsubscribeUrl,
     title,
     preheader: intro,
     body: emailParagraph(intro) + emailButton(url, cta) +
@@ -51,6 +55,13 @@ Deno.serve(async (req) => {
   const action = email_data.email_action_type;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+  const unsubToken = await unsubscribeTokenFor(admin, user.email, "auth");
+  const unsubUrl = unsubscribeUrlFor(unsubToken);
+
   let subject: string;
   let html: string;
 
@@ -61,12 +72,13 @@ Deno.serve(async (req) => {
         "Confirm your email",
         "Welcome to Suffolk Tennis! Enter this code on the sign-up page to verify your email address:",
         email_data.token,
+        unsubUrl,
       );
       break;
     case "magic_link":
     case "magiclink":
       subject = "Your Suffolk Tennis sign-in code";
-      html = codeEmail("Sign in to Suffolk Tennis", "Enter this code to sign in:", email_data.token);
+      html = codeEmail("Sign in to Suffolk Tennis", "Enter this code to sign in:", email_data.token, unsubUrl);
       break;
     case "email_change":
       subject = "Confirm your new email address";
@@ -74,11 +86,12 @@ Deno.serve(async (req) => {
         "Confirm your new email",
         "Enter this code to confirm the change to your Suffolk Tennis account email:",
         email_data.token_new ?? email_data.token,
+        unsubUrl,
       );
       break;
     case "reauthentication":
       subject = "Your Suffolk Tennis verification code";
-      html = codeEmail("Verify it's you", "Enter this code to continue:", email_data.token);
+      html = codeEmail("Verify it's you", "Enter this code to continue:", email_data.token, unsubUrl);
       break;
     case "recovery": {
       const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(email_data.token_hash)}&type=recovery&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
@@ -88,6 +101,7 @@ Deno.serve(async (req) => {
         "Click the button below to choose a new password for your Suffolk Tennis account.",
         verifyUrl,
         "Reset password",
+        unsubUrl,
       );
       break;
     }
@@ -99,16 +113,20 @@ Deno.serve(async (req) => {
         "You've been invited to join Suffolk Tennis. Click below to set up your account.",
         verifyUrl,
         "Accept invitation",
+        unsubUrl,
       );
       break;
     }
     default:
       subject = "Your Suffolk Tennis verification code";
-      html = codeEmail("Verification code", "Enter this code to continue:", email_data.token);
+      html = codeEmail("Verification code", "Enter this code to continue:", email_data.token, unsubUrl);
   }
 
   try {
-    await sendEmail({ to: user.email, subject, html }, { apiKey: resendKey });
+    await sendEmail(
+      { to: user.email, subject, html, unsubscribe_token: unsubToken ?? undefined },
+      { apiKey: resendKey, unsubscribeBaseUrl: unsubscribeBaseUrl() },
+    );
   } catch (e) {
     console.error("auth email send failed:", e);
     return new Response(JSON.stringify({ error: "Email send failed" }), { status: 500 });
