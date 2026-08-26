@@ -20,13 +20,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import {
-  Shield, Users, FileText, Target, CalendarDays, Newspaper, UserCog,
-  LogOut, ArrowLeft, Trash2, Plus, Send, Sparkles, Upload, X, Loader2, ImageIcon, Video, Star, Pencil, Award, Crop, MapPin, GraduationCap, Ticket,
-} from "lucide-react";
+import { ArrowLeft, Award, CalendarDays, Crop, FileText, GraduationCap, ImageIcon, Loader2, LogOut, Mail, MapPin, Newspaper, Pencil, Plus, Send, Shield, Sparkles, Star, Target, Ticket, Trash2, Upload, UserCog, Users, Video, X } from "lucide-react";
 import VenuesPanel from "@/components/admin/VenuesPanel";
 import CoachesPanel from "@/components/admin/CoachesPanel";
 import BookingsPanel from "@/components/admin/BookingsPanel";
+import EmailPanel from "@/components/admin/EmailPanel";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 
 
@@ -161,6 +159,7 @@ const AdminHub = () => {
             <TabsTrigger value="players" className="gap-2"><Star className="w-4 h-4" />Players</TabsTrigger>
             <TabsTrigger value="venues" className="gap-2"><MapPin className="w-4 h-4" />Venues</TabsTrigger>
             <TabsTrigger value="coaches" className="gap-2"><GraduationCap className="w-4 h-4" />Coaches</TabsTrigger>
+            <TabsTrigger value="email" className="gap-2"><Mail className="w-4 h-4" />Email</TabsTrigger>
             <TabsTrigger value="admins" className="gap-2"><UserCog className="w-4 h-4" />Admins</TabsTrigger>
           </TabsList>
 
@@ -173,6 +172,7 @@ const AdminHub = () => {
           <TabsContent value="players"><PlayerWatchPanel /></TabsContent>
           <TabsContent value="venues"><VenuesPanel /></TabsContent>
           <TabsContent value="coaches"><CoachesPanel /></TabsContent>
+          <TabsContent value="email"><EmailPanel /></TabsContent>
           <TabsContent value="admins"><AdminsPanel /></TabsContent>
 
         </Tabs>
