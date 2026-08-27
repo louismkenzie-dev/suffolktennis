@@ -17,7 +17,8 @@ const Body = z.object({
   photo_consent: z.boolean().optional(),
 })
 
-const ADMIN_NOTIFY_EMAIL = 'info@suffolktennis.online'
+// enquiries@ is the only mailbox on the domain; info@ does not exist.
+const ADMIN_NOTIFY_EMAIL = Deno.env.get('ADMIN_NOTIFY_EMAIL') ?? 'enquiries@suffolktennis.online'
 
 function fmtDate(iso: string | null | undefined) {
   if (!iso) return 'TBC'

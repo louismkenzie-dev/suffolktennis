@@ -20,6 +20,13 @@ import culfordWhite from "@/assets/culford-white.png";
 const uniformCourt = uniformCourtAsset;
 const uniformTrio = uniformTrioAsset;
 
+/**
+ * The only mailbox that exists on the domain. The lead coaches have no
+ * individual addresses, so every enquiry goes here and is routed by the
+ * subject line, which names the coach it was meant for.
+ */
+const CONTACT_EMAIL = "enquiries@suffolktennis.online";
+
 const leadCoaches = [
   {
     name: "Ollie Sutton",
@@ -28,7 +35,6 @@ const leadCoaches = [
     ages: "8U/9U/10U",
     ageBand: "8U/9U/10U",
     programs: "Red Ball • Orange Ball • Green Ball",
-    email: "ollie@suffolktennis.online",
     photo: ollieImg,
     accent: "from-red-500 to-orange-500",
     prompt: "Get in touch with our 10U Performance Manager Ollie Sutton for any questions about 8U, 9U or 10U county training",
@@ -41,7 +47,6 @@ const leadCoaches = [
     ages: "Ages 11–18",
     ageBand: "11–18",
     programs: "Yellow Ball • Performance Pathway",
-    email: "chris@suffolktennis.online",
     photo: chrisImg,
     accent: "from-yellow-400 to-amber-500",
     prompt: "Get in touch with our County\nPerformance Manager Chris Daynes for any questions about 11U-18U\ncounty training",
@@ -54,7 +59,6 @@ const leadCoaches = [
     ages: "RPDC",
     ageBand: "RPDC",
     programs: "Regional Performance Development Centre",
-    email: "danny@suffolktennis.online",
     photo: dannyImg,
     accent: "from-green-500 to-emerald-600",
     prompt: "Interested in our Regional Performance Development Centre? Email Danny directly with any questions.",
@@ -90,7 +94,7 @@ const Contact = () => {
     // Open the user's email client with a prefilled enquiry
     const body = `Name: ${parsed.data.name}%0D%0AEmail: ${parsed.data.email}%0D%0APhone: ${parsed.data.phone || "—"}%0D%0ATopic: ${parsed.data.topic || "General enquiry"}%0D%0A%0D%0A${encodeURIComponent(parsed.data.message)}`;
     const subject = encodeURIComponent(`Suffolk Tennis enquiry — ${parsed.data.topic || "General"}`);
-    window.location.href = `mailto:enquiries@suffolktennis.online?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
     toast.success("Opening your email client…");
     setTimeout(() => setSubmitting(false), 800);
   };
@@ -186,13 +190,13 @@ const Contact = () => {
                   </div>
 
                   <a
-                    href={`mailto:${c.email}?subject=${encodeURIComponent(`Suffolk Tennis enquiry — ${c.role}`)}&body=${encodeURIComponent(`Hi ${c.firstName},\n\nI'd like to ask about ${c.programs} for my child.\n\n`)}`}
+                    href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Suffolk Tennis enquiry — ${c.name}, ${c.role}`)}&body=${encodeURIComponent(`Hi ${c.firstName},\n\nI'd like to ask about ${c.programs} for my child.\n\n`)}`}
                     className="inline-flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-lta-cyan text-suffolk-navy font-display font-bold text-sm hover:brightness-110 transition-all shadow-[var(--shadow-glow-blue)]"
                   >
                     <Mail size={16} /> Click here
                   </a>
                   <p className="text-xs text-primary-foreground/50 text-center font-body mt-2 break-all">
-                    {c.email}
+                    {CONTACT_EMAIL}
                   </p>
                 </div>
               </motion.div>
@@ -232,11 +236,11 @@ const Contact = () => {
                 Not sure who to contact? Send us a message and we'll route your enquiry to the right person.
               </p>
               <a
-                href="mailto:enquiries@suffolktennis.online"
+                href={`mailto:${CONTACT_EMAIL}`}
                 className="inline-flex items-center gap-3 rounded-2xl bg-primary-foreground/5 border border-lta-cyan/30 px-6 py-4 font-display font-black text-lta-cyan text-xl sm:text-3xl tracking-tight hover:bg-primary-foreground/10 hover:border-lta-cyan transition-all break-all"
               >
                 <Mail className="shrink-0" size={28} />
-                enquiries@suffolktennis.online
+                {CONTACT_EMAIL}
               </a>
             </div>
 

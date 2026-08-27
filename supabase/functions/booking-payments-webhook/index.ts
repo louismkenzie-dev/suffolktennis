@@ -29,7 +29,8 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const ADMIN_NOTIFY_EMAIL = Deno.env.get("ADMIN_NOTIFY_EMAIL") ?? "info@suffolktennis.online";
+// enquiries@ is the only mailbox on the domain; info@ does not exist.
+const ADMIN_NOTIFY_EMAIL = Deno.env.get("ADMIN_NOTIFY_EMAIL") ?? "enquiries@suffolktennis.online";
 const SITE_URL = Deno.env.get("SITE_URL") ?? "https://suffolktennis.online";
 
 Deno.serve(async (req) => {
