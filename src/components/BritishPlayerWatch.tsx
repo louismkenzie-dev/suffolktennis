@@ -16,10 +16,13 @@ import reidImg from "@/assets/player-reid.jpg";
 import dartImg from "@/assets/player-dart.jpg";
 import pattenImg from "@/assets/player-patten.jpg";
 import feryImg from "@/assets/player-fery.jpg";
+import { photosFor, type PlayerPhoto } from "@/data/playerPhotos";
 
 type PlayerCategory = "singles" | "doubles" | "wheelchair" | "legend";
 
 interface Player {
+  /** Key into PLAYER_PHOTOS — see src/data/playerPhotos.ts. */
+  slug: string;
   name: string;
   age: number | string;
   ranking: number | string;
@@ -28,8 +31,16 @@ interface Player {
   coach: string;
   careerHighRanking: number | string;
   titles: number;
+  /** Bundled card image, and the fallback if storage is unreachable. */
   image: string;
-  galleryImages: string[];
+  /**
+   * Index into this player's gallery to use as the card image instead of the
+   * bundled one — set where the bundled shot is too distant to read at card
+   * size (Murray's was a full-court wide).
+   */
+  heroPhoto?: number;
+  /** Card crop origin, when the default top-weighted crop clips the head. */
+  heroPosition?: string;
   highlights: string[];
   youtubeId: string;
   bio: string;
@@ -39,6 +50,7 @@ interface Player {
 const players: Player[] = [
   // Current singles — all stats verified via Wikipedia & LTA (March 2026)
   {
+    slug: "jack-draper",
     name: "Jack Draper",
     age: 24,
     ranking: 14,
@@ -48,12 +60,6 @@ const players: Player[] = [
     careerHighRanking: 4,
     titles: 3,
     image: draperImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Jack_Draper_%2850088332011%29.jpg/440px-Jack_Draper_%2850088332011%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Draper_MCM23_%2855%29_%2852883527225%29_%28cropped%29.jpg/440px-Draper_MCM23_%2855%29_%2852883527225%29_%28cropped%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Jack_Draper_2022_Milano_1.jpg/440px-Jack_Draper_2022_Milano_1.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Jack_Draper_2022_Milano_2.jpg/440px-Jack_Draper_2022_Milano_2.jpg",
-    ],
     highlights: [
       "Career-high ATP ranking of No. 4 (June 2025)",
       "2025 Indian Wells Masters 1000 champion",
@@ -65,6 +71,8 @@ const players: Player[] = [
     category: "singles",
   },
   {
+    slug: "emma-raducanu",
+    heroPhoto: 0,
     name: "Emma Raducanu",
     age: 23,
     ranking: 61,
@@ -74,11 +82,6 @@ const players: Player[] = [
     careerHighRanking: 10,
     titles: 1,
     image: raducanuImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Emma_Raducanu_%2851748767684%29.jpg/440px-Emma_Raducanu_%2851748767684%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Emma_Raducanu_2021_Transylvania_Open.jpg/440px-Emma_Raducanu_2021_Transylvania_Open.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Transylvania_Open_2026_-_Emma_Raducanu_vs_Greet_Minnen_6-0%2C_6-4_-_01.02.2026_%2855077278835%29_%28cropped%29.jpg/440px-Transylvania_Open_2026_-_Emma_Raducanu_vs_Greet_Minnen_6-0%2C_6-4_-_01.02.2026_%2855077278835%29_%28cropped%29.jpg",
-    ],
     highlights: [
       "2021 US Open champion — as a qualifier",
       "First player ever to win a Grand Slam as a qualifier",
@@ -90,6 +93,7 @@ const players: Player[] = [
     category: "singles",
   },
   {
+    slug: "cameron-norrie",
     name: "Cameron Norrie",
     age: 30,
     ranking: 29,
@@ -99,11 +103,6 @@ const players: Player[] = [
     careerHighRanking: 8,
     titles: 5,
     image: norrieImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Norrie_WM17_%282%29_%2836143094896%29.jpg/440px-Norrie_WM17_%282%29_%2836143094896%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Cameron_Norrie_at_Western_%26_Southern_Open_in_2022.jpg/440px-Cameron_Norrie_at_Western_%26_Southern_Open_in_2022.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Cameron_Norrie_Wimbledon_2022_1.jpg/440px-Cameron_Norrie_Wimbledon_2022_1.jpg",
-    ],
     highlights: [
       "Career-high ATP ranking of No. 8 (September 2022)",
       "Wimbledon semi-finalist 2022",
@@ -115,6 +114,7 @@ const players: Player[] = [
     category: "singles",
   },
   {
+    slug: "arthur-fery",
     name: "Arthur Fery",
     age: 28,
     ranking: "—",
@@ -124,7 +124,6 @@ const players: Player[] = [
     careerHighRanking: 141,
     titles: 0,
     image: feryImg,
-    galleryImages: [],
     highlights: [
       "Stanford University NCAA standout",
       "2023 Wimbledon second-round appearance",
@@ -136,6 +135,7 @@ const players: Player[] = [
     category: "singles",
   },
   {
+    slug: "katie-boulter",
     name: "Katie Boulter",
     age: 29,
     ranking: 64,
@@ -145,12 +145,6 @@ const players: Player[] = [
     careerHighRanking: 23,
     titles: 4,
     image: boulterImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Boulter_RGQ23_%28cropped2%29.jpg/440px-Boulter_RGQ23_%28cropped2%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Katie_Boulter_%2853778099633%29.jpg/440px-Katie_Boulter_%2853778099633%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Katie_Boulter_%2853778215009%29.jpg/440px-Katie_Boulter_%2853778215009%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/25th_Laureus_World_Sports_Awards_-_Red_Carpet_-_Katie_Boulter_-_240422_185613_%28cropped%29.jpg/440px-25th_Laureus_World_Sports_Awards_-_Red_Carpet_-_Katie_Boulter_-_240422_185613_%28cropped%29.jpg",
-    ],
     highlights: [
       "Career-high WTA ranking of No. 23 (November 2024)",
       "4 WTA Tour singles titles",
@@ -162,6 +156,8 @@ const players: Player[] = [
     category: "singles",
   },
   {
+    slug: "harriet-dart",
+    heroPhoto: 0,
     name: "Harriet Dart",
     age: 29,
     ranking: 78,
@@ -171,11 +167,6 @@ const players: Player[] = [
     careerHighRanking: 70,
     titles: 0,
     image: dartImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Dart_WM19_%289%29_%2848521880041%29.jpg/440px-Dart_WM19_%289%29_%2848521880041%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Harriet_Dart_%2848036132852%29.jpg/440px-Harriet_Dart_%2848036132852%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Fed_Cup_%E2%80%93_Great_Britain_v_Greece_%2847035530782%29.jpg/440px-Fed_Cup_%E2%80%93_Great_Britain_v_Greece_%2847035530782%29.jpg",
-    ],
     highlights: [
       "Career-high WTA singles ranking of No. 70 (September 2024)",
       "2021 Wimbledon mixed doubles finalist (with Joe Salisbury)",
@@ -188,6 +179,7 @@ const players: Player[] = [
   },
   // Doubles specialists
   {
+    slug: "joe-salisbury",
     name: "Joe Salisbury",
     age: 33,
     ranking: 8,
@@ -197,12 +189,6 @@ const players: Player[] = [
     careerHighRanking: 1,
     titles: 17,
     image: salisburyImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Salisbury_WMQ16_%284%29_%2827595810773%29.jpg/440px-Salisbury_WMQ16_%284%29_%2827595810773%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Joe_Salisbury_%2843772857140%29.jpg/440px-Joe_Salisbury_%2843772857140%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Salisbury_RG22_%281%29_%2852144292229%29.jpg/440px-Salisbury_RG22_%281%29_%2852144292229%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Rajeev_Ram_Joe_Salisbury_Cincinnati.jpg/440px-Rajeev_Ram_Joe_Salisbury_Cincinnati.jpg",
-    ],
     highlights: [
       "Former doubles World No. 1",
       "6-time Grand Slam doubles champion",
@@ -214,6 +200,7 @@ const players: Player[] = [
     category: "doubles",
   },
   {
+    slug: "neal-skupski",
     name: "Neal Skupski",
     age: 36,
     ranking: 1,
@@ -223,12 +210,6 @@ const players: Player[] = [
     careerHighRanking: 1,
     titles: 18,
     image: skupskiImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Skupski_N._RG19_%2812%29_%2848199059472%29.jpg/440px-Skupski_N._RG19_%2812%29_%2848199059472%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Neal_Skupski_%2849981894227%29.jpg/440px-Neal_Skupski_%2849981894227%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Skupski_MCM23_%2852882568957%29.jpg/440px-Skupski_MCM23_%2852882568957%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/All-British_doubles_%2849981130833%29.jpg/440px-All-British_doubles_%2849981130833%29.jpg",
-    ],
     highlights: [
       "Current doubles World No. 1 (returned to top Feb 2026)",
       "4-time Grand Slam doubles champion",
@@ -240,6 +221,7 @@ const players: Player[] = [
     category: "doubles",
   },
   {
+    slug: "henry-patten",
     name: "Henry Patten",
     age: 29,
     ranking: 4,
@@ -249,12 +231,6 @@ const players: Player[] = [
     careerHighRanking: 3,
     titles: 10,
     image: pattenImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Henry_Patten_%282023_Cary%29_02_%28cropped%29.jpg/440px-Henry_Patten_%282023_Cary%29_02_%28cropped%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Henry_Patten_%282023_Cary%29_01_%28cropped%29.jpg/440px-Henry_Patten_%282023_Cary%29_01_%28cropped%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Henry_Patten_%282023_Cary%29_03.jpg/440px-Henry_Patten_%282023_Cary%29_03.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Henry_Patten_%282023_Cary%29_04.jpg/440px-Henry_Patten_%282023_Cary%29_04.jpg",
-    ],
     highlights: [
       "2-time Grand Slam doubles champion",
       "2024 Wimbledon doubles champion with Harri Heliövaara",
@@ -267,6 +243,7 @@ const players: Player[] = [
   },
   // Wheelchair tennis
   {
+    slug: "alfie-hewett",
     name: "Alfie Hewett",
     age: 28,
     ranking: 2,
@@ -276,12 +253,6 @@ const players: Player[] = [
     careerHighRanking: 1,
     titles: 33,
     image: hewettImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Alfie_Hewett_%2835580720080%29.jpg/440px-Alfie_Hewett_%2835580720080%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Alfie_Hewett_%282023_French_Open%29_01.jpg/440px-Alfie_Hewett_%282023_French_Open%29_01.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Alfie_Hewett_%282023_French_Open%29_02.jpg/440px-Alfie_Hewett_%282023_French_Open%29_02.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/Alfie_Hewett_%2850497971823%29.jpg/440px-Alfie_Hewett_%2850497971823%29.jpg",
-    ],
     highlights: [
       "33 Grand Slam titles (10 singles, 23 doubles)",
       "2024 Paralympic doubles Gold medallist (with Gordon Reid)",
@@ -293,6 +264,7 @@ const players: Player[] = [
     category: "wheelchair",
   },
   {
+    slug: "gordon-reid",
     name: "Gordon Reid",
     age: 34,
     ranking: 7,
@@ -302,11 +274,6 @@ const players: Player[] = [
     careerHighRanking: 1,
     titles: 29,
     image: reidImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Alfie_Hewett_%26_Gordon_Reid_%2830624074837%29.jpg/440px-Alfie_Hewett_%26_Gordon_Reid_%2830624074837%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Gordon_Reid_and_Alfie_Hewett_%282023_French_Open%29_01_%28cropped%29.jpg/440px-Gordon_Reid_and_Alfie_Hewett_%282023_French_Open%29_01_%28cropped%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Gordon_Reid_%26_Alfie_Hewett_%2845514769172%29.jpg/440px-Gordon_Reid_%26_Alfie_Hewett_%2845514769172%29.jpg",
-    ],
     highlights: [
       "Former singles and doubles World No. 1",
       "2 Grand Slam singles titles + record 27 doubles Grand Slams",
@@ -319,6 +286,8 @@ const players: Player[] = [
   },
   // Legends
   {
+    slug: "andy-murray",
+    heroPhoto: 0,
     name: "Andy Murray",
     age: 38,
     ranking: "Retired",
@@ -328,12 +297,6 @@ const players: Player[] = [
     careerHighRanking: 1,
     titles: 46,
     image: murrayImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/2015_Australian_Open_-_Andy_Murray_12_%28cropped%29.jpg/440px-2015_Australian_Open_-_Andy_Murray_12_%28cropped%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Andy_Murray_2011_Tokyo.jpg/440px-Andy_Murray_2011_Tokyo.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Erste_Bank_Open_ATP_World_Tour_500_Vienna_2016-3.jpg/440px-Erste_Bank_Open_ATP_World_Tour_500_Vienna_2016-3.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Final_Press_Andy_Murray_%281%29.jpg/440px-Final_Press_Andy_Murray_%281%29.jpg",
-    ],
     highlights: [
       "3-time Grand Slam champion (2012 US Open, 2013 & 2016 Wimbledon)",
       "2-time Olympic Gold medallist (2012 London, 2016 Rio)",
@@ -345,6 +308,7 @@ const players: Player[] = [
     category: "legend",
   },
   {
+    slug: "tim-henman",
     name: "Tim Henman",
     age: 51,
     ranking: "Retired",
@@ -354,12 +318,6 @@ const players: Player[] = [
     careerHighRanking: 4,
     titles: 11,
     image: henmanImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Tim_Henman_1.jpg/440px-Tim_Henman_1.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Tim_Henman_2006_Australian_Open.JPG/440px-Tim_Henman_2006_Australian_Open.JPG",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Tim_Henman_2007.jpg/440px-Tim_Henman_2007.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/Tim_Henman_backhand_volley_Wimbledon_2004.jpg/440px-Tim_Henman_backhand_volley_Wimbledon_2004.jpg",
-    ],
     highlights: [
       "Career-high ATP ranking of No. 4",
       "4-time Wimbledon semi-finalist",
@@ -371,6 +329,7 @@ const players: Player[] = [
     category: "legend",
   },
   {
+    slug: "virginia-wade",
     name: "Virginia Wade",
     age: 80,
     ranking: "Retired",
@@ -380,9 +339,6 @@ const players: Player[] = [
     careerHighRanking: 2,
     titles: 55,
     image: wadeImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Angela_Mortimer_Statue.jpg/440px-Angela_Mortimer_Statue.jpg",
-    ],
     highlights: [
       "1977 Wimbledon champion (last British woman to win)",
       "3-time Grand Slam singles champion",
@@ -394,6 +350,9 @@ const players: Player[] = [
     category: "legend",
   },
   {
+    slug: "greg-rusedski",
+    heroPhoto: 0,
+    heroPosition: "50% 0%",
     name: "Greg Rusedski",
     age: 52,
     ranking: "Retired",
@@ -403,12 +362,6 @@ const players: Player[] = [
     careerHighRanking: 4,
     titles: 15,
     image: rusedskiImg,
-    galleryImages: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Greg_Rusedski_%2814253590549%29.jpg/440px-Greg_Rusedski_%2814253590549%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Greg_Rusedski_2011.jpg/440px-Greg_Rusedski_2011.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Greg_Rusedski_2014.jpg/440px-Greg_Rusedski_2014.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/2014_Aegon_International_092_%2814436898815%29.jpg/440px-2014_Aegon_International_092_%2814436898815%29.jpg",
-    ],
     highlights: [
       "1997 US Open finalist",
       "Career-high ATP ranking of No. 4",
@@ -442,7 +395,24 @@ const BritishPlayerWatch = () => {
     }
   };
 
-  const categoryColor = (cat: PlayerCategory) => {
+  /**
+ * Card image for a player: the gallery shot where one is nominated, otherwise
+ * the bundled asset. Storage is a network hop, so callers pair this with an
+ * onError that falls back to the bundled image.
+ */
+const heroSrc = (p: Player): string =>
+  (p.heroPhoto !== undefined ? photosFor(p.slug)[p.heroPhoto]?.url : undefined) ?? p.image;
+
+/** Hero first, then the rest of the gallery, with no duplicate of the hero. */
+const galleryFor = (p: Player): PlayerPhoto[] => {
+  const photos = photosFor(p.slug);
+  if (photos.length === 0) return [];
+  if (p.heroPhoto === undefined) return photos;
+  const hero = photos[p.heroPhoto];
+  return [hero, ...photos.filter((x) => x !== hero)];
+};
+
+const categoryColor = (cat: PlayerCategory) => {
     switch (cat) {
       case "singles": return "bg-[hsl(var(--lta-cyan))]/20 text-[hsl(var(--lta-cyan))]";
       case "doubles": return "bg-[hsl(var(--suffolk-gold))]/20 text-[hsl(var(--suffolk-gold))]";
@@ -548,8 +518,14 @@ const BritishPlayerWatch = () => {
               >
                 <div className="relative h-56 overflow-hidden">
                   <img
-                    src={player.image}
+                    src={heroSrc(player)}
                     alt={player.name}
+                    loading="lazy"
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      if (img.src !== player.image) img.src = player.image;
+                    }}
+                    style={{ objectPosition: player.heroPosition ?? "50% 15%" }}
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -603,15 +579,25 @@ const BritishPlayerWatch = () => {
             >
               {(() => {
                 const p = players[selectedPlayer];
-                const allImages = [p.image, ...p.galleryImages];
+                const gallery = galleryFor(p);
+                // Always have something to show even if the library is empty.
+                const allImages: PlayerPhoto[] =
+                  gallery.length > 0
+                    ? gallery
+                    : [{ url: p.image, credit: "", licence: "", source: "" }];
+                const shown = allImages[Math.min(galleryIndex, allImages.length - 1)];
                 return (
                   <>
                     {/* Gallery Hero */}
                     <div className="relative h-72 overflow-hidden rounded-t-3xl">
                       <img
-                        src={allImages[galleryIndex]}
+                        src={shown.url}
                         alt={`${p.name} - photo ${galleryIndex + 1}`}
-                        className="w-full h-full object-cover transition-all duration-500"
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          if (img.src !== p.image) img.src = p.image;
+                        }}
+                        className="w-full h-full object-cover object-[50%_20%] transition-all duration-500"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-[hsl(var(--suffolk-navy))] via-[hsl(var(--suffolk-navy))]/40 to-transparent" />
                       <button
@@ -671,6 +657,19 @@ const BritishPlayerWatch = () => {
                           </div>
                         </div>
                       </div>
+
+                      {/* CC attribution — required by the licence on every photo we show */}
+                      {shown.credit && (
+                        <a
+                          href={shown.source}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute bottom-2 right-3 text-[10px] text-white/40 hover:text-white/70 transition-colors"
+                        >
+                          Photo: {shown.credit} · {shown.licence}
+                        </a>
+                      )}
                     </div>
 
                     <div className="p-8 space-y-8">
@@ -705,7 +704,13 @@ const BritishPlayerWatch = () => {
                                   idx === galleryIndex ? "border-[hsl(var(--lta-cyan))] scale-105" : "border-white/10 opacity-60 hover:opacity-100"
                                 }`}
                               >
-                                <img src={img} alt={`${p.name} ${idx + 1}`} className="w-full h-full object-cover" />
+                                <img
+                                  src={img.url}
+                                  alt={`${p.name} ${idx + 1}`}
+                                  loading="lazy"
+                                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                                  className="w-full h-full object-cover"
+                                />
                               </button>
                             ))}
                           </div>
