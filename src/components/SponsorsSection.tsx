@@ -5,7 +5,7 @@ import NullshiftMark from "./NullshiftMark";
 
 const sponsors = [
   { name: "School's Out Activities", logo: sponsorSchoolsOut, url: "https://www.schoolsoutactivities.co.uk" },
-  { name: "Halo", logo: sponsorHalo, url: "https://haloitsm.com" },
+  { name: "Halo", logo: sponsorHalo, url: "https://www.usehalo.com" },
 ];
 
 const linkClasses =
