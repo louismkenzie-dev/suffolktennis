@@ -23,7 +23,8 @@ const Auth = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [forgotPassword, setForgotPassword] = useState(false);
-  // Signup email verification: code entry step (6-digit OTP sent via Resend).
+  // Signup email verification: code entry step. The OTP length is a GoTrue
+  // project setting (6-10 digits), so nothing here may assume six.
   const [verifyStep, setVerifyStep] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -94,12 +95,12 @@ const Auth = () => {
           // Confirmations disabled — signed straight in.
           navigate(redirectTarget ?? "/parent-hub");
         } else {
-          // Email verification: a 6-digit code is sent via Resend (auth email
+          // Email verification: a numeric code is sent via Resend (auth email
           // hook); the user types it here instead of clicking a link.
           setVerifyStep(true);
           toast({
             title: "Check your email",
-            description: "We've emailed you a 6-digit verification code.",
+            description: "We've emailed you a verification code.",
           });
         }
       }
@@ -113,7 +114,7 @@ const Auth = () => {
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (otpCode.trim().length < 6) {
-      toast({ title: "Enter the code", description: "Please enter the 6-digit code from your email.", variant: "destructive" });
+      toast({ title: "Enter the code", description: "Please enter the code from your email.", variant: "destructive" });
       return;
     }
     setVerifying(true);
@@ -203,7 +204,7 @@ const Auth = () => {
           </h2>
           <p className="text-primary-foreground/50 font-body mb-8">
             {verifyStep
-              ? `Enter the 6-digit code we sent to ${email}`
+              ? `Enter the verification code we sent to ${email}`
               : forgotPassword ? "Enter your email and we'll send you a reset link" : isLogin ? "Sign in to access your Parent Hub" : "Join the Suffolk Tennis community"}
           </p>
 
@@ -213,11 +214,11 @@ const Auth = () => {
                 autoFocus
                 inputMode="numeric"
                 pattern="[0-9]*"
-                maxLength={6}
+                maxLength={10}
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                placeholder="000000"
-                className="w-full text-center text-3xl tracking-[0.5em] font-bold rounded-xl bg-white/5 border border-white/15 text-primary-foreground py-4 focus:outline-none focus:border-lta-cyan"
+                placeholder="Enter code"
+                className="w-full text-center text-2xl sm:text-3xl tracking-[0.3em] font-bold rounded-xl bg-white/5 border border-white/15 text-primary-foreground py-4 placeholder:text-base placeholder:tracking-normal placeholder:font-normal placeholder:text-primary-foreground/40 focus:outline-none focus:border-lta-cyan"
               />
               <button
                 type="submit"

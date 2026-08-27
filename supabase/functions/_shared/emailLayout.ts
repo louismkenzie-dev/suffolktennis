@@ -63,11 +63,18 @@ export function emailButton(url: string, label: string): string {
   </table>`;
 }
 
-/** Large verification code panel. */
+/**
+ * Large verification code panel.
+ *
+ * Sized so the code stays on ONE line on a narrow phone. GoTrue's OTP length
+ * is a project setting (6-10 digits) and an 8-digit code at the old size
+ * wrapped mid-code on mobile, which read as a 7-digit code followed by a
+ * stray digit — a real parent was blocked by exactly that.
+ */
 export function emailCode(code: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 20px 0;">
-    <tr><td align="center" bgcolor="${NAVY}" style="border-radius: 12px; padding: 24px;">
-      <div style="font-family: ${DISPLAY}; font-size: 36px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.26em; color: #FFFFFF;">${code}</div>
+    <tr><td align="center" bgcolor="${NAVY}" style="border-radius: 12px; padding: 22px 12px;">
+      <div style="font-family: ${DISPLAY}; font-size: 30px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.16em; color: #FFFFFF; white-space: nowrap;">${code}</div>
     </td></tr>
   </table>`;
 }
