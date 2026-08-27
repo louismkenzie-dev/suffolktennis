@@ -29,7 +29,7 @@ const PathwayIntroSection = () => {
           transition={{ duration: 0.7 }}
         >
           <span className="inline-block text-sm font-bold uppercase tracking-[0.2em] text-primary mb-4">
-            Welcome to the Suffolk Tennis Partnership
+            Welcome to the
           </span>
           <h2 className="font-display text-4xl md:text-5xl font-black text-foreground mb-6 leading-tight">
             Suffolk Tennis{" "}
