@@ -98,6 +98,10 @@ const AdminHub = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const { isAdmin, loading: adminLoading } = useIsAdmin();
   const navigate = useNavigate();
+  // Controlled so the Coaches tab can send the admin to the composer with an
+  // audience already chosen.
+  const [tab, setTab] = useState("families");
+  const [emailGroupId, setEmailGroupId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -148,7 +152,7 @@ const AdminHub = () => {
       </div>
 
       <main className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="families" className="w-full">
+        <Tabs value={tab} onValueChange={setTab} className="w-full">
           <TabsList className="grid grid-cols-3 md:grid-cols-10 w-full mb-6 h-auto">
             <TabsTrigger value="bookings" className="gap-2"><Ticket className="w-4 h-4" />Bookings</TabsTrigger>
             <TabsTrigger value="families" className="gap-2"><Users className="w-4 h-4" />Families</TabsTrigger>
@@ -171,8 +175,10 @@ const AdminHub = () => {
           <TabsContent value="news"><NewsPanel /></TabsContent>
           <TabsContent value="players"><PlayerWatchPanel /></TabsContent>
           <TabsContent value="venues"><VenuesPanel /></TabsContent>
-          <TabsContent value="coaches"><CoachesPanel /></TabsContent>
-          <TabsContent value="email"><EmailPanel /></TabsContent>
+          <TabsContent value="coaches">
+            <CoachesPanel onEmailCoaches={(groupId) => { setEmailGroupId(groupId); setTab("email"); }} />
+          </TabsContent>
+          <TabsContent value="email"><EmailPanel initialGroupId={emailGroupId} /></TabsContent>
           <TabsContent value="admins"><AdminsPanel /></TabsContent>
 
         </Tabs>

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Loader2, Plus, Pencil, Trash2, Upload, X } from "lucide-react";
+import CoachDirectory from "./CoachDirectory";
 
 export type CoachRow = {
   id: string;
@@ -48,7 +49,7 @@ const uploadFile = async (file: File): Promise<string | null> => {
   return supabase.storage.from("news-media").getPublicUrl(path).data.publicUrl;
 };
 
-const CoachesPanel = () => {
+const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) => void }) => {
   const [items, setItems] = useState<CoachRow[]>([]);
   const [users, setUsers] = useState<{ user_id: string; first_name: string; last_name: string }[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -250,7 +251,7 @@ const CoachesPanel = () => {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Coaches ({items.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Website coaches ({items.length})</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -292,6 +293,8 @@ const CoachesPanel = () => {
           </Table>
         </CardContent>
       </Card>
+
+      <CoachDirectory onEmailCoaches={onEmailCoaches} />
     </div>
   );
 };

@@ -75,7 +75,12 @@ function newBlock(type: BlockType): Block {
 
 /* ------------------------------------------------------------------ */
 
-export default function EmailPanel() {
+/**
+ * `initialGroupId` lets another tab hand off an audience — the Coaches tab's
+ * "Email these coaches" button opens the composer with that group already
+ * selected instead of making the admin find it in the picker.
+ */
+export default function EmailPanel({ initialGroupId }: { initialGroupId?: string | null }) {
   const [tab, setTab] = useState("compose");
   return (
     <div className="space-y-6">
@@ -85,7 +90,7 @@ export default function EmailPanel() {
           <TabsTrigger value="groups" className="gap-2"><Users className="w-4 h-4" />Groups</TabsTrigger>
           <TabsTrigger value="recipients" className="gap-2"><UserMinus className="w-4 h-4" />Recipients</TabsTrigger>
         </TabsList>
-        <TabsContent value="compose" className="mt-6"><Composer /></TabsContent>
+        <TabsContent value="compose" className="mt-6"><Composer initialGroupId={initialGroupId} /></TabsContent>
         <TabsContent value="groups" className="mt-6"><GroupsTab /></TabsContent>
         <TabsContent value="recipients" className="mt-6"><RecipientsTab /></TabsContent>
       </Tabs>
@@ -97,7 +102,7 @@ export default function EmailPanel() {
 /* Composer                                                            */
 /* ------------------------------------------------------------------ */
 
-function Composer() {
+function Composer({ initialGroupId }: { initialGroupId?: string | null }) {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [name, setName] = useState("Untitled campaign");
@@ -106,7 +111,9 @@ function Composer() {
   const [heroUrl, setHeroUrl] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([{ type: "heading", text: "" }, { type: "text", text: "" }]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [audience, setAudience] = useState<{ type: "all" | "group"; group_id?: string }>({ type: "all" });
+  const [audience, setAudience] = useState<{ type: "all" | "group"; group_id?: string }>(
+    initialGroupId ? { type: "group", group_id: initialGroupId } : { type: "all" },
+  );
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [preview, setPreview] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -126,6 +133,12 @@ function Composer() {
   }, []);
 
   useEffect(() => { loadLists(); }, [loadLists]);
+
+  // A later hand-off (the admin goes back to Coaches and clicks again) should
+  // still land, but only when it names a different group than the one shown.
+  useEffect(() => {
+    if (initialGroupId) setAudience({ type: "group", group_id: initialGroupId });
+  }, [initialGroupId]);
 
   // Live preview + audience size, debounced so typing stays smooth.
   useEffect(() => {
