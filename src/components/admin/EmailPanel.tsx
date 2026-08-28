@@ -596,6 +596,7 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
   const [all, setAll] = useState<Recipient[]>([]);
   const [coaches, setCoaches] = useState<Map<string, CoachContact>>(new Map());
   const [search, setSearch] = useState("");
+  const [bulk, setBulk] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -649,6 +650,20 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
     return m;
   }, [people]);
 
+  /**
+   * Pull addresses out of anything pasted in — a comma-separated list, one per
+   * line, or a block of spreadsheet cells copied straight from Excel. Ollie was
+   * adding squad lists one click at a time; this is the same job in one paste.
+   */
+  const pastedEmails = useMemo(() => {
+    const found = bulk.match(/[^\s,;<>()"']+@[^\s,;<>()"']+\.[a-z]{2,}/gi) ?? [];
+    return [...new Set(found.map((e) => e.trim().toLowerCase().replace(/[.,;]+$/, "")))];
+  }, [bulk]);
+  const pastedNew = useMemo(
+    () => pastedEmails.filter((e) => !memberSet.has(e)),
+    [pastedEmails, memberSet],
+  );
+
   async function add(emails: string[]) {
     setSaving(true);
     try { await api({ action: "group_add", group_id: group.id, emails }); await load(); toast.success(`Added ${emails.length}`); }
@@ -689,7 +704,30 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
               ))}
             </div>
             <div className="space-y-2 overflow-y-auto">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Add people</Label>
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                Paste a list
+              </Label>
+              <Textarea
+                rows={3}
+                value={bulk}
+                onChange={(e) => setBulk(e.target.value)}
+                placeholder="Paste email addresses, or a column copied straight out of a spreadsheet"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {bulk.trim() === ""
+                    ? "Separators do not matter — commas, new lines or whole cells."
+                    : `${pastedEmails.length} found · ${pastedNew.length} not already in the group`}
+                </span>
+                <Button size="sm" disabled={saving || pastedNew.length === 0}
+                  onClick={() => add(pastedNew).then(() => setBulk(""))}>
+                  Add {pastedNew.length || ""}
+                </Button>
+              </div>
+
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground pt-2 block">
+                Or search the database
+              </Label>
               <div className="flex gap-2">
                 <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search players, coaches or email" />
                 {candidates.length > 1 && (
