@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { coachLabel, loadCoachContacts, type CoachContact } from "@/lib/coachLookup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -593,6 +594,7 @@ function GroupsTab() {
 function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => void }) {
   const [members, setMembers] = useState<Array<{ email: string; unsubscribed: boolean }>>([]);
   const [all, setAll] = useState<Recipient[]>([]);
+  const [coaches, setCoaches] = useState<Map<string, CoachContact>>(new Map());
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -600,24 +602,52 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, r] = await Promise.all([
+      const [m, r, c] = await Promise.all([
         api<{ members: Array<{ email: string; unsubscribed: boolean }> }>({ action: "group_members", group_id: group.id }),
         api<{ recipients: Recipient[] }>({ action: "recipients" }),
+        loadCoachContacts(),
       ]);
-      setMembers(m.members); setAll(r.recipients);
+      setMembers(m.members); setAll(r.recipients); setCoaches(c);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load"); }
     finally { setLoading(false); }
   }, [group.id]);
   useEffect(() => { load(); }, [load]);
 
   const memberSet = useMemo(() => new Set(members.map((m) => m.email)), [members]);
+
+  /**
+   * Everyone who can be added: the recipient list, plus every coach in the
+   * directory. Coaches are merged in rather than appended so a coach who is
+   * also a parent keeps one row, and they carry a name so they can be found
+   * by searching for it.
+   */
+  const people = useMemo(() => {
+    const byEmail = new Map<string, Recipient>();
+    for (const r of all) byEmail.set(r.email, r);
+    for (const [email, c] of coaches) {
+      const existing = byEmail.get(email);
+      const label = coachLabel(c);
+      if (existing) byEmail.set(email, { ...existing, players: [...existing.players, label] });
+      else byEmail.set(email, { email, players: [label], unsubscribed: false, source: "coach_directory" });
+    }
+    return [...byEmail.values()].sort((a, b) =>
+      (a.players[0] ?? a.email).localeCompare(b.players[0] ?? b.email));
+  }, [all, coaches]);
+
   const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return all
+    return people
       .filter((r) => !memberSet.has(r.email))
       .filter((r) => !q || r.email.includes(q) || r.players.some((p) => p.toLowerCase().includes(q)))
       .slice(0, 50);
-  }, [all, memberSet, search]);
+  }, [people, memberSet, search]);
+
+  /** Names for the "in this group" list, so members are not bare addresses. */
+  const nameFor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of people) if (r.players.length) m.set(r.email, r.players.join(", "));
+    return m;
+  }, [people]);
 
   async function add(emails: string[]) {
     setSaving(true);
@@ -644,7 +674,12 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
               {members.map((m) => (
                 <div key={m.email} className="flex items-center justify-between gap-2 text-sm border rounded p-2">
                   <span className="truncate">
-                    {m.email}
+                    {nameFor.get(m.email) ? (
+                      <>
+                        <span className="font-medium">{nameFor.get(m.email)}</span>
+                        <span className="text-muted-foreground"> · {m.email}</span>
+                      </>
+                    ) : m.email}
                     {m.unsubscribed && <Badge variant="outline" className="ml-2 text-[10px]">unsubscribed</Badge>}
                   </span>
                   <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={saving} onClick={() => drop(m.email)}>
@@ -656,7 +691,7 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
             <div className="space-y-2 overflow-y-auto">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">Add people</Label>
               <div className="flex gap-2">
-                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or email" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search players, coaches or email" />
                 {candidates.length > 1 && (
                   <Button variant="outline" size="sm" disabled={saving} onClick={() => add(candidates.map((c) => c.email))}>
                     Add all {candidates.length}
@@ -666,8 +701,12 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
               {candidates.map((c) => (
                 <div key={c.email} className="flex items-center justify-between gap-2 text-sm border rounded p-2">
                   <span className="truncate">
-                    <span className="block">{c.email}</span>
-                    {c.players.length > 0 && <span className="text-xs text-muted-foreground">{c.players.join(", ")}</span>}
+                    {c.players.length > 0
+                      ? <>
+                          <span className="block font-medium">{c.players.join(", ")}</span>
+                          <span className="text-xs text-muted-foreground">{c.email}</span>
+                        </>
+                      : <span className="block">{c.email}</span>}
                   </span>
                   <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={saving} onClick={() => add([c.email])}>
                     <UserPlus className="w-3.5 h-3.5" />
@@ -692,6 +731,7 @@ function RecipientsTab() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [coaches, setCoaches] = useState<Map<string, CoachContact>>(new Map());
 
   const load = useCallback(async (q = "") => {
     setLoading(true);
@@ -700,6 +740,8 @@ function RecipientsTab() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  // Names for coach addresses, which the server only knows as bare emails.
+  useEffect(() => { loadCoachContacts().then(setCoaches); }, []);
 
   async function toggle(r: Recipient) {
     setBusy(r.email);
@@ -736,12 +778,15 @@ function RecipientsTab() {
           <>
             {data?.truncated && <p className="text-xs text-muted-foreground">Showing the first 500 — search to narrow it down.</p>}
             <Table>
-              <TableHeader><TableRow><TableHead>Email</TableHead><TableHead>Players</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Email</TableHead><TableHead>Player or coach</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
                 {(data?.recipients ?? []).map((r) => (
                   <TableRow key={r.email}>
                     <TableCell className="font-mono text-xs">{r.email}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{r.players.join(", ") || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {[...r.players, coaches.has(r.email) ? coachLabel(coaches.get(r.email)!) : null]
+                        .filter(Boolean).join(", ") || "—"}
+                    </TableCell>
                     <TableCell>
                       {r.unsubscribed
                         ? <Badge variant="outline" className="text-destructive border-destructive/40">Unsubscribed</Badge>

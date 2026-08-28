@@ -105,6 +105,11 @@ export const PLAYER_PHOTOS: Record<string, PlayerPhoto[]> = {
   ],
 };
 
+/** First gallery photo for a player — used where there is no bundled asset. */
+export function heroUrl(slug: string): string {
+  return PLAYER_PHOTOS[slug]?.[0]?.url ?? "";
+}
+
 /** Gallery for a player, or an empty list when we have no cleared photos. */
 export function photosFor(slug: string): PlayerPhoto[] {
   return PLAYER_PHOTOS[slug] ?? [];

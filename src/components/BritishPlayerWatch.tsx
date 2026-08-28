@@ -15,8 +15,7 @@ import hewettImg from "@/assets/player-hewett.jpg";
 import reidImg from "@/assets/player-reid.jpg";
 import dartImg from "@/assets/player-dart.jpg";
 import pattenImg from "@/assets/player-patten.jpg";
-import feryImg from "@/assets/player-fery.jpg";
-import { photosFor, type PlayerPhoto } from "@/data/playerPhotos";
+import { heroUrl, photosFor, type PlayerPhoto } from "@/data/playerPhotos";
 
 type PlayerCategory = "singles" | "doubles" | "wheelchair" | "legend";
 
@@ -123,7 +122,10 @@ const players: Player[] = [
     coach: "Calvin Betton",
     careerHighRanking: 141,
     titles: 0,
-    image: feryImg,
+    // The asset that used to sit here was a different GB player in Davis Cup
+    // kit, so there is no local fallback for Fery — Commons has exactly one
+    // free photo of him and this is it.
+    image: heroUrl("arthur-fery"),
     highlights: [
       "Stanford University NCAA standout",
       "2023 Wimbledon second-round appearance",

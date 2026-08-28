@@ -76,6 +76,12 @@ const BookingsPanel = () => {
   const [genderFilter, setGenderFilter] = useState("all");
   const [playerSearch, setPlayerSearch] = useState("");
   const [importing, setImporting] = useState(false);
+  const [addPlayerOpen, setAddPlayerOpen] = useState(false);
+  const [savingPlayer, setSavingPlayer] = useState(false);
+  const [newPlayer, setNewPlayer] = useState({
+    first_name: "", last_name: "", gender: "", age_group: "",
+    contact_name: "", contact_email: "", mobile: "", lta_number: "",
+  });
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
 
@@ -336,6 +342,39 @@ const BookingsPanel = () => {
     }
   };
 
+  /**
+   * Add a player the LTA export does not cover — a new joiner, or someone who
+   * competes outside the county programme. Same table as the CSV import, so
+   * they show up in the invite picker and the email group picker straight away.
+   */
+  const addPlayer = async () => {
+    const first = newPlayer.first_name.trim();
+    const last = newPlayer.last_name.trim();
+    if (!first || !last) { toast.error("First and last name are required"); return; }
+    setSavingPlayer(true);
+    try {
+      const { error } = await db.from("player_roster").insert({
+        // Hand-added players have no LTA number; leaving it null keeps them
+        // out of the CSV import's lta_number upsert.
+        lta_number: newPlayer.lta_number.trim() || null,
+        first_name: first,
+        last_name: last,
+        gender: newPlayer.gender || null,
+        age_group: newPlayer.age_group || null,
+        contact_name: newPlayer.contact_name.trim() || null,
+        contact_email: newPlayer.contact_email.trim().toLowerCase() || null,
+        mobile: newPlayer.mobile.trim() || null,
+      });
+      if (error) throw new Error(error.message);
+      toast.success(`${first} ${last} added`);
+      setAddPlayerOpen(false);
+      setNewPlayer({ first_name: "", last_name: "", gender: "", age_group: "", contact_name: "", contact_email: "", mobile: "", lta_number: "" });
+      loadPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add the player");
+    } finally { setSavingPlayer(false); }
+  };
+
   const editEvent = (ev: EventRow) => {
     setForm({
       id: ev.id,
@@ -393,6 +432,9 @@ const BookingsPanel = () => {
           </Button>
           <input id="roster-csv-input" type="file" accept=".csv,text/csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) importRosterCsv(f); e.target.value = ""; }} />
+          <Button variant="outline" size="sm" onClick={() => setAddPlayerOpen(true)}>
+            <Plus className="w-4 h-4 mr-1" /> Add player
+          </Button>
           <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4 mr-1" /> New event</Button>
         </div>
       </div>
@@ -528,6 +570,58 @@ const BookingsPanel = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Add a single player by hand */}
+      <Dialog open={addPlayerOpen} onOpenChange={setAddPlayerOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add a player</DialogTitle></DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div><Label>First name *</Label>
+              <Input value={newPlayer.first_name} onChange={(e) => setNewPlayer({ ...newPlayer, first_name: e.target.value })} /></div>
+            <div><Label>Last name *</Label>
+              <Input value={newPlayer.last_name} onChange={(e) => setNewPlayer({ ...newPlayer, last_name: e.target.value })} /></div>
+            <div>
+              <Label>Age group</Label>
+              <Select value={newPlayer.age_group} onValueChange={(v) => setNewPlayer({ ...newPlayer, age_group: v })}>
+                <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
+                <SelectContent>
+                  {AGE_GROUPS.map((a) => <SelectItem key={a} value={`${a}U`}>{a}U</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Gender</Label>
+              <Select value={newPlayer.gender} onValueChange={(v) => setNewPlayer({ ...newPlayer, gender: v })}>
+                <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>Parent name</Label>
+              <Input value={newPlayer.contact_name} onChange={(e) => setNewPlayer({ ...newPlayer, contact_name: e.target.value })} /></div>
+            <div><Label>Parent email</Label>
+              <Input type="email" value={newPlayer.contact_email}
+                onChange={(e) => setNewPlayer({ ...newPlayer, contact_email: e.target.value })} /></div>
+            <div><Label>Mobile</Label>
+              <Input value={newPlayer.mobile} onChange={(e) => setNewPlayer({ ...newPlayer, mobile: e.target.value })} /></div>
+            <div><Label>LTA number</Label>
+              <Input value={newPlayer.lta_number} onChange={(e) => setNewPlayer({ ...newPlayer, lta_number: e.target.value })}
+                placeholder="Leave blank if they have none" /></div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Added to the same roster the LTA import fills, so they appear in the invite picker and in the
+            email group picker right away. A parent email is what makes them mailable.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddPlayerOpen(false)}>Cancel</Button>
+            <Button onClick={addPlayer} disabled={savingPlayer}>
+              {savingPlayer && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Add player
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Invite players dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
