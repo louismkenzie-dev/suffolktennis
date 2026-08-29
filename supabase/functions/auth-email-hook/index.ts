@@ -1,7 +1,13 @@
 // Supabase Auth "Send Email" hook: GoTrue calls this instead of sending its
-// own emails, and we deliver branded messages via Resend. Signups (and magic
-// links / email changes) get a 6-digit verification CODE the user types into
-// the site; password recovery gets an action link back to /reset-password.
+// own emails, and we deliver branded messages via Resend. Signups and magic
+// links get BOTH a one-tap button and a typed code; password recovery and
+// invites get an action link only.
+//
+// The button matters: a parent was locked out for days because her browser
+// was serving a cached build whose code box still capped at six characters,
+// so an eight-digit code could not be typed at all. A link cannot be
+// mistyped, truncated, or affected by a stale bundle, so it is now the
+// primary route and the code is the fallback.
 //
 // Setup (dashboard): Authentication → Hooks → Send Email → this function,
 // and paste the generated secret into Edge Function secrets as
@@ -19,6 +25,19 @@ const codeEmail = (title: string, intro: string, code: string, unsubscribeUrl?: 
     preheader: `Your verification code is ${code}`,
     body: emailParagraph(intro) + emailCode(code) +
       emailNote("The code expires shortly. If you didn\u2019t request it, you can safely ignore this email."),
+  });
+
+/** Both routes in one email: tap the button, or type the code. */
+const codeAndLinkEmail = (
+  title: string, intro: string, code: string, url: string, cta: string, unsubscribeUrl?: string,
+) =>
+  brandedEmail({
+    unsubscribeUrl,
+    title,
+    preheader: `Your verification code is ${code}`,
+    body: emailParagraph(intro) + emailButton(url, cta) +
+      emailParagraph("Or enter this code on the website:") + emailCode(code) +
+      emailNote("The code and the button both expire shortly. If you didn\u2019t request this, you can safely ignore this email."),
   });
 
 const linkEmail = (title: string, intro: string, url: string, cta: string, unsubscribeUrl?: string) =>
@@ -54,6 +73,16 @@ Deno.serve(async (req) => {
   const { user, email_data } = payload;
   const action = email_data.email_action_type;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const siteUrl = Deno.env.get("SITE_URL") ?? "https://suffolktennis.online";
+
+  /**
+   * GoTrue's one-click verify endpoint. redirect_to is empty unless the client
+   * passed emailRedirectTo, so fall back to the site root rather than sending
+   * someone to a blank page.
+   */
+  const verifyLink = (type: string, hash = email_data.token_hash) =>
+    `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(hash)}&type=${type}` +
+    `&redirect_to=${encodeURIComponent(email_data.redirect_to || siteUrl)}`;
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -67,18 +96,27 @@ Deno.serve(async (req) => {
 
   switch (action) {
     case "signup":
-      subject = "Your Suffolk Tennis verification code";
-      html = codeEmail(
+      subject = "Confirm your Suffolk Tennis account";
+      html = codeAndLinkEmail(
         "Confirm your email",
-        "Welcome to Suffolk Tennis! Enter this code on the sign-up page to verify your email address:",
+        "Welcome to Suffolk Tennis! Tap the button to confirm your email address — then sign in with the password you chose.",
         email_data.token,
+        verifyLink("signup"),
+        "Confirm my email",
         unsubUrl,
       );
       break;
     case "magic_link":
     case "magiclink":
-      subject = "Your Suffolk Tennis sign-in code";
-      html = codeEmail("Sign in to Suffolk Tennis", "Enter this code to sign in:", email_data.token, unsubUrl);
+      subject = "Sign in to Suffolk Tennis";
+      html = codeAndLinkEmail(
+        "Sign in to Suffolk Tennis",
+        "Tap the button to sign in.",
+        email_data.token,
+        verifyLink("magiclink"),
+        "Sign me in",
+        unsubUrl,
+      );
       break;
     case "email_change":
       subject = "Confirm your new email address";
@@ -94,7 +132,7 @@ Deno.serve(async (req) => {
       html = codeEmail("Verify it's you", "Enter this code to continue:", email_data.token, unsubUrl);
       break;
     case "recovery": {
-      const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(email_data.token_hash)}&type=recovery&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
+      const verifyUrl = verifyLink("recovery");
       subject = "Reset your Suffolk Tennis password";
       html = linkEmail(
         "Reset your password",
@@ -106,7 +144,7 @@ Deno.serve(async (req) => {
       break;
     }
     case "invite": {
-      const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(email_data.token_hash)}&type=invite&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
+      const verifyUrl = verifyLink("invite");
       subject = "You've been invited to Suffolk Tennis";
       html = linkEmail(
         "You're invited",
