@@ -86,8 +86,8 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailParagraph("For the remainder of 2026, our county training sessions will take place at Culford, with the following groups training across the afternoon.") +
         emailPhoto("venue-culford.jpg", "The indoor courts at Culford") +
         timetable([
-          { time: "1.30 – 3.30pm", groups: "10U Boys B &amp; 10U Girls" },
-          { time: "3.30 – 5.30pm", groups: "9U Boys, 9U Girls &amp; 10U Boys A" },
+          { time: "1.30 – 3.30pm", groups: "9U Boys, 9U Girls &amp; 10U Boys A" },
+          { time: "3.30 – 5.30pm", groups: "10U Boys B &amp; 10U Girls" },
         ]) +
         `<div style="font-family: ${DISPLAY}; font-size: 12px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.16em; text-transform: uppercase; color: ${PINK}; margin: 0 0 12px;">Training dates</div>` +
         dateList([
@@ -136,8 +136,8 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailParagraph("From January 2027, our county training sessions will move to Ipswich Sports Club, with the following timetable.") +
         emailPhoto("venue-ipswich.jpg", "The indoor courts at Ipswich Sports Club") +
         timetable([
-          { time: "1.00 – 3.00pm", groups: "10U Boys B &amp; 10U Girls" },
-          { time: "3.00 – 5.00pm", groups: "9U Boys, 9U Girls &amp; 10U Boys A" },
+          { time: "1.00 – 3.00pm", groups: "9U Boys, 9U Girls &amp; 10U Boys A" },
+          { time: "3.00 – 5.00pm", groups: "10U Boys B &amp; 10U Girls" },
         ]) +
         `<div style="font-family: ${DISPLAY}; font-size: 12px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.16em; text-transform: uppercase; color: ${PINK}; margin: 0 0 12px;">Proposed training dates</div>` +
         dateList([
@@ -169,7 +169,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     },
 
     // Photo break
-    { tone: "light", padding: "0", html: fullBleed("county-ariana.jpg", "A young Suffolk player with her 10U Performer Award") },
+    { tone: "light", padding: "0", html: fullBleed("county-9u-boys.jpg", "The Suffolk 9U boys together at the net") },
 
     // Close
     {
