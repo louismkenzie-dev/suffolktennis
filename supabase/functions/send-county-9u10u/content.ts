@@ -152,6 +152,22 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailNote("The spring and summer dates remain provisional until the full 2027 LTA competition calendar is available, and will be reviewed if required."),
     },
 
+    // What happens next — the question a parent is left with after the dates.
+    // Cyan-accented so it reads as a different kind of block from the pink
+    // "coming soon" note above it.
+    {
+      tone: "light",
+      padding: "10px 32px 32px",
+      html:
+        `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border: 1px solid rgba(0,172,230,0.35); background: rgba(0,172,230,0.06); border-radius: 12px;">
+          <tr><td style="padding: 22px 24px;">
+            <div style="font-family: ${DISPLAY}; font-size: 12px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.16em; text-transform: uppercase; color: ${CYAN}; margin: 0 0 8px;">What happens next</div>
+            <div style="font-family: ${DISPLAY}; font-size: 20px; font-weight: 700; font-stretch: 112%; text-transform: uppercase; color: #0E1D39; margin: 0 0 12px;">Your personal invitation</div>
+            <p style="margin: 0; font-family: ${FONT}; font-size: 15px; line-height: 1.65; color: #334155;">Selected players will receive a personal invitation by email with their confirmed details — session times, County Captain(s) and group coaches — along with booking and payment information through the Suffolk Tennis booking system.</p>
+          </td></tr>
+        </table>`,
+    },
+
     // Photo break
     { tone: "light", padding: "0", html: fullBleed("county-ariana.jpg", "A young Suffolk player with her 10U Performer Award") },
 
