@@ -119,7 +119,10 @@ function renderSection(s: EmailSection): string {
   const tone = s.tone ?? "light";
   const bg = tone === "navy" ? NAVY : tone === "navy-soft" ? NAVY_SOFT : "#FFFFFF";
   const padding = s.padding ?? (tone === "light" ? "32px 32px 30px" : "30px 32px 32px");
-  return `<tr><td bgcolor="${bg}" class="pad" style="padding: ${padding}; font-family: ${FONT}; color: ${tone === "light" ? INK : "#FFFFFF"};">${s.html}</td></tr>`;
+  // The .pad media query forces a mobile gutter, which would inset a section
+  // that deliberately has none — a full-bleed photo band, say. Opt those out.
+  const cls = padding.trim() === "0" ? "" : ' class="pad"';
+  return `<tr><td bgcolor="${bg}"${cls} style="padding: ${padding}; font-family: ${FONT}; color: ${tone === "light" ? INK : "#FFFFFF"};">${s.html}</td></tr>`;
 }
 
 /**
