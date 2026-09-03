@@ -84,7 +84,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         venueTag("September – December") +
         emailHeading("Culford", { size: 26 }) +
         emailParagraph("For the remainder of 2026, our county training sessions will take place at Culford, with the following groups training across the afternoon.") +
-        emailPhoto("county-culford.jpg", "Junior training on the indoor courts at Culford") +
+        emailPhoto("venue-culford.jpg", "The indoor courts at Culford") +
         timetable([
           { time: "1.30 – 3.30pm", groups: "10U Boys B &amp; 10U Girls" },
           { time: "3.30 – 5.30pm", groups: "9U Boys, 9U Girls &amp; 10U Boys A" },
@@ -99,7 +99,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     },
 
     // Photo break
-    { tone: "light", padding: "0", html: fullBleed("county-squad.jpg", "Suffolk juniors together at a county training day") },
+    { tone: "light", padding: "0", html: fullBleed("county-girls.jpg", "Two young Suffolk players at a county day") },
 
     // Why we bring the groups together
     {
@@ -134,6 +134,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         venueTag("January onwards") +
         emailHeading("Ipswich Sports Club", { size: 26 }) +
         emailParagraph("From January 2027, our county training sessions will move to Ipswich Sports Club, with the following timetable.") +
+        emailPhoto("venue-ipswich.jpg", "The indoor courts at Ipswich Sports Club") +
         timetable([
           { time: "1.00 – 3.00pm", groups: "10U Boys B &amp; 10U Girls" },
           { time: "3.00 – 5.00pm", groups: "9U Boys, 9U Girls &amp; 10U Boys A" },
@@ -152,7 +153,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     },
 
     // Photo break
-    { tone: "light", padding: "0", html: fullBleed("county-juniors.jpg", "Young Suffolk players with their awards") },
+    { tone: "light", padding: "0", html: fullBleed("county-ariana.jpg", "A young Suffolk player with her 10U Performer Award") },
 
     // Close
     {
@@ -172,7 +173,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     html: brandedEmail({
       title: "9U & 10U Programme Update",
       preheader: "Training dates and venues confirmed for 2026/27 — Culford until Christmas, Ipswich Sports Club from January.",
-      hero: { file: "county-hero.jpg", alt: "Suffolk Tennis juniors courtside" },
+      hero: { file: "county-uniform.jpg", alt: "Suffolk Tennis juniors playing in county kit" },
       sections,
       unsubscribeUrl,
     }),
