@@ -91,7 +91,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         ]) +
         `<div style="font-family: ${DISPLAY}; font-size: 12px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.16em; text-transform: uppercase; color: ${PINK}; margin: 0 0 12px;">Training dates</div>` +
         dateList([
-          "Sunday 20 September 2026",
+          "Sunday 27 September 2026",
           "Sunday 4 October 2026",
           "Sunday 22 November 2026",
           "Sunday 20 December 2026",
