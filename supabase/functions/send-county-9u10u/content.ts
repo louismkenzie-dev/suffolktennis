@@ -189,7 +189,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     html: brandedEmail({
       title: "9U & 10U Programme Update",
       preheader: "Training dates and venues confirmed for 2026/27 — Culford until Christmas, Ipswich Sports Club from January.",
-      hero: { file: "county-backhand.jpg", alt: "A Suffolk junior preparing to strike the ball" },
+      hero: { file: "county-forehand.jpg", alt: "A Suffolk junior in county kit striking a forehand" },
       sections,
       unsubscribeUrl,
     }),
