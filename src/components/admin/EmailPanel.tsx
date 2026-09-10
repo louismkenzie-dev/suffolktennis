@@ -13,12 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-
-const db = supabase as any;
   Loader2, Plus, Trash2, Send, Eye, Image as ImageIcon, Type, Heading1,
   List as ListIcon, MousePointerClick, Square, ArrowUp, ArrowDown, Users,
   Mail, UserMinus, UserPlus, Upload, Save, RefreshCcw,
 } from "lucide-react";
+
+const db = supabase as any;
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
