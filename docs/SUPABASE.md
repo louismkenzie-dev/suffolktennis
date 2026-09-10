@@ -378,7 +378,15 @@ replaced `acct_1U6qXsE0aLYAntjY`, which never completed onboarding). **Live endp
 `PAYMENTS_LIVE_WEBHOOK_SECRET`. Live connected account `acct_1UE6iZE7yIm0GTnR`
 ("Suffolk Tennis", Standard) verified charges- and payouts-enabled with card
 payments and transfers active. The live publishable key is in
-`src/lib/stripe.ts`. A temporary `stripe-bootstrap` edge function (guard-token
+`src/lib/stripe.ts`.
+
+**Live end-to-end test passed 10 Sep 2026**: a £1 private demo event, real card,
+webhook settled the booking and issued the ticket; PaymentIntent
+`pi_3UE9qPE7yIm0GTnR0jmJZg2r` on the connected account with a 3p application
+fee (2.5% of £1, rounded up — the smallest possible fee); refunded in full
+with `refund_application_fee: true` (`re_3UE9qPE7yIm0GTnR00cRYkay`). Demo rows
+removed. `payments_mode` is now **live**; `bookings_status` is back to
+`coming_soon` until Ollie opens bookings. A temporary `stripe-bootstrap` edge function (guard-token
 protected form-encoding relay for pg_net → Stripe API calls) is deployed for
 sandbox setup — **delete it once testing is done**.
 
