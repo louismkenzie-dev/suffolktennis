@@ -106,7 +106,7 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-dialog overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display pr-6">{event?.title ?? "Booking"}</DialogTitle>
         </DialogHeader>

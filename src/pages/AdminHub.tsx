@@ -421,7 +421,7 @@ const ChildEditDialog = ({ child, onClose, onSaved }: { child: Child | null; onC
 
   return (
     <Dialog open={!!child} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-dialog overflow-y-auto">
         <DialogHeader><DialogTitle>Edit {form.name}</DialogTitle></DialogHeader>
         <div className="flex flex-col items-center gap-2 mb-2">
           {photoPreview ? (
@@ -573,7 +573,7 @@ const ParentsTab = ({
       </div>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-dialog overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selected ? `${selected.first_name} ${selected.last_name}` : ""}</DialogTitle>
           </DialogHeader>
@@ -686,7 +686,7 @@ const ParentEditDialog = ({ parent, onClose, onSaved }: {
 
   return (
     <Dialog open={!!parent} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-dialog overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit {form.first_name} {form.last_name}</DialogTitle>
         </DialogHeader>
@@ -1214,7 +1214,7 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
       </Dialog>
 
       <Dialog open={!!viewSignupsFor} onOpenChange={(o) => !o && setViewSignupsFor(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-dialog overflow-y-auto">
           <DialogHeader><DialogTitle>Sign-ups for "{viewSignupsFor?.title}"</DialogTitle></DialogHeader>
           <div className="space-y-2">
             {viewSignupsFor && signupsForEvent(viewSignupsFor.id).map(s => (
@@ -1280,7 +1280,7 @@ const FocalPointEditor = ({ media, onSave }: { media: NewsMedia; onSave: (fx: nu
           <Crop className="w-3 h-3" />
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 grid-rows-[auto_1fr_auto]">
+      <DialogContent className="max-w-2xl max-h-dialog p-0 gap-0 grid-rows-[auto_1fr_auto]">
         <DialogHeader className="px-6 pt-6"><DialogTitle>Adjust cover framing</DialogTitle></DialogHeader>
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <p className="text-sm text-muted-foreground">

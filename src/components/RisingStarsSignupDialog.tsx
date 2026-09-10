@@ -79,7 +79,7 @@ export default function RisingStarsSignupDialog({ open, onOpenChange, event }: P
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-dialog overflow-y-auto">
         {done ? (
           <div className="text-center py-8">
             <div className="w-16 h-16 mx-auto rounded-full bg-lta-cyan/15 text-lta-cyan flex items-center justify-center">

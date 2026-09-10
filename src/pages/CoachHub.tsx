@@ -509,7 +509,7 @@ const CoachHub = () => {
       </div>
 
       <Dialog open={!!openPlayer} onOpenChange={(o) => { if (!o) setOpenPlayer(null); }}>
-        <DialogContent className="max-w-md max-h-[88vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-dialog overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-3">
               {openPlayer && <PlayerAvatar player={openPlayer} size="w-12 h-12" />}

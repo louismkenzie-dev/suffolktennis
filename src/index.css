@@ -120,6 +120,24 @@
   html {
     -webkit-text-size-adjust: 100%;
   }
+  /* Mobile foundation (lessons from the dance platform, which runs on the
+     owner's phone at the side of a room):
+     - clip, not hidden: a stray wide element must never give the page a
+       horizontal scroll, and clip keeps sticky positioning working;
+     - manipulation: kills the 300ms double-tap-to-zoom delay on buttons. */
+  html, body {
+    overflow-x: clip;
+  }
+  button, a, input, select, textarea, [role="button"] {
+    touch-action: manipulation;
+  }
+  /* iOS zooms the page when a focused input is under 16px. Keep the desktop
+     sizes; only phones need this. */
+  @media (max-width: 640px) {
+    input, select, textarea {
+      font-size: 16px;
+    }
+  }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     font-weight: 600;
@@ -150,6 +168,20 @@
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* Dialog heights. iOS measures `vh` with Safari's toolbars hidden, so a
+     90vh dialog can put its footer button behind the toolbar — a parent at
+     checkout unable to see the button. `dvh` tracks the real viewport; the
+     80vh fallback is for browsers without it. */
+  .max-h-dialog {
+    max-height: 80vh;
+  }
+  .h-dialog {
+    height: 80vh;
+  }
+  @supports (height: 1dvh) {
+    .max-h-dialog { max-height: 88dvh; }
+    .h-dialog { height: 90dvh; }
   }
 }
 

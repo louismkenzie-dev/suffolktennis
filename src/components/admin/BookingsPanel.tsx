@@ -729,7 +729,7 @@ const BookingsPanel = () => {
       {/* Invite players dialog — near full-screen: this is where Ollie works
           through the whole county database, so it gets the room. */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="max-w-6xl w-[96vw] h-[92vh] flex flex-col gap-3 p-4 sm:p-6">
+        <DialogContent className="max-w-6xl w-[96vw] h-dialog flex flex-col gap-3 p-4 sm:p-6">
           <DialogHeader className="shrink-0">
             <DialogTitle>Invite players — {selected?.title}</DialogTitle>
           </DialogHeader>
@@ -896,7 +896,7 @@ const BookingsPanel = () => {
 
       {/* Event create/edit dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-dialog overflow-y-auto">
           <DialogHeader><DialogTitle>{form.id ? "Edit event" : "New event"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
