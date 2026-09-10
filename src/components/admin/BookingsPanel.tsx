@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -16,7 +15,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users } from "lucide-react";
+import {
+  PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
+  SearchField, Chip, ChipRow, InlineNote, useIsPhone,
+} from "@/components/app";
 import { formatTime } from "@/lib/timeFormat";
 
 const db = supabase as any;
@@ -521,218 +524,355 @@ const BookingsPanel = () => {
     loadEvents();
   };
 
-  const statusBadge = (s: string) => {
-    const map: Record<string, string> = {
-      invited: "bg-muted text-muted-foreground", opened: "bg-blue-100 text-blue-800",
-      booked: "bg-green-100 text-green-800", paid: "bg-green-100 text-green-800",
-      pending: "bg-yellow-100 text-yellow-800", payment_failed: "bg-red-100 text-red-800",
-      revoked: "bg-red-100 text-red-800", cancelled: "bg-red-100 text-red-800",
-    };
-    return <Badge className={map[s] ?? "bg-muted"} variant="outline">{s.replace("_", " ")}</Badge>;
+  const phone = useIsPhone();
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const isProgramme = selected?.programme_type === "programme";
+  const s0 = selected ? (stats[selected.id] ?? { invited: 0, booked: 0, paid: 0 }) : null;
+  const unbooked = invitations.filter((i) => i.status === "invited" || i.status === "opened");
+  const priceLine = (ev: EventRow) =>
+    ev.programme_type === "programme"
+      ? `${gbp(ev.price_pence)} · ${ev.meeting_cadence ?? "regular"} programme`
+      : ev.is_free ? "Free event" : `${gbp(ev.price_pence)} · event`;
+  const placesLine = (ev: EventRow) => {
+    const st = stats[ev.id] ?? { invited: 0, booked: 0, paid: 0 };
+    return `${st.invited} invited · ${ev.capacity ? `${st.paid}/${ev.capacity} places` : `${st.paid} booked`}`;
   };
+  const fmtDate = (d: string) => new Date(d.length === 10 ? d + "T12:00:00" : d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Bookings" hideTitleOnPhone description="Events and programmes parents can book." className="mb-0" />
+        <SkeletonRows rows={4} avatar={false} />
+      </div>
+    );
+  }
+
+  const showList = !phone || !selected;
+  const showDetail = !!selected;
 
   return (
     <div className="space-y-6">
-      {pastDue.length > 0 && (
-        <Card className="border-red-300 bg-red-50">
-          <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2 text-red-700">
-            <AlertTriangle className="w-4 h-4" /> Failed payments to chase ({pastDue.length})
-          </CardTitle></CardHeader>
-          <CardContent className="text-sm space-y-1">
-            {pastDue.map((m) => (
-              <div key={m.id} className="flex justify-between">
-                <span><strong>{m.child_name}</strong> — {m.parent_email}</span>
-                <span className="text-red-600">entry blocked until paid</span>
+      {showList && (
+        <>
+          <PageHeader
+            title="Bookings"
+            hideTitleOnPhone
+            description="Events and programmes parents can book, who has been invited and who has paid."
+            className="mb-0"
+            actions={
+              <>
+                <div className="hidden gap-2 md:flex">
+                  <Button asChild variant="outline" size="sm"><Link to="/admin/scan"><QrCode className="w-4 h-4" /> Scanner</Link></Button>
+                  <Button variant="outline" size="sm" disabled={importing} onClick={() => document.getElementById("roster-csv-input")?.click()}>
+                    {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Import CSV
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setAddPlayerOpen(true)}><Plus className="w-4 h-4" /> Add player</Button>
+                </div>
+                <Button variant="outline" size="icon" className="md:hidden" aria-label="More actions" onClick={() => setActionsOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
+                <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4" /> New event</Button>
+                <input id="roster-csv-input" type="file" accept=".csv,text/csv" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importRosterCsv(f); e.target.value = ""; }} />
+              </>
+            }
+          />
+
+          {pastDue.length > 0 && (
+            <InlineNote tone="danger" icon={AlertTriangle}>
+              <p className="font-medium">Failed payments to chase ({pastDue.length})</p>
+              <ul className="mt-1 space-y-0.5 text-[13px]">
+                {pastDue.map((m) => <li key={m.id}><strong>{m.child_name}</strong> — {m.parent_email} · entry blocked until paid</li>)}
+              </ul>
+            </InlineNote>
+          )}
+
+          {events.length === 0 ? (
+            <EmptyState icon={Ticket} title="No events yet" description="Create an event or programme, then invite players to it." action={<Button onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4" /> New event</Button>} />
+          ) : (
+            <>
+              <ListGroup className="md:hidden">
+                {events.map((ev) => (
+                  <ListRow
+                    key={ev.id}
+                    onClick={() => openEvent(ev)}
+                    selected={selected?.id === ev.id}
+                    title={<span className={ev.cancelled_at ? "line-through text-muted-foreground" : undefined}>{ev.title}</span>}
+                    subtitle={priceLine(ev)}
+                    detail={placesLine(ev)}
+                    trailing={ev.cancelled_at
+                      ? <StatusBadge tone="danger" dot={false}>Cancelled</StatusBadge>
+                      : ev.visibility === "private" ? <Lock className="w-4 h-4 text-muted-foreground/70" aria-label="Private" /> : <Globe className="w-4 h-4 text-muted-foreground/70" aria-label="Public" />}
+                    chevron
+                  />
+                ))}
+              </ListGroup>
+              <div className="hidden gap-4 md:grid md:grid-cols-2 lg:grid-cols-3">
+                {events.map((ev) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={() => openEvent(ev)}
+                    className={`press rounded-2xl border bg-card p-4 text-left shadow-card transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected?.id === ev.id ? "border-primary ring-1 ring-primary" : "border-border"}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className={`text-[15px] font-semibold leading-snug ${ev.cancelled_at ? "line-through text-muted-foreground" : ""}`}>{ev.title}</p>
+                      {ev.cancelled_at
+                        ? <StatusBadge tone="danger" dot={false}>Cancelled</StatusBadge>
+                        : ev.visibility === "private" ? <StatusBadge tone="neutral" dot={false}><Lock className="w-3 h-3" />Private</StatusBadge> : <StatusBadge tone="info" dot={false}><Globe className="w-3 h-3" />Public</StatusBadge>}
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">{priceLine(ev)}</p>
+                    <p className="text-sm text-muted-foreground">{placesLine(ev)}</p>
+                  </button>
+                ))}
               </div>
-            ))}
-          </CardContent>
-        </Card>
+            </>
+          )}
+        </>
       )}
 
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl font-bold">Bookable events &amp; programmes</h2>
-        <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm"><Link to="/admin/scan"><QrCode className="w-4 h-4 mr-1" /> Scanner</Link></Button>
-          <Button variant="outline" size="sm" disabled={importing} onClick={() => document.getElementById("roster-csv-input")?.click()}>
-            {importing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />} Import players (CSV)
-          </Button>
-          <input id="roster-csv-input" type="file" accept=".csv,text/csv" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) importRosterCsv(f); e.target.value = ""; }} />
-          <Button variant="outline" size="sm" onClick={() => setAddPlayerOpen(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Add player
-          </Button>
-          <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4 mr-1" /> New event</Button>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {events.map((ev) => {
-          const s = stats[ev.id] ?? { invited: 0, booked: 0, paid: 0 };
-          return (
-            <Card key={ev.id} className={`cursor-pointer transition-shadow hover:shadow-md ${selected?.id === ev.id ? "ring-2 ring-primary" : ""}`} onClick={() => openEvent(ev)}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-start justify-between gap-2">
-                  <span>{ev.title}</span>
-                  {ev.visibility === "private"
-                    ? <Badge variant="outline" className="shrink-0"><Lock className="w-3 h-3 mr-1" />Private</Badge>
-                    : <Badge variant="outline" className="shrink-0"><Globe className="w-3 h-3 mr-1" />Public</Badge>}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground space-y-1">
-                <div>
-                  {ev.programme_type === "programme"
-                    ? `${gbp(ev.price_pence)} · ${ev.meeting_cadence ?? "regular"} programme`
-                    : ev.is_free ? "Free" : gbp(ev.price_pence)}
-                  {ev.capacity ? ` · ${s.paid}/${ev.capacity} places` : ` · ${s.paid} booked`}
+      {showDetail && selected && (
+        <div className="space-y-6">
+          {phone && (
+            <button type="button" onClick={() => setSelected(null)} className="hit-area -ml-1 inline-flex h-9 items-center gap-0.5 text-[15px] font-medium text-primary">
+              <ChevronLeft className="w-5 h-5" /> All events
+            </button>
+          )}
+          <div className={phone ? "" : "rounded-2xl border border-border bg-card p-5 shadow-card md:p-6"}>
+            <div className="flex flex-col gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-display text-xl font-semibold leading-tight md:text-2xl">{selected.title}</h2>
+                  {selected.cancelled_at
+                    ? <StatusBadge tone="danger">Cancelled</StatusBadge>
+                    : selected.visibility === "private" ? <StatusBadge tone="neutral" dot={false}><Lock className="w-3 h-3" />Invitation only</StatusBadge> : <StatusBadge tone="info" dot={false}><Globe className="w-3 h-3" />Public</StatusBadge>}
                 </div>
-                <div>{s.invited} invited · {s.booked} booked</div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {priceLine(selected)}
+                  {selected.location ? ` · ${selected.location}` : ""}
+                  {selected.event_date && !isProgramme ? ` · ${fmtDate(selected.event_date)}` : ""}
+                </p>
+                {s0 && (
+                  <div className="mt-3 grid grid-cols-3 gap-2 md:max-w-sm">
+                    {[{ n: s0.invited, l: "Invited" }, { n: s0.booked, l: "Booked" }, { n: s0.paid, l: selected.capacity ? `Paid / ${selected.capacity}` : "Paid" }].map((x) => (
+                      <div key={x.l} className="rounded-xl bg-muted/70 px-3 py-2">
+                        <p className="text-lg font-semibold leading-none tabular">{x.n}</p>
+                        <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{x.l}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => { loadPlayers(); setInviteOpen(true); }} disabled={!!selected.cancelled_at}><Send className="w-4 h-4" /> Invite players</Button>
+                <Button variant="outline" size="sm" onClick={() => editEvent(selected)}><Pencil className="w-4 h-4" /> Edit</Button>
+                {!selected.cancelled_at && (
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_event" }); }}>
+                    <Ban className="w-4 h-4" /> Cancel event
+                  </Button>
+                )}
+              </div>
+            </div>
 
-      {selected && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle>{selected.title}</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => editEvent(selected)}><Pencil className="w-4 h-4 mr-1" /> Edit</Button>
-              {selected.cancelled_at ? (
-                <Badge variant="outline" className="text-red-600 border-red-300">Cancelled</Badge>
-              ) : (
-                <Button variant="outline" size="sm" className="text-red-600" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_event" }); }}>
-                  <Ban className="w-4 h-4 mr-1" /> Cancel event
-                </Button>
+            <div className={phone ? "mt-6 space-y-6" : "mt-6 space-y-6"}>
+              {isProgramme && (
+                <Section title="Session dates" count={sessions.filter((x) => !x.cancelled_at).length} description="Parents are emailed when a session is moved or cancelled.">
+                  {sessions.length === 0 ? (
+                    <EmptyState icon={CalendarPlus} title="No dates yet" description="Add the first date, or generate a 12-week term." compact />
+                  ) : (
+                    <ListGroup>
+                      {sessions.map((x) => (
+                        <ListRow
+                          key={x.id}
+                          size="sm"
+                          title={<span className={x.cancelled_at ? "line-through text-muted-foreground" : undefined}>{fmtDate(x.session_date)}{x.start_time ? ` · ${formatTime(x.start_time)}` : ""}</span>}
+                          subtitle={[x.venue, x.cancelled_at ? "Cancelled" : x.moved_from_date ? `Moved from ${fmtDate(x.moved_from_date)}` : null].filter(Boolean).join(" · ") || undefined}
+                          trailing={
+                            <span className="flex items-center">
+                              {!x.cancelled_at && (
+                                <>
+                                  <Button size="icon-sm" variant="ghost" aria-label="Move this session" title="Move (parents are emailed)" onClick={() => {
+                                    setChangeReason(""); setChangeDate(x.session_date); setChangeTime(x.start_time?.slice(0, 5) ?? ""); setChangeVenue(x.venue ?? "");
+                                    setSessionChange({ mode: "reschedule_session", session: x });
+                                  }}><CalendarClock className="w-4 h-4" /></Button>
+                                  <Button size="icon-sm" variant="ghost" aria-label="Cancel this session" title="Cancel (parents are emailed)" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_session", session: x }); }}><Ban className="w-4 h-4 text-amber-600" /></Button>
+                                </>
+                              )}
+                              <Button size="icon-sm" variant="ghost" aria-label="Delete without telling anyone" title="Delete without telling anyone" onClick={async () => { await db.from("event_sessions").delete().eq("id", x.id); openEvent(selected); }}><Trash2 className="w-4 h-4 text-muted-foreground" /></Button>
+                            </span>
+                          }
+                        />
+                      ))}
+                    </ListGroup>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-[auto_auto_1fr_auto_auto]">
+                    <Input type="date" aria-label="Session date" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} />
+                    <Input type="time" aria-label="Start time" value={newSessionTime} onChange={(e) => setNewSessionTime(e.target.value)} />
+                    <Input placeholder="Venue" className="col-span-2 sm:col-span-1" value={newSessionVenue} onChange={(e) => setNewSessionVenue(e.target.value)} />
+                    <Button variant="outline" onClick={addSession} disabled={!newSessionDate}>Add date</Button>
+                    <Button variant="outline" onClick={async () => {
+                      // A 12-week term in one click: weekly sessions from the chosen start date.
+                      if (!selected || !newSessionDate) { toast.error("Pick the first session's date"); return; }
+                      const start = new Date(newSessionDate + "T00:00:00");
+                      const rows = Array.from({ length: 12 }, (_, w) => {
+                        const d = new Date(start); d.setDate(d.getDate() + w * 7);
+                        return {
+                          event_id: selected.id,
+                          session_date: d.toISOString().slice(0, 10),
+                          start_time: newSessionTime || null,
+                          venue: newSessionVenue.trim() || null,
+                        };
+                      });
+                      const { error } = await db.from("event_sessions").insert(rows);
+                      if (error) toast.error(error.message);
+                      else { toast.success("12 weekly sessions added"); setNewSessionDate(""); openEvent(selected); }
+                    }} disabled={!newSessionDate}>Weekly ×12</Button>
+                  </div>
+                </Section>
               )}
-              <Button size="sm" onClick={() => { loadPlayers(); setInviteOpen(true); }}><Send className="w-4 h-4 mr-1" /> Invite players</Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {selected.programme_type === "programme" && (
-              <div>
-                <h3 className="font-semibold text-sm mb-2 flex items-center gap-1"><CalendarPlus className="w-4 h-4" /> Programme session dates</h3>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {sessions.map((s) => (
-                    <Badge key={s.id} variant={s.cancelled_at ? "outline" : "secondary"} className={`gap-1 ${s.cancelled_at ? "line-through text-muted-foreground" : ""}`}>
-                      {new Date(s.session_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      {s.start_time ? ` ${formatTime(s.start_time)}` : ""}{s.venue ? ` · ${s.venue}` : ""}
-                      {s.moved_from_date && !s.cancelled_at ? <span className="text-[10px] text-amber-700">moved</span> : null}
-                      {!s.cancelled_at && (
-                        <>
-                          <button title="Move this session (parents are emailed)" onClick={() => {
-                            setChangeReason(""); setChangeDate(s.session_date); setChangeTime(s.start_time?.slice(0, 5) ?? ""); setChangeVenue(s.venue ?? "");
-                            setSessionChange({ mode: "reschedule_session", session: s });
-                          }}>
-                            <CalendarClock className="w-3 h-3" />
-                          </button>
-                          <button title="Cancel this session (parents are emailed)" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_session", session: s }); }}>
-                            <Ban className="w-3 h-3 text-amber-600" />
-                          </button>
-                        </>
-                      )}
-                      <button title="Delete without telling anyone" onClick={async () => { await db.from("event_sessions").delete().eq("id", s.id); openEvent(selected); }}>
-                        <Trash2 className="w-3 h-3 text-red-500" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Input type="date" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} className="w-40" />
-                  <Input type="time" value={newSessionTime} onChange={(e) => setNewSessionTime(e.target.value)} className="w-28" />
-                  <Input placeholder="Venue" value={newSessionVenue} onChange={(e) => setNewSessionVenue(e.target.value)} className="w-44" />
-                  <Button size="sm" variant="outline" onClick={addSession}>Add date</Button>
-                  <Button size="sm" variant="outline" onClick={async () => {
-                    // A 12-week term in one click: weekly sessions from the chosen start date.
-                    if (!selected || !newSessionDate) { toast.error("Pick the first session's date"); return; }
-                    const start = new Date(newSessionDate + "T00:00:00");
-                    const rows = Array.from({ length: 12 }, (_, w) => {
-                      const d = new Date(start); d.setDate(d.getDate() + w * 7);
-                      return {
-                        event_id: selected.id,
-                        session_date: d.toISOString().slice(0, 10),
-                        start_time: newSessionTime || null,
-                        venue: newSessionVenue.trim() || null,
-                      };
-                    });
-                    const { error } = await db.from("event_sessions").insert(rows);
-                    if (error) toast.error(error.message);
-                    else { toast.success("12 weekly sessions added"); setNewSessionDate(""); openEvent(selected); }
-                  }}>Add weekly ×12</Button>
-                </div>
-              </div>
-            )}
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-sm">Invitations ({invitations.length})</h3>
-                <Button variant="outline" size="sm"
-                  onClick={() => remind(invitations.filter((i) => i.status === "invited" || i.status === "opened").map((i) => i.id))}>
-                  <RefreshCw className="w-4 h-4 mr-1" /> Remind all unbooked
-                </Button>
-              </div>
-              <Table>
-                <TableHeader><TableRow>
-                  <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Status</TableHead><TableHead>Sent</TableHead><TableHead />
-                </TableRow></TableHeader>
-                <TableBody>
-                  {invitations.map((i) => (
-                    <TableRow key={i.id}>
-                      <TableCell className="font-medium">{i.child_name}</TableCell>
-                      <TableCell className="text-muted-foreground">{i.parent_name || i.parent_email}</TableCell>
-                      <TableCell>{statusBadge(i.status)}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {i.sent_at ? new Date(i.sent_at).toLocaleDateString("en-GB") : "not sent"}
-                        {i.reminded_at ? " · reminded" : ""}
-                      </TableCell>
-                      <TableCell>
-                        {(i.status === "invited" || i.status === "opened") && (
-                          <Button variant="ghost" size="sm" onClick={() => remind([i.id])}>Resend</Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+              <Section
+                title="Invitations"
+                count={invitations.length}
+                action={unbooked.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => remind(unbooked.map((i) => i.id))}>
+                    <RefreshCw className="w-4 h-4" /> Remind {unbooked.length}
+                  </Button>
+                )}
+              >
+                {invitations.length === 0 ? (
+                  <EmptyState icon={Send} title="Nobody invited yet" description="Invite players and their parents get an email with a personal booking link." compact />
+                ) : (
+                  <>
+                    <ListGroup className="md:hidden">
+                      {invitations.map((i) => {
+                        const st = bookingStatus(i.status);
+                        return (
+                          <ListRow
+                            key={i.id}
+                            size="sm"
+                            title={i.child_name ?? i.parent_email}
+                            subtitle={i.parent_name || i.parent_email}
+                            detail={`${i.sent_at ? `Sent ${new Date(i.sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "Not sent"}${i.reminded_at ? " · reminded" : ""}`}
+                            trailing={
+                              <span className="flex items-center gap-2">
+                                <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                                {(i.status === "invited" || i.status === "opened") && (
+                                  <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" onClick={() => remind([i.id])}><RefreshCw className="w-4 h-4" /></Button>
+                                )}
+                              </span>
+                            }
+                          />
+                        );
+                      })}
+                    </ListGroup>
+                    <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
+                      <Table>
+                        <TableHeader><TableRow>
+                          <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Status</TableHead><TableHead>Sent</TableHead><TableHead />
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {invitations.map((i) => {
+                            const st = bookingStatus(i.status);
+                            return (
+                              <TableRow key={i.id}>
+                                <TableCell className="font-medium">{i.child_name}</TableCell>
+                                <TableCell className="text-muted-foreground">{i.parent_name || i.parent_email}</TableCell>
+                                <TableCell><StatusBadge tone={st.tone}>{st.label}</StatusBadge></TableCell>
+                                <TableCell className="text-muted-foreground text-xs">
+                                  {i.sent_at ? new Date(i.sent_at).toLocaleDateString("en-GB") : "not sent"}
+                                  {i.reminded_at ? " · reminded" : ""}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {(i.status === "invited" || i.status === "opened") && (
+                                    <Button variant="ghost" size="sm" onClick={() => remind([i.id])}>Resend</Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                )}
+              </Section>
 
-            <div>
-              <h3 className="font-semibold text-sm mb-2">Bookings ({bookings.length})</h3>
-              <Table>
-                <TableHeader><TableRow>
-                  <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Paid</TableHead><TableHead className="text-right">Actions</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {bookings.map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-medium">{b.child_name}{b.session_slot ? <span className="text-muted-foreground text-xs"> · {b.session_slot}</span> : null}</TableCell>
-                      <TableCell className="text-muted-foreground">{b.parent_email}</TableCell>
-                      <TableCell>{gbp(b.amount_pence)}{b.membership_id ? "/mo" : ""}</TableCell>
-                      <TableCell>{statusBadge(b.status)}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{b.paid_at ? new Date(b.paid_at).toLocaleDateString("en-GB") : "—"}</TableCell>
-                      <TableCell className="text-right">
-                        {b.status === "paid" && (
-                          <Button variant="ghost" size="sm" onClick={() => setRefundTarget(b)}>
-                            <Undo2 className="w-4 h-4 mr-1" /> Refund
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <Section title="Bookings" count={bookings.length}>
+                {bookings.length === 0 ? (
+                  <EmptyState icon={Ticket} title="No bookings yet" description="Bookings appear here as parents confirm their places." compact />
+                ) : (
+                  <>
+                    <ListGroup className="md:hidden">
+                      {bookings.map((b) => {
+                        const st = bookingStatus(b.status);
+                        return (
+                          <ListRow
+                            key={b.id}
+                            size="sm"
+                            title={b.child_name}
+                            subtitle={b.parent_email}
+                            detail={`${gbp(b.amount_pence)}${b.membership_id ? "/mo" : ""}${b.session_slot ? ` · ${b.session_slot}` : ""}${b.paid_at ? ` · paid ${new Date(b.paid_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}`}
+                            trailing={
+                              <span className="flex items-center gap-2">
+                                <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                                {b.status === "paid" && <Button variant="ghost" size="icon-sm" aria-label="Refund" onClick={() => setRefundTarget(b)}><Undo2 className="w-4 h-4" /></Button>}
+                              </span>
+                            }
+                          />
+                        );
+                      })}
+                    </ListGroup>
+                    <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
+                      <Table>
+                        <TableHeader><TableRow>
+                          <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Paid</TableHead><TableHead className="text-right">Actions</TableHead>
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {bookings.map((b) => {
+                            const st = bookingStatus(b.status);
+                            return (
+                              <TableRow key={b.id}>
+                                <TableCell className="font-medium">{b.child_name}{b.session_slot ? <span className="text-muted-foreground text-xs"> · {b.session_slot}</span> : null}</TableCell>
+                                <TableCell className="text-muted-foreground">{b.parent_email}</TableCell>
+                                <TableCell className="tabular">{gbp(b.amount_pence)}{b.membership_id ? "/mo" : ""}</TableCell>
+                                <TableCell><StatusBadge tone={st.tone}>{st.label}</StatusBadge></TableCell>
+                                <TableCell className="text-muted-foreground text-xs">{b.paid_at ? new Date(b.paid_at).toLocaleDateString("en-GB") : "—"}</TableCell>
+                                <TableCell className="text-right">
+                                  {b.status === "paid" && (
+                                    <Button variant="ghost" size="sm" onClick={() => setRefundTarget(b)}><Undo2 className="w-4 h-4" /> Refund</Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                )}
+              </Section>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
+
+      {/* Secondary actions (phone) */}
+      <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
+        <DialogContent className="gap-3 md:max-w-sm">
+          <DialogHeader><DialogTitle>Actions</DialogTitle></DialogHeader>
+          <ListGroup>
+            <ListRow size="sm" href="/admin/scan" leading={<QrCode className="w-5 h-5 text-muted-foreground" />} title="Ticket scanner" chevron />
+            <ListRow size="sm" onClick={() => { setActionsOpen(false); document.getElementById("roster-csv-input")?.click(); }} leading={<Upload className="w-5 h-5 text-muted-foreground" />} title="Import players (CSV)" subtitle="LTA RCP report export" />
+            <ListRow size="sm" onClick={() => { setActionsOpen(false); setAddPlayerOpen(true); }} leading={<Plus className="w-5 h-5 text-muted-foreground" />} title="Add a player by hand" />
+          </ListGroup>
+        </DialogContent>
+      </Dialog>
 
       {/* Add a single player by hand */}
       <Dialog open={addPlayerOpen} onOpenChange={setAddPlayerOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add a player</DialogTitle></DialogHeader>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div><Label>First name *</Label>
               <Input value={newPlayer.first_name} onChange={(e) => setNewPlayer({ ...newPlayer, first_name: e.target.value })} /></div>
             <div><Label>Last name *</Label>
@@ -757,154 +897,207 @@ const BookingsPanel = () => {
               </Select>
             </div>
             <div><Label>Parent name</Label>
-              <Input value={newPlayer.contact_name} onChange={(e) => setNewPlayer({ ...newPlayer, contact_name: e.target.value })} /></div>
+              <Input value={newPlayer.contact_name} autoComplete="name" onChange={(e) => setNewPlayer({ ...newPlayer, contact_name: e.target.value })} /></div>
             <div><Label>Parent email</Label>
-              <Input type="email" value={newPlayer.contact_email}
+              <Input type="email" inputMode="email" autoComplete="email" value={newPlayer.contact_email}
                 onChange={(e) => setNewPlayer({ ...newPlayer, contact_email: e.target.value })} /></div>
             <div><Label>Mobile</Label>
-              <Input value={newPlayer.mobile} onChange={(e) => setNewPlayer({ ...newPlayer, mobile: e.target.value })} /></div>
+              <Input type="tel" inputMode="tel" value={newPlayer.mobile} onChange={(e) => setNewPlayer({ ...newPlayer, mobile: e.target.value })} /></div>
             <div><Label>LTA number</Label>
-              <Input value={newPlayer.lta_number} onChange={(e) => setNewPlayer({ ...newPlayer, lta_number: e.target.value })}
+              <Input inputMode="numeric" value={newPlayer.lta_number} onChange={(e) => setNewPlayer({ ...newPlayer, lta_number: e.target.value })}
                 placeholder="Leave blank if they have none" /></div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Added to the same roster the LTA import fills, so they appear in the invite picker and in the
+            Added to the same roster the LTA import fills, so they appear in the invite picker and the
             email group picker right away. A parent email is what makes them mailable.
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAddPlayerOpen(false)}>Cancel</Button>
             <Button onClick={addPlayer} disabled={savingPlayer}>
-              {savingPlayer && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Add player
+              {savingPlayer && <Loader2 className="w-4 h-4 animate-spin" />}Add player
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Invite players dialog — near full-screen: this is where Ollie works
-          through the whole county database, so it gets the room. */}
+      {/* Invite players — near full-screen: this is where Ollie works through
+          the whole county database, so it gets the room. */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="max-w-6xl w-[96vw] h-dialog flex flex-col gap-3 p-4 sm:p-6">
-          <DialogHeader className="shrink-0">
-            <DialogTitle>Invite players — {selected?.title}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-wrap gap-2 shrink-0">
-            <Select value={playerFilter} onValueChange={setPlayerFilter}>
-              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All ages</SelectItem>
-                {AGE_GROUPS.map((g) => <SelectItem key={g} value={`${g}U`}>{g}U</SelectItem>)}
-                <SelectItem value="Open">Open</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={genderFilter} onValueChange={setGenderFilter}>
-              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="male">Boys</SelectItem>
-                <SelectItem value="female">Girls</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input placeholder="Search players…" value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} className="flex-1 min-w-[12rem]" />
-            <Button variant="outline" onClick={() => setAddPlayerOpen(true)}>
-              <Plus className="w-4 h-4 mr-1" /> Add new player
-            </Button>
+        <DialogContent className="h-dialog max-h-[96dvh] gap-3 p-0 md:max-w-6xl md:w-[96vw]" hideClose>
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="shrink-0 space-y-3 border-b border-border px-4 pb-3 pt-6 md:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <DialogTitle className="truncate">Invite players</DialogTitle>
+                  <p className="truncate text-sm text-muted-foreground">{selected?.title}</p>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setInviteOpen(false)}>Close</Button>
+              </div>
+              <div className="flex gap-2">
+                <SearchField value={playerSearch} onChange={setPlayerSearch} placeholder="Search players" className="flex-1" />
+                <div className="hidden gap-2 md:flex">
+                  <Select value={playerFilter} onValueChange={setPlayerFilter}>
+                    <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All ages</SelectItem>
+                      {AGE_GROUPS.map((g) => <SelectItem key={g} value={`${g}U`}>{g}U</SelectItem>)}
+                      <SelectItem value="Open">Open</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={genderFilter} onValueChange={setGenderFilter}>
+                    <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="male">Boys</SelectItem>
+                      <SelectItem value="female">Girls</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={() => setAddPlayerOpen(true)}><Plus className="w-4 h-4" /> Add new player</Button>
+                </div>
+                <Button variant="outline" size="icon" className="md:hidden" aria-label="Add new player" onClick={() => setAddPlayerOpen(true)}><Plus className="w-4 h-4" /></Button>
+              </div>
+              <ChipRow className="md:hidden">
+                <Chip active={playerFilter === "all"} onClick={() => setPlayerFilter("all")}>All ages</Chip>
+                {AGE_GROUPS.map((g) => <Chip key={g} active={playerFilter === `${g}U`} onClick={() => setPlayerFilter(`${g}U`)}>{g}U</Chip>)}
+                <Chip active={genderFilter === "male"} onClick={() => setGenderFilter(genderFilter === "male" ? "all" : "male")}>Boys</Chip>
+                <Chip active={genderFilter === "female"} onClick={() => setGenderFilter(genderFilter === "female" ? "all" : "female")}>Girls</Chip>
+              </ChipRow>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="tabular">
+                  {filteredPlayers.length} players · {checked.size} selected
+                  {freePlace.size > 0 ? ` · ${freePlace.size} free place${freePlace.size === 1 ? "" : "s"}` : ""}
+                </span>
+                <button type="button" className="inline-flex min-h-8 items-center font-medium text-primary" onClick={() => {
+                  const all = new Set(checked);
+                  const allChecked = filteredPlayers.every((p) => all.has(p.key));
+                  filteredPlayers.forEach((p) => allChecked ? all.delete(p.key) : all.add(p.key));
+                  setChecked(all);
+                }}>{filteredPlayers.length > 0 && filteredPlayers.every((p) => checked.has(p.key)) ? "Unselect all shown" : "Select all shown"}</button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              {filteredPlayers.length === 0 ? (
+                <div className="p-6"><EmptyState icon={Users} title="No players match" compact /></div>
+              ) : (
+                <>
+                  {/* Phone rows */}
+                  <div className="divide-y divide-border md:hidden">
+                    {filteredPlayers.map((p) => {
+                      const included = selected?.programme_type === "programme" && p.paid_programme;
+                      const isChecked = checked.has(p.key);
+                      return (
+                        <div key={p.key} className={`flex items-center gap-3 px-4 py-2.5 ${isChecked ? "bg-primary/[0.06]" : ""}`}>
+                          <Checkbox aria-label={`Select ${p.name}`} checked={isChecked} onCheckedChange={(v) => {
+                            const next = new Set(checked);
+                            v === true ? next.add(p.key) : next.delete(p.key);
+                            setChecked(next);
+                          }} />
+                          <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openEditPlayer(p)}>
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-[15px] font-medium">{p.name}</span>
+                              <span className="shrink-0 rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">{p.age_group}</span>
+                              {included && <StatusBadge tone="success" dot={false}>included</StatusBadge>}
+                            </div>
+                            <div className="truncate text-[13px] text-muted-foreground">{p.contact_email ?? <span className="text-red-600">no parent email</span>}{p.parent_name ? ` · ${p.parent_name}` : ""}</div>
+                          </button>
+                          {!included && (
+                            <label className="flex shrink-0 flex-col items-center gap-0.5 text-[10px] text-muted-foreground">
+                              <Checkbox aria-label={`Give ${p.name} a free place`} checked={freePlace.has(p.key)} onCheckedChange={(v) => {
+                                const next = new Set(freePlace);
+                                v === true ? next.add(p.key) : next.delete(p.key);
+                                setFreePlace(next);
+                              }} />
+                              free
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Desktop table */}
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-card">
+                        <TableRow>
+                          <TableHead className="w-8"></TableHead>
+                          <TableHead>Player</TableHead>
+                          <TableHead>Age</TableHead>
+                          <TableHead>Gender</TableHead>
+                          <TableHead>WTN</TableHead>
+                          <TableHead>Parent</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Free place</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPlayers.map((p) => {
+                          const included = selected?.programme_type === "programme" && p.paid_programme;
+                          return (
+                            <TableRow key={p.key} className={checked.has(p.key) ? "bg-primary/[0.06]" : undefined}>
+                              <TableCell>
+                                <Checkbox aria-label={`Select ${p.name}`} checked={checked.has(p.key)} onCheckedChange={(v) => {
+                                  const next = new Set(checked);
+                                  v === true ? next.add(p.key) : next.delete(p.key);
+                                  setChecked(next);
+                                }} />
+                              </TableCell>
+                              <TableCell>
+                                <button className="font-medium text-left hover:underline" onClick={() => openEditPlayer(p)} title="Edit player details">
+                                  {p.name}
+                                </button>
+                                {p.child_id && <Badge variant="outline" className="ml-2 text-[10px]">account</Badge>}
+                                {included && <StatusBadge tone="success" dot={false} className="ml-2">no extra charge</StatusBadge>}
+                              </TableCell>
+                              <TableCell><Badge variant="outline" className="text-[10px]">{p.age_group}</Badge></TableCell>
+                              <TableCell className="text-muted-foreground capitalize">{p.gender ?? "—"}</TableCell>
+                              <TableCell className="text-muted-foreground">{p.wtn ?? "—"}</TableCell>
+                              <TableCell className="text-muted-foreground text-xs">
+                                <div className="truncate max-w-[16rem]">{p.contact_email ?? <span className="text-red-600">no parent email</span>}</div>
+                                {p.parent_name && <div className="truncate max-w-[16rem]">{p.parent_name}</div>}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {included ? (
+                                  <span className="text-[11px] text-muted-foreground">automatic</span>
+                                ) : (
+                                  <Checkbox
+                                    aria-label={`Give ${p.name} a free place`}
+                                    checked={freePlace.has(p.key)}
+                                    onCheckedChange={(v) => {
+                                      const next = new Set(freePlace);
+                                      v === true ? next.add(p.key) : next.delete(p.key);
+                                      setFreePlace(next);
+                                    }}
+                                  />
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-border bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 md:px-6">
+              <p className="mb-2 hidden text-xs text-muted-foreground md:block">
+                {selected?.programme_type === "programme"
+                  ? "Children already paying for a programme are included free automatically. Tick “free place” to waive the fee for anyone else."
+                  : "Tick “free place” to invite someone at no charge."}
+              </p>
+              <Button onClick={sendInvites} disabled={sending || checked.size === 0} className="w-full md:w-auto" size="lg">
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send {checked.size} invitation{checked.size === 1 ? "" : "s"}
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center justify-between text-xs text-muted-foreground shrink-0">
-            <span>
-              {filteredPlayers.length} players · {checked.size} selected
-              {freePlace.size > 0 ? ` · ${freePlace.size} free place${freePlace.size === 1 ? "" : "s"}` : ""}
-            </span>
-            <button className="underline" onClick={() => {
-              const all = new Set(checked);
-              const allChecked = filteredPlayers.every((p) => all.has(p.key));
-              filteredPlayers.forEach((p) => allChecked ? all.delete(p.key) : all.add(p.key));
-              setChecked(all);
-            }}>Select all shown</button>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto border rounded-md">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow>
-                  <TableHead className="w-8"></TableHead>
-                  <TableHead>Player</TableHead>
-                  <TableHead>Age</TableHead>
-                  <TableHead className="hidden sm:table-cell">Gender</TableHead>
-                  <TableHead className="hidden md:table-cell">WTN</TableHead>
-                  <TableHead>Parent</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Free place</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPlayers.map((p) => {
-                  const included = selected?.programme_type === "programme" && p.paid_programme;
-                  return (
-                    <TableRow key={p.key} className={checked.has(p.key) ? "bg-muted/40" : undefined}>
-                      <TableCell>
-                        <Checkbox checked={checked.has(p.key)} onCheckedChange={(v) => {
-                          const next = new Set(checked);
-                          v === true ? next.add(p.key) : next.delete(p.key);
-                          setChecked(next);
-                        }} />
-                      </TableCell>
-                      <TableCell>
-                        <button className="font-medium text-left hover:underline" onClick={() => openEditPlayer(p)} title="Edit player details">
-                          {p.name}
-                        </button>
-                        {p.child_id && <Badge variant="outline" className="ml-2 text-[10px]">account</Badge>}
-                        {included && (
-                          <Badge className="ml-2 text-[10px] bg-green-100 text-green-800 hover:bg-green-100" variant="outline">
-                            no extra charge
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell><Badge variant="outline" className="text-[10px]">{p.age_group}</Badge></TableCell>
-                      <TableCell className="hidden sm:table-cell text-muted-foreground capitalize">{p.gender ?? "—"}</TableCell>
-                      <TableCell className="hidden md:table-cell text-muted-foreground">{p.wtn ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        <div className="truncate max-w-[16rem]">{p.contact_email ?? <span className="text-red-600">no parent email</span>}</div>
-                        {p.parent_name && <div className="truncate max-w-[16rem]">{p.parent_name}</div>}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {included ? (
-                          <span className="text-[11px] text-muted-foreground">automatic</span>
-                        ) : (
-                          <Checkbox
-                            aria-label={`Give ${p.name} a free place`}
-                            checked={freePlace.has(p.key)}
-                            onCheckedChange={(v) => {
-                              const next = new Set(freePlace);
-                              v === true ? next.add(p.key) : next.delete(p.key);
-                              setFreePlace(next);
-                            }}
-                          />
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {filteredPlayers.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No players match.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <DialogFooter className="shrink-0 items-center gap-3 sm:justify-between">
-            <p className="text-xs text-muted-foreground text-left">
-              {selected?.programme_type === "programme"
-                ? "Children already paying for a programme are included free automatically. Tick “free place” to waive the fee for anyone else."
-                : "Tick “free place” to invite someone at no charge."}
-            </p>
-            <Button onClick={sendInvites} disabled={sending || checked.size === 0}>
-              {sending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Send className="w-4 h-4 mr-1" />}
-              Send {checked.size} invitation{checked.size === 1 ? "" : "s"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Edit a player's details straight from the picker */}
       <Dialog open={!!editPlayer} onOpenChange={(o) => !o && setEditPlayer(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="md:max-w-md">
           <DialogHeader><DialogTitle>{editPlayer?.roster_id ? "Edit player" : "Add to the county database"}</DialogTitle></DialogHeader>
           {editPlayer && !editPlayer.roster_id && (
             <p className="text-sm text-muted-foreground">
@@ -934,14 +1127,14 @@ const BookingsPanel = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Parent name</Label><Input value={editForm.contact_name} onChange={(e) => setEditForm({ ...editForm, contact_name: e.target.value })} /></div>
-            <div><Label>Parent email</Label><Input type="email" value={editForm.contact_email} onChange={(e) => setEditForm({ ...editForm, contact_email: e.target.value })} /></div>
-            <div><Label>Mobile</Label><Input value={editForm.mobile} onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })} /></div>
+            <div className="col-span-2"><Label>Parent name</Label><Input autoComplete="name" value={editForm.contact_name} onChange={(e) => setEditForm({ ...editForm, contact_name: e.target.value })} /></div>
+            <div className="col-span-2"><Label>Parent email</Label><Input type="email" inputMode="email" value={editForm.contact_email} onChange={(e) => setEditForm({ ...editForm, contact_email: e.target.value })} /></div>
+            <div className="col-span-2"><Label>Mobile</Label><Input type="tel" inputMode="tel" value={editForm.mobile} onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditPlayer(null)}>Cancel</Button>
             <Button onClick={saveEditPlayer} disabled={savingEdit}>
-              {savingEdit && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {savingEdit && <Loader2 className="w-4 h-4 animate-spin" />}
               {editPlayer?.roster_id ? "Save changes" : "Add to database"}
             </Button>
           </DialogFooter>
@@ -950,12 +1143,12 @@ const BookingsPanel = () => {
 
       {/* Event create/edit dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-lg max-h-dialog overflow-y-auto">
+        <DialogContent className="md:max-w-lg">
           <DialogHeader><DialogTitle>{form.id ? "Edit event" : "New event"}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div><Label>Description</Label><Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div><Label>Date &amp; time</Label><Input type="datetime-local" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></div>
               <div><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
               <div>
@@ -995,9 +1188,9 @@ const BookingsPanel = () => {
                   </div>
                   <div>
                     <Label>Programme fee (£, paid up front)</Label>
-                    <Input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+                    <Input type="number" inputMode="decimal" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
                   </div>
-                  <p className="col-span-2 text-xs text-muted-foreground -mt-1">
+                  <p className="text-xs text-muted-foreground sm:col-span-2">
                     One payment covers every session. A child already paying for a programme is invited to any other programme at no extra charge.
                   </p>
                 </>
@@ -1005,18 +1198,18 @@ const BookingsPanel = () => {
                 <>
                   <div>
                     <Label>Price (£)</Label>
-                    <Input type="number" min="0" step="0.01" value={form.price} disabled={form.is_free} onChange={(e) => setForm({ ...form, price: e.target.value })} />
-                    <label className="flex items-center gap-2 text-sm cursor-pointer mt-2">
+                    <Input type="number" inputMode="decimal" min="0" step="0.01" value={form.price} disabled={form.is_free} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+                    <label className="mt-2 flex min-h-8 items-center gap-2 text-sm cursor-pointer">
                       <Checkbox checked={form.is_free} onCheckedChange={(v) => setForm({ ...form, is_free: v === true })} />
                       This session is free
                     </label>
                   </div>
-                  <div><Label>Capacity</Label><Input type="number" min="0" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></div>
+                  <div><Label>Capacity</Label><Input type="number" inputMode="numeric" min="0" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></div>
                 </>
               )}
             </div>
             {form.visibility === "public" && (
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <label className="flex min-h-8 items-center gap-2 text-sm cursor-pointer">
                 <Checkbox checked={form.sign_up_enabled} onCheckedChange={(v) => setForm({ ...form, sign_up_enabled: v === true })} />
                 Open sign-ups on the public events page
               </label>
@@ -1024,7 +1217,7 @@ const BookingsPanel = () => {
           </div>
           <DialogFooter>
             <Button onClick={saveEvent} disabled={savingEvent}>
-              {savingEvent ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              {savingEvent ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {form.id ? "Save changes" : "Create event"}
             </Button>
           </DialogFooter>
@@ -1035,7 +1228,7 @@ const BookingsPanel = () => {
           place is emailed; money never moves from here — refunds stay on the
           per-booking button. */}
       <Dialog open={!!sessionChange} onOpenChange={(o) => !o && setSessionChange(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="md:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {sessionChange?.mode === "cancel_event"
@@ -1074,7 +1267,7 @@ const BookingsPanel = () => {
               disabled={changing || (sessionChange?.mode === "reschedule_session" && !changeDate)}
               variant={sessionChange?.mode === "reschedule_session" ? "default" : "destructive"}
             >
-              {changing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {changing && <Loader2 className="w-4 h-4 animate-spin" />}
               {sessionChange?.mode === "reschedule_session" ? "Move & email parents"
                 : sessionChange?.mode === "cancel_event" ? "Cancel event & email parents" : "Cancel session & email parents"}
             </Button>
@@ -1110,7 +1303,7 @@ const BookingsPanel = () => {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={refunding}>Keep the booking</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); refund(); }} disabled={refunding}>
-              {refunding ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              {refunding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Refund {gbp(refundTarget?.amount_pence ?? null)}
             </AlertDialogAction>
           </AlertDialogFooter>

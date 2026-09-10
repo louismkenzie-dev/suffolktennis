@@ -236,6 +236,106 @@
   }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* App surfaces (Parent Hub, Coach Hub, Admin) — a calmer, neutral system */
+/* than the marketing site: off-white page, white surfaces, hairline    */
+/* borders, restrained shadows, Suffolk blue reserved for what matters. */
+/* Scoped so the public site keeps its broadcast look untouched.       */
+/* ------------------------------------------------------------------ */
+@layer base {
+  .app-shell {
+    --background: 210 20% 98%;
+    --foreground: 215 28% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 28% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 28% 12%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 215 12% 45%;
+    --secondary: 210 18% 93%;
+    --secondary-foreground: 215 25% 22%;
+    --accent: 210 20% 95%;
+    --accent-foreground: 215 28% 12%;
+    --border: 214 16% 90%;
+    --input: 214 16% 86%;
+    --radius: 0.875rem;
+    --shadow-card: 0 1px 2px hsl(215 28% 12% / 0.04), 0 1px 3px hsl(215 28% 12% / 0.03);
+    --shadow-elevated: 0 10px 30px -10px hsl(215 28% 12% / 0.14);
+    color-scheme: light;
+  }
+  /* Compact, sentence-case titles inside the app; the uppercase expanded
+     display treatment stays on the public site only. */
+  .app-shell h1, .app-shell h2, .app-shell h3, .app-shell h4 {
+    text-transform: none;
+    font-stretch: 100%;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  /* Field rhythm: a label directly above its control gets breathing room
+     without touching every form in the codebase. */
+  .app-shell label + input,
+  .app-shell label + textarea,
+  .app-shell label + select,
+  .app-shell label + button[role="combobox"],
+  .app-shell label + div > button[role="combobox"]:first-child {
+    margin-top: 0.375rem;
+  }
+  /* The whole app respects reduced motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Press feedback for tappable surfaces — subtle, 150ms, no bounce. */
+  .press {
+    transition: transform 150ms ease, background-color 150ms ease, opacity 150ms ease;
+  }
+  .press:active {
+    transform: scale(0.985);
+  }
+  /* Invisible hit area for icon-only controls (min 44px). */
+  .hit-area {
+    position: relative;
+  }
+  .hit-area::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  /* Room for the fixed bottom navigation + iOS home indicator. */
+  .pb-nav {
+    padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+  .pb-bar {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  .hairline { box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+  /* Sticky headers inside the app read as one surface with the page. */
+  .bg-glass {
+    background-color: hsl(var(--background) / 0.85);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    backdrop-filter: saturate(180%) blur(14px);
+  }
+  .bg-glass-card {
+    background-color: hsl(var(--card) / 0.9);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    backdrop-filter: saturate(180%) blur(14px);
+  }
+  .text-balance { text-wrap: balance; }
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
 /* Mapbox popup styling */
 .suffolk-map-popup .maplibregl-popup-content {
   background: #fff !important;

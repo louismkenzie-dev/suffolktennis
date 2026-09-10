@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle, ArrowLeft } from "lucide-react";
-import logo from "@/assets/suffolk-tennis-logo-v7.png";
+import { AlertCircle, CalendarPlus } from "lucide-react";
 import { calendarLinks, formatTimeRange } from "@/lib/timeFormat";
+import { FlowShell, KeyValueList, StatusBadge, SkeletonBlock, EmptyState } from "@/components/app";
 
 type TicketData = {
   booking: { status: string; child_name: string; parent_name: string; session_slot: string | null };
@@ -19,10 +19,9 @@ const CalLinks = ({ title, date, start, end, location, details }: {
 }) => {
   const c = calendarLinks({ title, date, start, end, location, details });
   return (
-    <span className="ml-2 text-[11px] text-primary-foreground/50 whitespace-nowrap">
-      <a href={c.google} target="_blank" rel="noreferrer" className="underline hover:text-lta-cyan">Google</a>
-      {" · "}
-      <a href={c.outlook} target="_blank" rel="noreferrer" className="underline hover:text-lta-cyan">Outlook</a>
+    <span className="flex shrink-0 items-center gap-1 text-xs">
+      <a href={c.google} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center rounded-md px-1.5 font-medium text-primary hover:bg-primary/10">Google</a>
+      <a href={c.outlook} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center rounded-md px-1.5 font-medium text-primary hover:bg-primary/10">Outlook</a>
     </span>
   );
 };
@@ -43,87 +42,94 @@ const TicketPage = () => {
       .catch(() => setError("Could not load the ticket"));
   }, [qrToken]);
 
+  const valid = !!data?.ticket && data.booking.status === "paid" && data.ticket.status === "active";
+
   return (
-    <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
-      <header className="container mx-auto px-6 py-6 flex items-center justify-between">
-        <Link to="/"><img src={logo} alt="Suffolk Tennis" className="h-12" /></Link>
-        <Link
-          to="/parent-hub?tab=bookings"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-lta-cyan hover:text-lta-cyan/80"
-        >
-          <ArrowLeft size={15} /> My bookings
-        </Link>
-      </header>
-      <main className="container mx-auto px-6 pb-20 max-w-md">
-        {error ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center mt-8">
-            <AlertCircle className="w-10 h-10 text-lta-yellow mx-auto mb-4" />
-            <p>{error}</p>
-          </div>
-        ) : !data ? (
-          <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>
-        ) : (
-          <div className="mt-4 rounded-3xl overflow-hidden border border-white/10">
-            <div className="bg-lta-cyan text-suffolk-navy p-5 text-center">
-              <div className="text-[11px] font-black uppercase tracking-widest">Suffolk Tennis · Entry Ticket</div>
-              <h1 className="font-display text-2xl font-black mt-1">{data.event?.title}</h1>
-              {data.event?.location && <div className="text-sm font-semibold mt-0.5">{data.event.location}</div>}
+    <FlowShell maxWidth="max-w-md" back={{ label: "My bookings", to: "/parent-hub?tab=bookings" }}>
+      {error ? (
+        <EmptyState icon={AlertCircle} title="Ticket not found" description={error} />
+      ) : !data ? (
+        <div className="space-y-3" aria-busy><SkeletonBlock className="h-[26rem]" /></div>
+      ) : (
+        <div className="space-y-4">
+          {/* The ticket itself — high contrast, QR first, nothing else competing. */}
+          <article className="overflow-hidden rounded-3xl border border-border bg-card shadow-elevated">
+            <div className="bg-suffolk-navy px-5 pb-5 pt-5 text-primary-foreground">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-lta-cyan">Suffolk Tennis · Entry ticket</p>
+              <h1 className="mt-1 font-display text-xl font-semibold leading-tight md:text-2xl">{data.event?.title}</h1>
+              {data.event?.location && <p className="mt-0.5 text-sm text-primary-foreground/70">{data.event.location}</p>}
             </div>
-            <div className="bg-white p-8 flex flex-col items-center">
-              {data.ticket && data.booking.status === "paid" && data.ticket.status === "active" ? (
+            <div className="relative flex flex-col items-center bg-white px-6 pb-6 pt-7">
+              {/* perforation */}
+              <span aria-hidden className="absolute -left-3 top-0 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-background" />
+              <span aria-hidden className="absolute -right-3 top-0 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-background" />
+              {valid ? (
                 <>
-                  <QRCodeSVG value={data.ticket.qr_token} size={220} level="M" includeMargin />
-                  <p className="text-suffolk-navy/60 text-xs mt-3 text-center">Show this code to be scanned on arrival</p>
+                  <QRCodeSVG value={data.ticket!.qr_token} size={224} level="M" includeMargin={false} />
+                  <p className="mt-4 text-center text-xs text-muted-foreground">Show this code to be scanned on arrival</p>
                 </>
               ) : (
-                <div className="text-center py-10">
-                  <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
-                  <p className="text-suffolk-navy font-bold">
-                    {data.booking.status === "paid" ? "Ticket cancelled" : "Awaiting payment"}
-                  </p>
-                  <p className="text-suffolk-navy/60 text-sm mt-1">Please contact Suffolk Tennis if this looks wrong.</p>
+                <div className="py-8 text-center">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600"><AlertCircle className="h-6 w-6" /></div>
+                  <p className="font-semibold text-foreground">{data.booking.status === "paid" ? "Ticket cancelled" : "Awaiting payment"}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Please contact Suffolk Tennis if this looks wrong.</p>
                 </div>
               )}
             </div>
-            <div className="bg-white/5 p-5 text-sm space-y-1.5">
-              <div className="flex justify-between"><span className="text-primary-foreground/60">Player</span><strong>{data.booking.child_name}</strong></div>
-              <div className="flex justify-between"><span className="text-primary-foreground/60">Booked by</span><span>{data.booking.parent_name}</span></div>
-              {data.booking.session_slot && (
-                <div className="flex justify-between"><span className="text-primary-foreground/60">Session</span><span>{data.booking.session_slot}</span></div>
-              )}
-              {data.event?.event_date && (
-                <div className="flex justify-between"><span className="text-primary-foreground/60">Date</span>
-                  <span>{new Date(data.event.event_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+            <div className="border-t border-dashed border-border px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Player</p>
+                  <p className="text-lg font-semibold leading-tight">{data.booking.child_name}</p>
                 </div>
-              )}
-              {data.event?.cancelled_at && (
-                <div className="rounded-lg border border-red-400/40 bg-red-500/10 text-red-200 p-3">
-                  This event has been cancelled — Suffolk Tennis will be in touch.
-                </div>
-              )}
-              {data.upcoming_sessions.length > 0 && (
-                <div className="pt-2 border-t border-white/10">
-                  <div className="text-primary-foreground/60 mb-1">Upcoming sessions</div>
-                  {data.upcoming_sessions.map((s, i) => (
-                    <div key={i} className="text-primary-foreground/85">
-                      {new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                      {s.start_time ? ` · ${formatTimeRange(s.start_time, s.end_time)}` : ""}{s.venue ? ` · ${s.venue}` : ""}
-                      {s.moved_from_date ? <span className="text-[11px] text-lta-yellow ml-1">(moved)</span> : null}
+                <StatusBadge tone={valid ? "success" : "danger"}>{valid ? "Valid" : data.booking.status === "paid" ? "Cancelled" : "Unpaid"}</StatusBadge>
+              </div>
+            </div>
+          </article>
+
+          {data.event?.cancelled_at && (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-900">
+              This event has been cancelled — Suffolk Tennis will be in touch.
+            </p>
+          )}
+
+          <KeyValueList items={[
+            { label: "Booked by", value: data.booking.parent_name },
+            { label: "Session", value: data.booking.session_slot, hidden: !data.booking.session_slot },
+            { label: "Date", value: data.event?.event_date ? new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : null, hidden: !data.event?.event_date || data.upcoming_sessions.length > 0 },
+          ]} />
+
+          {data.upcoming_sessions.length > 0 && (
+            <div>
+              <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Upcoming sessions</p>
+              <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+                {data.upcoming_sessions.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <div className="min-w-0 text-sm">
+                      <p className="font-medium">
+                        {new Date(s.session_date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                        {s.start_time ? ` · ${formatTimeRange(s.start_time, s.end_time)}` : ""}
+                        {s.moved_from_date ? <StatusBadge tone="warning" dot={false} className="ml-2">Moved</StatusBadge> : null}
+                      </p>
+                      {s.venue && <p className="truncate text-xs text-muted-foreground">{s.venue}</p>}
+                    </div>
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <CalendarPlus className="h-4 w-4" aria-hidden />
                       <CalLinks
                         title={data.event?.title ?? "Suffolk Tennis"}
                         date={s.session_date} start={s.start_time} end={s.end_time}
                         location={s.venue ?? data.event?.location ?? null}
                         details={`${data.booking.child_name} — Suffolk Tennis. Entry ticket: ${window.location.href}`}
                       />
-                    </div>
-                  ))}
-                </div>
-              )}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </main>
-    </div>
+          )}
+        </div>
+      )}
+    </FlowShell>
   );
 };
 

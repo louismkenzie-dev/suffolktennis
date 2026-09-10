@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle2, XCircle, Ticket } from "lucide-react";
-import logo from "@/assets/suffolk-tennis-logo-v7.png";
+import { Loader2, CheckCircle2, XCircle, Ticket, Clock } from "lucide-react";
+import { FlowShell } from "@/components/app";
 
 type Status = {
   booking: { status: string; child_name: string; session_slot: string | null };
@@ -44,57 +44,52 @@ const BookingReturn = () => {
   const paid = status?.booking?.status === "paid";
   const pending = !paid && !failed && !cancelled;
 
+  const Panel = ({ icon, tone, title, children }: { icon: React.ReactNode; tone: string; title: string; children: React.ReactNode }) => (
+    <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-card md:p-8">
+      <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${tone}`}>{icon}</div>
+      <h1 className="font-display text-2xl font-semibold leading-tight">{title}</h1>
+      <div className="mt-2 space-y-4 text-sm text-muted-foreground">{children}</div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
-      <header className="container mx-auto px-6 py-6">
-        <Link to="/"><img src={logo} alt="Suffolk Tennis" className="h-12" /></Link>
-      </header>
-      <main className="container mx-auto px-6 pb-20 max-w-lg text-center">
+    <FlowShell maxWidth="max-w-lg" back={{ label: "My bookings", to: "/parent-hub?tab=bookings" }}>
+      <div className="pt-2 md:pt-6">
         {cancelled ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 mt-8">
-            <XCircle className="w-12 h-12 text-lta-yellow mx-auto mb-4" />
-            <h1 className="font-display text-2xl font-black">Payment cancelled</h1>
-            <p className="text-primary-foreground/70 mt-2 text-sm">
-              No payment was taken. Your invitation link still works — you can come back and book any time while places remain.
-            </p>
-          </div>
+          <Panel icon={<XCircle className="h-8 w-8" strokeWidth={1.8} />} tone="bg-amber-50 text-amber-700" title="Payment cancelled">
+            <p>No payment was taken. Your invitation link still works — you can come back and book any time while places remain.</p>
+            <Button asChild variant="outline"><Link to="/parent-hub?tab=bookings">Back to my bookings</Link></Button>
+          </Panel>
         ) : pending ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 mt-8">
-            <Loader2 className="w-12 h-12 text-lta-cyan mx-auto mb-4 animate-spin" />
-            <h1 className="font-display text-2xl font-black">Confirming your payment…</h1>
-            <p className="text-primary-foreground/70 mt-2 text-sm">This usually takes a few seconds.</p>
-          </div>
+          <Panel icon={<Loader2 className="h-8 w-8 animate-spin" />} tone="bg-primary/10 text-primary" title="Confirming your payment…">
+            <p>This usually takes a few seconds. Please keep this page open.</p>
+          </Panel>
         ) : paid ? (
-          <div className="bg-lta-cyan/10 border border-lta-cyan/30 rounded-2xl p-8 mt-8">
-            <CheckCircle2 className="w-12 h-12 text-lta-cyan mx-auto mb-4" />
-            <h1 className="font-display text-2xl font-black">Booking confirmed!</h1>
-            <p className="text-primary-foreground/80 mt-2">
+          <Panel icon={<CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />} tone="bg-emerald-50 text-emerald-700" title="Booking confirmed">
+            <p className="text-base text-foreground">
               <strong>{status!.booking.child_name}</strong> is booked on <strong>{status!.event?.title}</strong>
               {status!.booking.session_slot ? ` (${status!.booking.session_slot})` : ""}.
             </p>
-            <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
               {status!.ticket && (
-                <Button asChild className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-8">
-                  <Link to={`/ticket/${status!.ticket.qr_token}`}><Ticket className="w-4 h-4 mr-2" /> View entry ticket</Link>
+                <Button asChild size="lg">
+                  <Link to={`/ticket/${status!.ticket.qr_token}`}><Ticket className="w-4 h-4" /> View entry ticket</Link>
                 </Button>
               )}
-              <Button asChild variant="outline" className="h-12 px-8 border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 hover:text-primary-foreground font-bold">
+              <Button asChild variant="outline" size="lg">
                 <Link to="/parent-hub?tab=bookings">My bookings</Link>
               </Button>
             </div>
-            <p className="text-primary-foreground/60 text-xs mt-4">A confirmation with your ticket link has also been emailed to you.</p>
-          </div>
+            <p className="text-xs">A confirmation with your ticket link has also been emailed to you.</p>
+          </Panel>
         ) : (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 mt-8">
-            <Loader2 className="w-12 h-12 text-lta-yellow mx-auto mb-4" />
-            <h1 className="font-display text-2xl font-black">Payment received — confirmation on its way</h1>
-            <p className="text-primary-foreground/70 mt-2 text-sm">
-              Your payment is being processed. Your ticket will arrive by email shortly — no need to pay again.
-            </p>
-          </div>
+          <Panel icon={<Clock className="h-8 w-8" strokeWidth={1.8} />} tone="bg-amber-50 text-amber-700" title="Payment received — confirmation on its way">
+            <p>Your payment is being processed. Your ticket will arrive by email shortly — no need to pay again.</p>
+            <Button asChild variant="outline"><Link to="/parent-hub?tab=bookings">My bookings</Link></Button>
+          </Panel>
         )}
-      </main>
-    </div>
+      </div>
+    </FlowShell>
   );
 };
 

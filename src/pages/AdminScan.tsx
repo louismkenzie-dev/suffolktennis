@@ -7,7 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Loader2, Camera } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, Camera } from "lucide-react";
+import { FlowShell, EmptyState, SkeletonBlock } from "@/components/app";
 
 type ScanResult = {
   ok: boolean;
@@ -119,32 +120,28 @@ const AdminScan = () => {
   useEffect(() => () => { scannerRef.current?.stop().catch(() => {}); }, []);
 
   if (authLoading || adminLoading) {
-    return <div className="min-h-screen bg-suffolk-navy flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>;
+    return (
+      <div className="app-shell min-h-screen bg-background">
+        <div className="h-14 border-b border-border" />
+        <div className="mx-auto max-w-md space-y-3 px-4 py-5"><SkeletonBlock className="h-11" /><SkeletonBlock className="h-64" /></div>
+      </div>
+    );
   }
   if (!canScan) {
     return (
-      <div className="min-h-screen bg-suffolk-navy text-primary-foreground flex flex-col items-center justify-center gap-4">
-        <p>Staff access required.</p>
-        <Button asChild variant="outline"><Link to="/">Back to site</Link></Button>
+      <div className="app-shell min-h-screen bg-background">
+        <div className="mx-auto max-w-md px-6 py-24">
+          <EmptyState icon={AlertTriangle} title="Staff access required" action={<Button asChild variant="outline"><Link to="/">Back to site</Link></Button>} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
-      <div className="container mx-auto px-4 py-4 max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <Button asChild variant="ghost" size="sm" className="text-primary-foreground/70">
-            <Link to={isAdmin ? "/admin" : "/coach"}><ArrowLeft className="w-4 h-4 mr-1" /> {isAdmin ? "Admin" : "Reports"}</Link>
-          </Button>
-          <h1 className="font-display font-black text-lg">Ticket Scanner</h1>
-          <div className="w-16" />
-        </div>
-
+    <FlowShell maxWidth="max-w-md" title="Ticket scanner" back={{ label: isAdmin ? "Admin" : "Register", to: isAdmin ? "/admin?tab=bookings" : "/coach" }}>
+      <div className="space-y-4">
         <Select value={sessionId} onValueChange={setSessionId}>
-          <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground mb-4">
-            <SelectValue placeholder="Session (optional)" />
-          </SelectTrigger>
+          <SelectTrigger aria-label="Session"><SelectValue placeholder="Session (optional)" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="none">No specific session (one-off event)</SelectItem>
             {sessions.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
@@ -153,50 +150,52 @@ const AdminScan = () => {
 
         {/* Result banner — big and glanceable for door duty */}
         {result && (
-          <div className={`rounded-2xl p-5 mb-4 border text-center ${
-            result.ok ? "bg-green-500/15 border-green-400/40"
-            : result.result === "duplicate" ? "bg-yellow-500/15 border-yellow-400/40"
-            : "bg-red-500/15 border-red-400/40"
-          }`}>
+          <div
+            role="status"
+            aria-live="assertive"
+            className={`rounded-2xl border p-5 text-center ${
+              result.ok ? "border-emerald-200 bg-emerald-50"
+              : result.result === "duplicate" ? "border-amber-200 bg-amber-50"
+              : "border-red-200 bg-red-50"
+            }`}
+          >
             {result.ok
-              ? <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto" />
+              ? <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-600" strokeWidth={1.8} />
               : result.result === "duplicate"
-                ? <AlertTriangle className="w-12 h-12 text-yellow-400 mx-auto" />
-                : <XCircle className="w-12 h-12 text-red-400 mx-auto" />}
-            <div className="font-display font-black text-xl mt-2">{result.player.child_name ?? "Unknown ticket"}</div>
-            <div className="text-sm text-primary-foreground/80">{result.message}</div>
-            {result.player.event_title && <div className="text-xs text-primary-foreground/60 mt-1">{result.player.event_title}{result.player.session_slot ? ` · ${result.player.session_slot}` : ""}</div>}
+                ? <AlertTriangle className="mx-auto h-14 w-14 text-amber-600" strokeWidth={1.8} />
+                : <XCircle className="mx-auto h-14 w-14 text-red-600" strokeWidth={1.8} />}
+            <div className="mt-2 font-display text-2xl font-semibold leading-tight">{result.player.child_name ?? "Unknown ticket"}</div>
+            <div className="mt-1 text-sm text-foreground/80">{result.message}</div>
+            {result.player.event_title && <div className="mt-1 text-xs text-muted-foreground">{result.player.event_title}{result.player.session_slot ? ` · ${result.player.session_slot}` : ""}</div>}
             {result.player.has_medical_notes && (
-              <div className="mt-2 inline-flex items-center gap-1 text-xs bg-lta-yellow/20 text-lta-yellow px-2 py-1 rounded-full">
-                <AlertTriangle className="w-3 h-3" /> Has medical notes — see admin
+              <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
+                <AlertTriangle className="h-3.5 w-3.5" /> Has medical notes — see admin
               </div>
             )}
           </div>
         )}
 
-        <div id="qr-reader" className={`rounded-2xl overflow-hidden ${scanning ? "" : "hidden"}`} />
+        <div id="qr-reader" className={`overflow-hidden rounded-2xl bg-black ${scanning ? "" : "hidden"}`} />
 
-        {busy && <div className="flex justify-center py-3"><Loader2 className="w-6 h-6 animate-spin text-lta-cyan" /></div>}
+        {busy && <div className="flex justify-center py-2"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
 
         {!scanning ? (
-          <Button onClick={startScanner} className="w-full h-14 bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold text-base">
-            <Camera className="w-5 h-5 mr-2" /> Start camera
+          <Button onClick={startScanner} size="lg" className="h-14 w-full text-base">
+            <Camera className="h-5 w-5" /> Start camera
           </Button>
         ) : (
-          <Button onClick={stopScanner} variant="outline" className="w-full mt-3 border-white/30 text-primary-foreground">
-            Stop camera
-          </Button>
+          <Button onClick={stopScanner} variant="outline" size="lg" className="w-full">Stop camera</Button>
         )}
 
-        <div className="mt-5">
-          <div className="text-xs text-primary-foreground/50 mb-1">No camera? Enter the ticket code:</div>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">No camera? Enter the ticket code</p>
           <div className="flex gap-2">
-            <Input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="e.g. 3f9a…" className="bg-white/10 border-white/20 text-primary-foreground" />
-            <Button onClick={() => manual.trim() && submitToken(manual.trim())} disabled={busy} className="bg-lta-cyan text-suffolk-navy font-bold">Check</Button>
+            <Input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="e.g. 3f9a…" inputMode="text" autoCapitalize="none" autoCorrect="off" onKeyDown={(e) => { if (e.key === "Enter" && manual.trim()) submitToken(manual.trim()); }} />
+            <Button onClick={() => manual.trim() && submitToken(manual.trim())} disabled={busy || !manual.trim()}>Check</Button>
           </div>
         </div>
       </div>
-    </div>
+    </FlowShell>
   );
 };
 

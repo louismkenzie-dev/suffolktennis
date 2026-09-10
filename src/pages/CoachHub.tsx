@@ -4,14 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, QrCode, ClipboardList, AlertCircle, Star, MapPin, CalendarDays, Check } from "lucide-react";
-import RoleViewSwitcher from "@/components/RoleViewSwitcher";
-import logo from "@/assets/suffolk-tennis-logo-v7.png";
+import { Loader2, QrCode, ClipboardList, AlertCircle, Star, MapPin, CalendarDays, Check, Shield, Users } from "lucide-react";
+import { formatTimeRange } from "@/lib/timeFormat";
+import { AppShell, type NavItem, PageHeader, Section, ListGroup, ListRow, StatusBadge, EmptyState, SkeletonRows, InlineNote } from "@/components/app";
 
 const db = supabase as any;
 
@@ -27,11 +26,11 @@ type Player = {
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 
-const PlayerAvatar = ({ player, size = "w-11 h-11" }: { player: Player; size?: string }) => (
-  <div className={`${size} rounded-full overflow-hidden bg-lta-cyan/15 border border-white/15 flex items-center justify-center shrink-0`}>
+const PlayerAvatar = ({ player, size = "w-10 h-10" }: { player: Player; size?: string }) => (
+  <div className={`${size} flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10`}>
     {player.photo_url
-      ? <img src={player.photo_url} alt={player.child_name} className="w-full h-full object-cover" loading="lazy" />
-      : <span className="text-lta-cyan font-bold text-sm">{initials(player.child_name)}</span>}
+      ? <img src={player.photo_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+      : <span className="text-[13px] font-semibold text-primary">{initials(player.child_name)}</span>}
   </div>
 );
 /** A past session report on this child — any event, any coach. */
@@ -87,7 +86,7 @@ const fmtDay = (dateStr: string) =>
   new Date(dateStr + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 const CoachHub = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const { canScan, loading: roleLoading } = useIsAdmin();
 
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -177,6 +176,13 @@ const CoachHub = () => {
   }, [venue, weeks, week, thisWeek]);
 
   useEffect(() => { setSlotKey(""); setPlayers([]); }, [venue, week]);
+
+  // Open the obvious session straight away: today's, or the only one.
+  useEffect(() => {
+    if (slotKey || activeSlots.length === 0) return;
+    const pick = activeSlots.find((s) => s.date === today) ?? (activeSlots.length === 1 ? activeSlots[0] : null);
+    if (pick) setSlotKey(pick.key);
+  }, [activeSlots, slotKey, today]);
 
   const loadRoster = (silent = false) => {
     if (!selected) return;
@@ -358,168 +364,176 @@ const CoachHub = () => {
     }
   };
 
+  const nav: NavItem[] = [
+    { id: "register", label: "Register", icon: ClipboardList },
+    { id: "scan", label: "Scanner", icon: QrCode, to: "/admin/scan" },
+  ];
+  const coachName = (user?.user_metadata?.full_name as string | undefined) ?? null;
+
   if (authLoading || roleLoading || (canScan && loading)) {
-    return <div className="min-h-screen bg-suffolk-navy flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>;
+    return (
+      <div className="app-shell min-h-screen bg-background">
+        <div className="h-14 border-b border-border" />
+        <div className="mx-auto max-w-md space-y-3 px-4 py-5"><SkeletonRows rows={4} avatar={false} /></div>
+      </div>
+    );
   }
   if (!canScan) {
     return (
-      <div className="min-h-screen bg-suffolk-navy text-primary-foreground flex flex-col items-center justify-center gap-4">
-        <p>Staff access required.</p>
-        <Button asChild variant="outline"><Link to="/">Back to site</Link></Button>
+      <div className="app-shell min-h-screen bg-background">
+        <div className="mx-auto max-w-md px-6 py-24">
+          <EmptyState icon={Shield} title="Staff access required" description="Only Suffolk Tennis coaches and admins can open the register." action={<Button asChild variant="outline"><Link to="/">Back to site</Link></Button>} />
+        </div>
       </div>
     );
   }
 
   const presentCount = players.filter((p) => p.arrived).length;
+  const fmtSlot = (s: Slot) => `${s.date ? fmtDay(s.date) : "Date TBC"}${s.session?.start_time ? ` · ${formatTimeRange(s.session.start_time, s.session.end_time)}` : ""}`;
 
   return (
-    <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
-      <div className="container mx-auto px-4 py-4 max-w-md pb-16">
-        <div className="flex items-center justify-between mb-1">
-          <Button asChild variant="ghost" size="sm" className="text-primary-foreground/70">
-            <Link to="/"><ArrowLeft className="w-4 h-4 mr-1" /> Home</Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm" className="text-lta-cyan">
-            <Link to="/admin/scan"><QrCode className="w-4 h-4 mr-1" /> Scanner</Link>
-          </Button>
-        </div>
-        <div className="text-center mb-5">
-          <img src={logo} alt="Suffolk Tennis" className="h-10 mx-auto mb-2" />
-          <h1 className="font-display font-black text-xl">Coach Hub</h1>
-          <p className="text-primary-foreground/60 text-xs mt-1">Venue, then week — tick players in and tap a name to report.</p>
-          <div className="mt-3 flex justify-center">
-            <RoleViewSwitcher onDark />
+    <AppShell
+      role="coach"
+      title="Register"
+      nav={nav}
+      primary={["register", "scan"]}
+      active="register"
+      onNavigate={() => { /* single tab */ }}
+      userName={coachName}
+      userEmail={user?.email}
+      onSignOut={async () => { await signOut(); window.location.assign("/"); }}
+      maxWidth="max-w-2xl"
+    >
+      <PageHeader title="Register" hideTitleOnPhone description="Pick the venue and week, tick players in as they arrive, tap a name to write a report." className="mb-4" />
+
+      {slots.length === 0 ? (
+        <EmptyState icon={CalendarDays} title="No sessions yet" description="Sessions appear here once players have paid places on them." />
+      ) : (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-2">
+            <Select value={venue} onValueChange={setVenue}>
+              <SelectTrigger aria-label="Venue">
+                <span className="flex items-center gap-2 truncate"><MapPin size={15} className="shrink-0 text-primary" /><SelectValue placeholder="Venue" /></span>
+              </SelectTrigger>
+              <SelectContent>
+                {venues.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={week} onValueChange={setWeek}>
+              <SelectTrigger aria-label="Week">
+                <span className="flex items-center gap-2 truncate"><CalendarDays size={15} className="shrink-0 text-primary" /><SelectValue placeholder="Week" /></span>
+              </SelectTrigger>
+              <SelectContent>
+                {weeks.map((w) => (
+                  <SelectItem key={w} value={w}>
+                    {w === TBC_WEEK ? "Date TBC" : w === thisWeek ? "This week" : `w/c ${fmtDay(w)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        </div>
 
-        {slots.length === 0 ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-sm text-primary-foreground/70">
-            No sessions with paid players yet.
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <Select value={venue} onValueChange={setVenue}>
-                <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground">
-                  <span className="flex items-center gap-1.5 truncate"><MapPin size={13} className="text-lta-cyan shrink-0" /><SelectValue placeholder="Venue" /></span>
-                </SelectTrigger>
-                <SelectContent>
-                  {venues.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={week} onValueChange={setWeek}>
-                <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground">
-                  <span className="flex items-center gap-1.5 truncate"><CalendarDays size={13} className="text-lta-cyan shrink-0" /><SelectValue placeholder="Week" /></span>
-                </SelectTrigger>
-                <SelectContent>
-                  {weeks.map((w) => (
-                    <SelectItem key={w} value={w}>
-                      {w === TBC_WEEK ? "Date TBC" : w === thisWeek ? "This week" : `w/c ${fmtDay(w)}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Active sessions at this venue in this week */}
-            <div className="space-y-2 mb-4">
-              {activeSlots.length === 0 ? (
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5 text-center text-sm text-primary-foreground/60">
-                  No sessions at {venue} this week.
-                </div>
-              ) : activeSlots.map((s) => (
-                <button
-                  key={s.key}
-                  onClick={() => setSlotKey(s.key)}
-                  className={`w-full rounded-xl px-4 py-3 text-left border transition-colors ${
-                    slotKey === s.key
-                      ? "border-lta-cyan bg-lta-cyan/10"
-                      : "border-white/10 bg-white/5 hover:border-lta-cyan/50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm truncate">{s.event.title}</div>
-                      <div className="text-xs text-primary-foreground/60 mt-0.5">
-                        {s.date ? fmtDay(s.date) : "Date TBC"}
-                        {s.session?.start_time ? ` · ${s.session.start_time.slice(0, 5)}${s.session.end_time ? `–${s.session.end_time.slice(0, 5)}` : ""}` : ""}
+          {/* Sessions at this venue this week */}
+          <Section title="Sessions" count={activeSlots.length}>
+            {activeSlots.length === 0 ? (
+              <EmptyState icon={CalendarDays} title={`No sessions at ${venue} this week`} compact />
+            ) : (
+              <ListGroup>
+                {activeSlots.map((s) => (
+                  <ListRow
+                    key={s.key}
+                    onClick={() => setSlotKey(s.key)}
+                    selected={slotKey === s.key}
+                    leading={
+                      <div className={`flex h-11 w-11 flex-col items-center justify-center rounded-xl ${slotKey === s.key ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>
+                        {s.date ? (
+                          <>
+                            <span className="text-[10px] font-semibold uppercase leading-none">{new Date(s.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" })}</span>
+                            <span className="mt-0.5 text-base font-semibold leading-none tabular">{new Date(s.date + "T12:00:00").getDate()}</span>
+                          </>
+                        ) : <span className="text-[10px] font-semibold">TBC</span>}
                       </div>
-                    </div>
-                    {s.date === today && <Badge className="bg-lta-yellow/20 text-lta-yellow border-lta-yellow/40 shrink-0" variant="outline">Today</Badge>}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {/* Live register */}
-            {selected && (
-              rosterLoading ? (
-                <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-lta-cyan" /></div>
-              ) : players.length === 0 ? (
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-sm text-primary-foreground/70">
-                  No paid players on this event yet.
-                </div>
-              ) : (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="font-display font-bold text-sm uppercase tracking-wide">Register</h2>
-                    <span className="text-xs text-primary-foreground/60">{presentCount}/{players.length} present · updates live</span>
-                  </div>
-                  <div className="space-y-2">
-                    {players.map((p) => (
-                      <div
-                        key={p.booking_id}
-                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 flex items-center gap-3"
-                      >
-                        <button
-                          onClick={() => togglePresent(p)}
-                          disabled={marking.has(p.booking_id)}
-                          aria-label={p.arrived ? `Mark ${p.child_name} absent` : `Mark ${p.child_name} present`}
-                          className={`w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                            p.arrived
-                              ? "bg-green-500 border-green-500 text-suffolk-navy"
-                              : "border-white/30 text-transparent hover:border-lta-cyan"
-                          }`}
-                        >
-                          <Check size={18} strokeWidth={3} />
-                        </button>
-                        <button onClick={() => openReport(p)} className="flex-1 min-w-0 text-left flex items-center gap-3">
-                          <PlayerAvatar player={p} />
-                          <div className="min-w-0">
-                          <div className="font-semibold truncate">{p.child_name}</div>
-                          <div className="text-xs text-primary-foreground/60 flex flex-wrap gap-2">
-                            {p.session_slot && <span>{p.session_slot}</span>}
-                            {p.medical_notes && <span className="text-lta-yellow inline-flex items-center gap-1"><AlertCircle size={11} /> Medical</span>}
-                          </div>
-                          </div>
-                        </button>
-                        <button onClick={() => openReport(p)} className="shrink-0" aria-label={`Report for ${p.child_name}`}>
-                          {p.my_report
-                            ? <Badge className="bg-lta-cyan/15 text-lta-cyan border-lta-cyan/40" variant="outline"><ClipboardList className="w-3 h-3 mr-1" /> Reported</Badge>
-                            : <ClipboardList className="w-4 h-4 text-primary-foreground/40" />}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
+                    }
+                    title={s.event.title}
+                    subtitle={fmtSlot(s)}
+                    trailing={s.date === today ? <StatusBadge tone="brand" dot={false}>Today</StatusBadge> : undefined}
+                    chevron={slotKey !== s.key}
+                  />
+                ))}
+              </ListGroup>
             )}
-          </>
-        )}
-      </div>
+          </Section>
+
+          {/* Live register */}
+          {selected && (
+            rosterLoading ? (
+              <SkeletonRows rows={5} />
+            ) : players.length === 0 ? (
+              <EmptyState icon={Users} title="No paid players on this session yet" compact />
+            ) : (
+              <Section
+                title={<span className="line-clamp-2">{selected.event.title}</span>}
+                description={`${fmtSlot(selected)} · updates live`}
+                action={
+                  <span className="rounded-full bg-muted px-3 py-1 text-sm font-medium tabular">
+                    <span className={presentCount === players.length ? "text-emerald-700" : "text-foreground"}>{presentCount}</span>
+                    <span className="text-muted-foreground">/{players.length} here</span>
+                  </span>
+                }
+              >
+                <ListGroup>
+                  {players.map((p) => (
+                    <div key={p.booking_id} className="flex items-center gap-3 bg-card px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => togglePresent(p)}
+                        disabled={marking.has(p.booking_id)}
+                        aria-pressed={p.arrived}
+                        aria-label={p.arrived ? `Mark ${p.child_name} absent` : `Mark ${p.child_name} present`}
+                        className={`press flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          p.arrived
+                            ? "border-emerald-500 bg-emerald-500 text-white"
+                            : "border-border bg-card text-transparent hover:border-primary"
+                        }`}
+                      >
+                        <Check size={20} strokeWidth={3} />
+                      </button>
+                      <button type="button" onClick={() => openReport(p)} className="press flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg text-left">
+                        <PlayerAvatar player={p} />
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 text-[15px] font-medium leading-snug text-foreground">{p.child_name}</div>
+                          <div className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
+                            {p.session_slot && <span>{p.session_slot}</span>}
+                            {p.medical_notes && <span className="inline-flex items-center gap-1 text-amber-700"><AlertCircle size={12} /> Medical</span>}
+                            {!p.session_slot && !p.medical_notes && <span>{p.arrived ? "Checked in" : "Not yet here"}</span>}
+                          </div>
+                        </div>
+                      </button>
+                      <button type="button" onClick={() => openReport(p)} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${p.my_report ? "bg-primary/10 text-primary" : "text-muted-foreground/50"}`} aria-label={p.my_report ? `Edit report for ${p.child_name}` : `Write report for ${p.child_name}`} title={p.my_report ? "Reported" : "Write a report"}>
+                        <ClipboardList className="h-5 w-5" strokeWidth={p.my_report ? 2.2 : 1.8} />
+                      </button>
+                    </div>
+                  ))}
+                </ListGroup>
+              </Section>
+            )
+          )}
+        </div>
+      )}
 
       <Dialog open={!!openPlayer} onOpenChange={(o) => { if (!o) setOpenPlayer(null); }}>
-        <DialogContent className="max-w-md max-h-dialog overflow-y-auto">
+        <DialogContent className="md:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-3">
+            <DialogTitle className="flex items-center gap-3 font-display">
               {openPlayer && <PlayerAvatar player={openPlayer} size="w-12 h-12" />}
-              {openPlayer?.child_name}
+              <span className="min-w-0">
+                <span className="block truncate">{openPlayer?.child_name}</span>
+                {openPlayer?.parent_name && <span className="block text-xs font-normal text-muted-foreground">Parent: {openPlayer.parent_name}</span>}
+              </span>
             </DialogTitle>
           </DialogHeader>
           {openPlayer?.medical_notes && (
-            <div className="rounded-lg border border-yellow-300 bg-yellow-50 text-yellow-900 text-sm p-3 flex gap-2">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /> {openPlayer.medical_notes}
-            </div>
+            <InlineNote tone="warning" icon={AlertCircle}>{openPlayer.medical_notes}</InlineNote>
           )}
           <Tabs defaultValue="session">
             <TabsList className="grid w-full grid-cols-3">
@@ -530,17 +544,17 @@ const CoachHub = () => {
               <TabsTrigger value="progress" disabled={!openPlayer?.child_id}>Progress</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="history" className="space-y-3 pt-2">
+            <TabsContent value="history" className="space-y-3 pt-3">
               {history === null ? (
-                <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+                <SkeletonRows rows={2} avatar={false} />
               ) : history.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No previous session reports for {openPlayer?.child_name} yet.</p>
+                <EmptyState icon={ClipboardList} title="No previous reports" description={`Nothing written for ${openPlayer?.child_name} yet.`} compact />
               ) : (
                 history.map((h) => (
-                  <div key={h.id} className="rounded-lg border border-border p-3 space-y-1.5">
+                  <div key={h.id} className="space-y-1.5 rounded-xl border border-border bg-card p-3">
                     <div className="flex items-baseline justify-between gap-2">
                       <div className="text-sm font-semibold leading-tight">{h.event_title}</div>
-                      <div className="text-[11px] text-muted-foreground whitespace-nowrap">
+                      <div className="whitespace-nowrap text-[11px] text-muted-foreground">
                         {new Date(h.when ?? h.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
                       </div>
                     </div>
@@ -548,54 +562,54 @@ const CoachHub = () => {
                     <div className="flex flex-wrap gap-x-3 gap-y-1">
                       {RATINGS.filter((r) => (h.stats[r.key] ?? 0) > 0).map((r) => (
                         <span key={r.key} className="text-[11px] text-muted-foreground">
-                          {r.label} <span className="text-lta-cyan">{"★".repeat(h.stats[r.key])}</span>
+                          {r.label} <span className="text-primary">{"★".repeat(h.stats[r.key])}</span>
                         </span>
                       ))}
                     </div>
-                    {h.comment && <p className="text-sm whitespace-pre-line">{h.comment}</p>}
+                    {h.comment && <p className="whitespace-pre-line text-sm">{h.comment}</p>}
                   </div>
                 ))
               )}
             </TabsContent>
 
-            <TabsContent value="session" className="space-y-4 pt-2">
+            <TabsContent value="session" className="space-y-5 pt-3">
               {RATINGS.map((r) => (
                 <div key={r.key}>
-                  <div className="text-sm font-semibold mb-1.5">{r.label}</div>
-                  <div className="flex gap-1.5">
+                  <div className="mb-1.5 text-sm font-semibold">{r.label}</div>
+                  <div className="flex gap-1" role="radiogroup" aria-label={r.label}>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         type="button"
-                        onClick={() => setStats((s) => ({ ...s, [r.key]: s[r.key] === n ? 0 : n }))}
-                        className="p-1"
+                        role="radio"
+                        aria-checked={(stats[r.key] ?? 0) === n}
+                        onClick={() => setStats((st) => ({ ...st, [r.key]: st[r.key] === n ? 0 : n }))}
+                        className="press flex h-11 w-11 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         aria-label={`${r.label}: ${n} of 5`}
                       >
-                        <Star
-                          className={`w-7 h-7 ${(stats[r.key] ?? 0) >= n ? "text-lta-cyan fill-lta-cyan" : "text-muted-foreground/40"}`}
-                        />
+                        <Star className={`h-7 w-7 transition-colors ${(stats[r.key] ?? 0) >= n ? "fill-primary text-primary" : "text-muted-foreground/30"}`} />
                       </button>
                     ))}
                   </div>
                 </div>
               ))}
               <div>
-                <div className="text-sm font-semibold mb-1.5">Coach comment</div>
+                <div className="mb-1.5 text-sm font-semibold">Coach comment</div>
                 <Textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   rows={4}
                   placeholder="What went well, what to work on…"
                 />
-                <p className="text-[11px] text-muted-foreground mt-1">Parents can see this feedback on the booking in their Parent Hub.</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Parents can see this feedback on the booking in their Parent Hub.</p>
               </div>
-              {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-              <Button onClick={saveReport} disabled={saving} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold">
+              {saveError && <p className="text-sm text-destructive" role="alert">{saveError}</p>}
+              <Button onClick={saveReport} disabled={saving} size="lg" className="w-full">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save session feedback"}
               </Button>
             </TabsContent>
 
-            <TabsContent value="progress" className="space-y-4 pt-2">
+            <TabsContent value="progress" className="space-y-5 pt-3">
               <p className="text-xs text-muted-foreground">
                 The full LTA talent-characteristics assessment — this is the progress
                 report parents see under My Children.
@@ -603,20 +617,21 @@ const CoachHub = () => {
               {TALENT_CHARACTERISTICS.map((tc) => (
                 <div key={tc.name}>
                   <div className="text-sm font-semibold leading-tight">{tc.name}</div>
-                  <div className="text-[11px] text-muted-foreground mb-1.5">{tc.descriptor}</div>
+                  <div className="mb-1.5 text-[11px] text-muted-foreground">{tc.descriptor}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {TC_LEVELS.map((level) => (
                       <button
                         key={level.value}
                         type="button"
+                        aria-pressed={tcRatings[tc.name] === level.value}
                         onClick={() => setTcRatings((r) => ({
                           ...r,
                           [tc.name]: r[tc.name] === level.value ? 0 : level.value,
                         }))}
-                        className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-all ${
+                        className={`press min-h-9 rounded-full border px-3 text-[12px] font-semibold transition-colors duration-150 ${
                           tcRatings[tc.name] === level.value
                             ? level.classes + " ring-1 ring-current"
-                            : "border-border text-muted-foreground hover:border-foreground/40"
+                            : "border-border bg-card text-muted-foreground hover:border-foreground/40"
                         }`}
                       >
                         {level.label}
@@ -626,7 +641,7 @@ const CoachHub = () => {
                 </div>
               ))}
               <div>
-                <div className="text-sm font-semibold mb-1.5">Coach's assessment</div>
+                <div className="mb-1.5 text-sm font-semibold">Coach's assessment</div>
                 <Textarea
                   value={assessment}
                   onChange={(e) => setAssessment(e.target.value)}
@@ -634,16 +649,16 @@ const CoachHub = () => {
                   placeholder="Overall development, standout qualities, next steps…"
                 />
               </div>
-              {progressError && <p className="text-sm text-red-600">{progressError}</p>}
-              {progressSaved && <p className="text-sm text-green-600">Progress report saved — visible to the parent now.</p>}
-              <Button onClick={saveProgressReport} disabled={progressSaving} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold">
+              {progressError && <p className="text-sm text-destructive" role="alert">{progressError}</p>}
+              {progressSaved && <p className="text-sm text-emerald-700">Progress report saved — visible to the parent now.</p>}
+              <Button onClick={saveProgressReport} disabled={progressSaving} size="lg" className="w-full">
                 {progressSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : progressReportId ? "Update progress report" : "Save progress report"}
               </Button>
             </TabsContent>
           </Tabs>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppShell>
   );
 };
 

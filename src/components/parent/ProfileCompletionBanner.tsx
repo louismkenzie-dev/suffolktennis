@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, ChevronRight, User, Heart } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Circle, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
 type Props = {
   onGoToParent: () => void;
@@ -11,10 +12,16 @@ type Props = {
 
 type ChecklistItem = { label: string; done: boolean; group: "parent" | "children" };
 
+/**
+ * A quiet, single-purpose nudge: how far through set-up the parent is and
+ * the one next thing to do. The full checklist folds away on phones so the
+ * page's real content is never pushed below the fold.
+ */
 const ProfileCompletionBanner = ({ onGoToParent, onGoToChildren }: Props) => {
   const { user } = useAuth();
   const [items, setItems] = useState<ChecklistItem[] | null>(null);
   const [hasChildren, setHasChildren] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -79,114 +86,80 @@ const ProfileCompletionBanner = ({ onGoToParent, onGoToChildren }: Props) => {
   const pct = Math.round((done / total) * 100);
   if (pct === 100) return null;
 
-  const parentDone = items.filter((i) => i.group === "parent" && i.done).length;
-  const parentTotal = items.filter((i) => i.group === "parent").length;
-  const childrenDone = items.filter((i) => i.group === "children" && i.done).length;
-  const childrenTotal = items.filter((i) => i.group === "children").length;
+  const parentTodo = items.filter((i) => i.group === "parent" && !i.done);
+  const childrenTodo = items.filter((i) => i.group === "children" && !i.done);
+  // The one next step: children first when none exist, otherwise parent details.
+  const next = !hasChildren
+    ? { label: "Add your first child", onClick: onGoToChildren }
+    : parentTodo.length > 0
+      ? { label: "Fill in your details", onClick: onGoToParent }
+      : { label: "Update your children", onClick: onGoToChildren };
+
+  const Group = ({ title, list, onClick }: { title: string; list: ChecklistItem[]; onClick: () => void }) => (
+    <div>
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
+      <ul className="space-y-1">
+        {list.map((i) => (
+          <li key={i.label} className="flex items-center gap-2 text-sm">
+            {i.done
+              ? <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+              : <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />}
+            <span className={i.done ? "text-muted-foreground line-through" : "text-foreground"}>{i.label}</span>
+          </li>
+        ))}
+      </ul>
+      {list.some((i) => !i.done) && (
+        <button type="button" onClick={onClick} className="mt-2 inline-flex min-h-8 items-center gap-1 text-sm font-medium text-primary">
+          {title === "Your details" ? "Fill in your details" : hasChildren ? "Update your children" : "Add your first child"} <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
+    <motion.section
+      initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mb-6 rounded-2xl border-2 border-lta-cyan/40 bg-gradient-to-br from-lta-cyan/10 via-card to-card shadow-lg overflow-hidden"
+      transition={{ duration: 0.2 }}
+      aria-label="Profile completion"
+      className="mb-5 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 md:mb-7 md:p-5"
     >
-      <div className="p-5 md:p-6">
-        <div className="flex items-start gap-4 flex-wrap">
-          <div className="w-11 h-11 rounded-xl bg-lta-cyan/20 flex items-center justify-center shrink-0">
-            <AlertCircle className="w-6 h-6 text-lta-cyan" />
-          </div>
-          <div className="flex-1 min-w-[240px]">
-            <h3 className="font-display text-lg md:text-xl font-black text-foreground">
-              Complete your Parent Hub profile
-            </h3>
-            <p className="text-sm text-muted-foreground font-body mt-1">
-              {hasChildren
-                ? "Please finish adding your personal and child details so our coaches and county staff can contact you, invite your child to events and track their progress."
-                : "Please add your personal details and register each of your children so our coaches and county staff can contact you and invite them to events."}
-            </p>
-
-            {/* Progress bar */}
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-xs font-display font-bold text-foreground mb-1.5">
-                <span>{done} of {total} steps complete</span>
-                <span className="text-lta-cyan">{pct}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                  className="h-full bg-lta-cyan"
-                />
-              </div>
-            </div>
-          </div>
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Sparkles className="h-5 w-5" strokeWidth={1.8} />
         </div>
-
-        {/* Checklist */}
-        <div className="grid md:grid-cols-2 gap-3 mt-5">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-lta-cyan" />
-                <p className="font-display font-bold text-sm text-foreground">Your details</p>
-              </div>
-              <span className="text-xs font-body text-muted-foreground">{parentDone}/{parentTotal}</span>
-            </div>
-            <ul className="space-y-1.5">
-              {items.filter((i) => i.group === "parent").map((i) => (
-                <li key={i.label} className="flex items-center gap-2 text-sm font-body">
-                  {i.done ? (
-                    <CheckCircle2 className="w-4 h-4 text-lta-cyan shrink-0" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/40 shrink-0" />
-                  )}
-                  <span className={i.done ? "text-muted-foreground line-through" : "text-foreground"}>{i.label}</span>
-                </li>
-              ))}
-            </ul>
-            {parentDone < parentTotal && (
-              <button
-                onClick={onGoToParent}
-                className="mt-3 inline-flex items-center gap-1 text-sm font-display font-bold text-lta-cyan hover:underline"
-              >
-                Fill in your details <ChevronRight className="w-4 h-4" />
-              </button>
-            )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-[15px] font-semibold text-foreground">Finish setting up</h3>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground tabular">{done} of {total} · {pct}%</span>
           </div>
-
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Heart className="w-4 h-4 text-lta-cyan" />
-                <p className="font-display font-bold text-sm text-foreground">Your children</p>
-              </div>
-              <span className="text-xs font-body text-muted-foreground">{childrenDone}/{childrenTotal}</span>
-            </div>
-            <ul className="space-y-1.5">
-              {items.filter((i) => i.group === "children").map((i) => (
-                <li key={i.label} className="flex items-center gap-2 text-sm font-body">
-                  {i.done ? (
-                    <CheckCircle2 className="w-4 h-4 text-lta-cyan shrink-0" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/40 shrink-0" />
-                  )}
-                  <span className={i.done ? "text-muted-foreground line-through" : "text-foreground"}>{i.label}</span>
-                </li>
-              ))}
-            </ul>
-            {childrenDone < childrenTotal && (
-              <button
-                onClick={onGoToChildren}
-                className="mt-3 inline-flex items-center gap-1 text-sm font-display font-bold text-lta-cyan hover:underline"
-              >
-                {hasChildren ? "Update your children" : "Add your first child"} <ChevronRight className="w-4 h-4" />
-              </button>
-            )}
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {hasChildren
+              ? "A few details let coaches contact you and invite your child to sessions."
+              : "Add your details and register each child so we can invite them to training and events."}
+          </p>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/10" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.5, ease: "easeOut" }} className="h-full rounded-full bg-primary" />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={next.onClick}>{next.label} <ChevronRight className="h-4 w-4" /></Button>
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              aria-expanded={expanded}
+              className="inline-flex min-h-9 items-center gap-1 px-1 text-sm font-medium text-muted-foreground hover:text-foreground md:hidden"
+            >
+              {expanded ? "Hide" : "What's missing"} <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </button>
           </div>
         </div>
       </div>
-    </motion.div>
+      <div className={`${expanded ? "grid" : "hidden"} mt-4 gap-4 border-t border-primary/10 pt-4 sm:grid-cols-2 md:grid`}>
+        <Group title="Your details" list={items.filter((i) => i.group === "parent")} onClick={onGoToParent} />
+        <Group title="Your children" list={items.filter((i) => i.group === "children")} onClick={onGoToChildren} />
+      </div>
+      {parentTodo.length + childrenTodo.length === 0 ? null : null}
+    </motion.section>
   );
 };
 

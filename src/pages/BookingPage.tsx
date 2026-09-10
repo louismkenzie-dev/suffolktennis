@@ -7,13 +7,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { getStripeFor, type PaymentsEnvironment } from "@/lib/stripe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, Clock } from "lucide-react";
-import logo from "@/assets/suffolk-tennis-logo-v7.png";
+import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, Clock, ChevronDown, type LucideIcon } from "lucide-react";
 import { formatTimeRange } from "@/lib/timeFormat";
+import { FlowShell, Field, StatusBadge, SkeletonBlock } from "@/components/app";
 
 type InvitationPayload = {
   /** Pre-launch wall — "coming_soon" until Suffolk Tennis opens bookings. */
@@ -44,43 +43,37 @@ type PaymentSetup = {
 
 const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 
-// Stripe Payment Element theming — matches the navy booking page so the card
-// form reads as part of the site, not an embedded third party.
+// Stripe Payment Element theming — matches the app's light surfaces so the
+// card form reads as part of the page, not an embedded third party.
 const appearance: Appearance = {
-  theme: "night",
+  theme: "stripe",
   labels: "floating",
   variables: {
-    colorPrimary: "hsl(195 100% 45%)", // lta-cyan
-    colorBackground: "hsl(220 55% 18%)",
-    colorText: "hsl(0 0% 98%)",
-    colorTextSecondary: "hsl(220 20% 70%)",
-    colorTextPlaceholder: "hsl(220 20% 55%)",
-    colorDanger: "hsl(0 84% 66%)",
-    colorIcon: "hsl(220 20% 70%)",
+    colorPrimary: "#0a67b8",
+    colorBackground: "#ffffff",
+    colorText: "#15202e",
+    colorTextSecondary: "#5f6b7a",
+    colorTextPlaceholder: "#98a2b3",
+    colorDanger: "#dc2626",
+    colorIcon: "#5f6b7a",
     fontFamily: "'Hanken Grotesk', system-ui, -apple-system, sans-serif",
-    fontSizeBase: "15px",
-    borderRadius: "10px",
+    fontSizeBase: "16px",
+    borderRadius: "12px",
+    spacingUnit: "4px",
   },
   rules: {
     ".Input": {
-      backgroundColor: "hsl(220 60% 11%)",
-      border: "1px solid hsla(0, 0%, 100%, 0.18)",
+      border: "1px solid #d5dbe3",
       boxShadow: "none",
       padding: "12px 14px",
     },
     ".Input:focus": {
-      border: "1px solid hsl(195 100% 45%)",
-      boxShadow: "0 0 0 1px hsl(195 100% 45%)",
+      border: "1px solid #0a67b8",
+      boxShadow: "0 0 0 2px rgba(10, 103, 184, 0.25)",
     },
-    ".Label": { color: "hsl(220 20% 70%)", fontSize: "13px" },
-    ".Tab": {
-      backgroundColor: "hsl(220 60% 11%)",
-      border: "1px solid hsla(0, 0%, 100%, 0.18)",
-    },
-    ".Tab--selected": {
-      border: "1px solid hsl(195 100% 45%)",
-      boxShadow: "0 0 0 1px hsl(195 100% 45%)",
-    },
+    ".Label": { color: "#5f6b7a", fontSize: "13px" },
+    ".Tab": { border: "1px solid #d5dbe3" },
+    ".Tab--selected": { border: "1px solid #0a67b8", boxShadow: "0 0 0 1px #0a67b8" },
     ".Error": { fontSize: "13px" },
   },
 };
@@ -127,24 +120,24 @@ const PaymentStep = ({ setup, priceLabel, onBack }: {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display font-bold text-lg">Payment</h3>
-        <button type="button" onClick={onBack} className="text-sm text-primary-foreground/60 hover:text-primary-foreground inline-flex items-center gap-1">
+    <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-border bg-card p-4 shadow-card md:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-lg font-semibold">Payment</h2>
+        <button type="button" onClick={onBack} className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-primary">
           <ArrowLeft size={14} /> Back to details
         </button>
       </div>
       {setup.isProgramme && (
-        <p className="text-sm text-primary-foreground/70">
+        <p className="text-sm text-muted-foreground">
           One payment of {gbp(setup.amountPence)} covers the whole programme — every session included.
         </p>
       )}
       <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
-      {error && <p className="text-red-400 text-sm">{error}</p>}
-      <Button type="submit" disabled={!stripe || !elements || submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
+      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      <Button type="submit" size="lg" disabled={!stripe || !elements || submitting} className="w-full">
         {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Pay ${priceLabel}`}
       </Button>
-      <div className="flex items-center justify-center gap-4 text-[11px] text-primary-foreground/50 uppercase tracking-wider">
+      <div className="flex items-center justify-center gap-4 text-[11px] uppercase tracking-wider text-muted-foreground">
         <span className="flex items-center gap-1.5"><Lock className="w-3 h-3" /> Secure payment</span>
         <span className="flex items-center gap-1.5"><ShieldCheck className="w-3 h-3" /> Powered by Stripe</span>
       </div>
@@ -173,6 +166,7 @@ const BookingPage = () => {
 
   const [setup, setSetup] = useState<PaymentSetup | null>(null);
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
+  const [showAllSessions, setShowAllSessions] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -298,223 +292,243 @@ const BookingPage = () => {
       }
     : null;
 
+  const isCancelled = !!data?.event.cancelled_at;
+  const sessionsShown = data ? (showAllSessions ? data.sessions : data.sessions.slice(0, 5)) : [];
+
+  const Notice = ({ icon: Icon, title, children, tone = "neutral" }: { icon: LucideIcon; title: string; children?: React.ReactNode; tone?: "neutral" | "success" | "warning" | "danger" }) => {
+    const ring = { neutral: "bg-muted text-muted-foreground", success: "bg-emerald-50 text-emerald-700", warning: "bg-amber-50 text-amber-700", danger: "bg-red-50 text-red-700" }[tone];
+    return (
+      <div className="rounded-2xl border border-border bg-card p-5 text-center shadow-card md:p-6">
+        <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${ring}`}><Icon className="h-6 w-6" strokeWidth={1.8} /></div>
+        <h2 className="font-display text-lg font-semibold">{title}</h2>
+        {children && <div className="mt-2 space-y-3 text-sm text-muted-foreground">{children}</div>}
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-suffolk-navy text-primary-foreground">
-      <header className="container mx-auto px-6 py-6">
-        <Link to="/"><img src={logo} alt="Suffolk Tennis" className="h-12" /></Link>
-      </header>
-      <main className="container mx-auto px-6 pb-20 max-w-2xl">
-        {loading ? (
-          <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>
-        ) : !data ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
-            <AlertCircle className="w-10 h-10 text-lta-yellow mx-auto mb-4" />
-            <p className="text-lg">{error}</p>
-          </div>
-        ) : (
-          <>
-            <span className="inline-block px-3 py-1 rounded-full bg-lta-yellow/15 text-lta-yellow text-[11px] font-bold uppercase tracking-widest mb-3">
-              Invitation for {data.invitation.child_name || "your player"}
-            </span>
-            <h1 className="font-display text-3xl md:text-4xl font-black">{data.event.title}</h1>
-            <div className="mt-3 space-y-1.5 text-sm text-primary-foreground/80">
-              {data.event.event_date && (
-                <div className="flex items-center gap-2"><Calendar size={14} className="text-lta-cyan" />
-                  {new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+    <FlowShell back={user ? { label: "My bookings", to: "/parent-hub?tab=bookings" } : undefined} maxWidth="max-w-2xl">
+      {loading ? (
+        <div className="space-y-4" aria-busy>
+          <SkeletonBlock className="h-8 w-2/3" />
+          <SkeletonBlock className="h-40" />
+          <SkeletonBlock className="h-72" />
+        </div>
+      ) : !data ? (
+        <Notice icon={AlertCircle} title="This invitation could not be opened" tone="warning">
+          <p>{error}</p>
+        </Notice>
+      ) : (
+        <div className="space-y-5">
+          {/* ---- The invitation, as a product card ---- */}
+          <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+            {data.event.poster_url && (
+              <img src={data.event.poster_url} alt="" className="max-h-56 w-full object-cover" />
+            )}
+            <div className="p-5 md:p-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+                Invitation{data.invitation.child_name ? ` for ${data.invitation.child_name}` : ""}
+              </p>
+              <h1 className="mt-1 font-display text-2xl font-semibold leading-tight md:text-3xl">{data.event.title}</h1>
+              <div className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+                {data.event.event_date && !isProgramme && (
+                  <p className="flex items-center gap-2"><Calendar size={15} className="shrink-0 text-muted-foreground/70" />
+                    {new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                  </p>
+                )}
+                {isProgramme && (
+                  <p className="flex items-center gap-2"><Calendar size={15} className="shrink-0 text-muted-foreground/70" />
+                    {data.event.meeting_cadence === "monthly" ? "Monthly" : "Weekly"} programme · {data.sessions.length} session{data.sessions.length === 1 ? "" : "s"}
+                  </p>
+                )}
+                {data.event.location && <p className="flex items-center gap-2"><MapPin size={15} className="shrink-0 text-muted-foreground/70" /> {data.event.location}</p>}
+              </div>
+
+              <div className="mt-4 flex items-end justify-between gap-3 border-t border-border pt-4">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Price</p>
+                  <p className="font-display text-2xl font-semibold leading-tight">{complimentary ? "No extra charge" : noCharge ? "Free" : gbp(data.event.price_pence!)}</p>
+                  {isProgramme && !noCharge && <p className="text-xs text-muted-foreground">for the full programme, paid once</p>}
                 </div>
-              )}
-              {data.event.location && <div className="flex items-center gap-2"><MapPin size={14} className="text-lta-cyan" /> {data.event.location}</div>}
-              <div className="text-lta-yellow font-bold mt-2">{priceLabel}</div>
+                {complimentary && <StatusBadge tone="success">Included</StatusBadge>}
+              </div>
+
               {complimentary ? (
-                <p className="text-primary-foreground/60 text-xs">
-                  This place is <strong className="text-primary-foreground/90">included at no extra charge</strong> because{" "}
+                <p className="mt-3 text-sm text-muted-foreground">
+                  This place is <strong className="text-foreground">included at no extra charge</strong> because{" "}
                   {data.invitation.child_name ?? "your child"} is already on one of our programmes — just confirm it below.
                 </p>
               ) : isProgramme && (
-                <p className="text-primary-foreground/60 text-xs">
-                  One payment covers the <strong className="text-primary-foreground/90">whole programme</strong> — every
-                  session listed below is included{data.event.meeting_cadence ? ` (${data.event.meeting_cadence} sessions)` : ""}.
+                <p className="mt-3 text-sm text-muted-foreground">
+                  One payment covers the <strong className="text-foreground">whole programme</strong> — every session below is included.
                 </p>
               )}
+              {data.event.description && (
+                <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{data.event.description}</p>
+              )}
             </div>
-            {data.event.description && (
-              <p className="mt-4 text-primary-foreground/70 text-sm whitespace-pre-line">{data.event.description}</p>
-            )}
+
             {data.sessions.length > 0 && (
-              <div className="mt-5 bg-white/5 border border-white/10 rounded-xl p-4">
-                <h3 className="font-display font-bold text-sm mb-2">
-                  {isProgramme ? `Programme sessions (${data.sessions.length}) — all included in your sign-up` : "Session dates"}
-                </h3>
-                <ul className="text-sm text-primary-foreground/80 space-y-1">
-                  {data.sessions.map((s) => (
-                    <li key={s.id} className={s.cancelled_at ? "line-through opacity-60" : undefined}>
-                      {new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                      {s.start_time ? ` · ${formatTimeRange(s.start_time, s.end_time)}` : ""}
-                      {s.venue ? ` · ${s.venue}` : ""}
-                      {s.cancelled_at ? " · cancelled" : s.moved_from_date ? " · moved" : ""}
+              <div className="border-t border-border">
+                <p className="px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground md:px-6">
+                  {isProgramme ? "Programme sessions · all included" : "Session dates"}
+                </p>
+                <ul className="divide-y divide-border">
+                  {sessionsShown.map((sn) => (
+                    <li key={sn.id} className={`flex items-center justify-between gap-3 px-5 py-2.5 text-sm md:px-6 ${sn.cancelled_at ? "text-muted-foreground line-through" : ""}`}>
+                      <span>
+                        {new Date(sn.session_date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                        {sn.start_time ? ` · ${formatTimeRange(sn.start_time, sn.end_time)}` : ""}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                        {sn.cancelled_at ? <StatusBadge tone="danger" dot={false}>Cancelled</StatusBadge> : sn.moved_from_date ? <StatusBadge tone="warning" dot={false}>Moved</StatusBadge> : null}
+                        <span className="max-w-[9rem] truncate">{sn.venue ?? ""}</span>
+                      </span>
                     </li>
                   ))}
                 </ul>
-              </div>
-            )}
-
-            {data.event.cancelled_at ? (
-              <div className="mt-8 bg-white/5 border border-red-400/30 rounded-2xl p-6 text-center space-y-2">
-                <AlertCircle className="w-8 h-8 text-red-300 mx-auto" />
-                <h3 className="font-display font-bold text-lg">This event has been cancelled</h3>
-                <p className="text-sm text-primary-foreground/70">
-                  Suffolk Tennis will be in touch{data.existing_booking?.status === "paid" ? " about your payment" : ""}. Questions:{" "}
-                  <a href="mailto:enquiries@suffolktennis.online" className="text-lta-cyan hover:underline">enquiries@suffolktennis.online</a>
-                </p>
-              </div>
-            ) : data.existing_booking?.status === "paid" || data.invitation.status === "booked" ? (
-              <div className="mt-8 bg-lta-cyan/10 border border-lta-cyan/30 rounded-2xl p-6 text-center">
-                <Ticket className="w-8 h-8 text-lta-cyan mx-auto mb-3" />
-                <p className="font-bold">This place is already booked.</p>
-                <p className="text-sm text-primary-foreground/70 mt-1">Your entry ticket was emailed to you — check your inbox for the confirmation.</p>
-              </div>
-            ) : data.bookings_status !== "open" ? (
-              /* Pre-launch wall: bookings (and payment) are not open yet. */
-              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
-                <Clock className="w-8 h-8 text-lta-cyan mx-auto" />
-                <h3 className="font-display font-bold text-lg">Booking opens soon</h3>
-                <p className="text-sm text-primary-foreground/70">
-                  We're putting the finishing touches to the new Suffolk Tennis booking
-                  system. Your place is noted against this invitation — you'll be able to
-                  confirm and pay for it here shortly, and we'll email you the moment
-                  booking opens.
-                </p>
-                <p className="text-xs text-primary-foreground/50">
-                  Keep this link — it stays valid. Questions in the meantime:{" "}
-                  <a href="mailto:enquiries@suffolktennis.online" className="text-lta-cyan hover:underline">
-                    enquiries@suffolktennis.online
-                  </a>
-                </p>
-              </div>
-            ) : setup && elementsOptions && stripePromise ? (
-              <Elements stripe={stripePromise} options={elementsOptions}>
-                <PaymentStep setup={setup} priceLabel={payLabel} onBack={() => setSetup(null)} />
-              </Elements>
-            ) : authLoading ? (
-              <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-lta-cyan" /></div>
-            ) : !user ? (
-              /* Onboarding gate 1: an account is required before booking. */
-              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
-                <h3 className="font-display font-bold text-lg">Sign in to book this place</h3>
-                <p className="text-sm text-primary-foreground/70">
-                  Bookings are made through your Suffolk Tennis account, so your child's
-                  profile, tickets and coach feedback all live in one place. It takes a
-                  minute to set up.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button asChild className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-6">
-                    <Link to={`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`}><UserPlus className="w-4 h-4 mr-2" /> Create free account</Link>
-                  </Button>
-                  <Button asChild variant="outline" className="h-12 px-6 border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 hover:text-primary-foreground font-bold">
-                    <Link to={`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`}><LogIn className="w-4 h-4 mr-2" /> Sign in</Link>
-                  </Button>
-                </div>
-                <p className="text-[11px] text-primary-foreground/50">You'll come straight back here to finish booking.</p>
-              </div>
-            ) : data.invitation.parent_email &&
-              user.email?.toLowerCase() !== data.invitation.parent_email.toLowerCase() ? (
-              /* Personal invitation: only the invited account can book with it. */
-              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
-                <AlertCircle className="w-8 h-8 text-lta-yellow mx-auto" />
-                <h3 className="font-display font-bold text-lg">This invitation isn't for this account</h3>
-                <p className="text-sm text-primary-foreground/70">
-                  It was sent to <strong className="text-primary-foreground">{data.invitation.parent_email}</strong>, but
-                  you're signed in as <strong className="text-primary-foreground">{user.email}</strong>. Please switch to
-                  the invited account to book.
-                </p>
-                <Button
-                  onClick={async () => { await signOut(); window.location.assign(`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`); }}
-                  className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-6"
-                >
-                  <LogIn className="w-4 h-4 mr-2" /> Switch account
-                </Button>
-              </div>
-            ) : children && children.length === 0 ? (
-              /* Onboarding gate 2: the child must be registered (photo included). */
-              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
-                <h3 className="font-display font-bold text-lg">
-                  Add {data.invitation.child_name ?? "your child"} to your account
-                </h3>
-                <p className="text-sm text-primary-foreground/70">
-                  Before booking, add your child's profile (including a photo — coaches
-                  use it on the session register). Then come back to this page to pay.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button asChild className="bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 px-6">
-                    <a href="/parent-hub?tab=children" target="_blank" rel="noreferrer"><UserPlus className="w-4 h-4 mr-2" /> Add my child</a>
-                  </Button>
-                  <Button variant="outline" onClick={loadChildren} className="h-12 px-6 border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 hover:text-primary-foreground font-bold">
-                    <RefreshCcw className="w-4 h-4 mr-2" /> I've added them
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
-                <h3 className="font-display font-bold text-lg">Book this place</h3>
-                <p className="text-xs text-primary-foreground/50 -mt-2">Booking as {user.email}</p>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-primary-foreground/80">Which child is this for?</Label>
-                    <Select value={childId} onValueChange={setChildId}>
-                      <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground"><SelectValue placeholder="Choose your child" /></SelectTrigger>
-                      <SelectContent>
-                        {(children ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <a href="/parent-hub?tab=children" target="_blank" rel="noreferrer" className="text-[11px] text-lta-cyan hover:underline mt-1 inline-block">
-                      Add another child
-                    </a>
-                  </div>
-                  <div>
-                    <Label className="text-primary-foreground/80">Your name</Label>
-                    <Input value={parentName} onChange={(e) => setParentName(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
-                  </div>
-                  <div>
-                    <Label className="text-primary-foreground/80">Phone (optional)</Label>
-                    <Input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" />
-                  </div>
-                </div>
-                {Array.isArray(data.event.session_slots) && data.event.session_slots.length > 0 && (
-                  <div>
-                    <Label className="text-primary-foreground/80">Session</Label>
-                    <Select value={sessionSlot} onValueChange={setSessionSlot}>
-                      <SelectTrigger className="bg-white/10 border-white/20 text-primary-foreground"><SelectValue placeholder="Choose a session" /></SelectTrigger>
-                      <SelectContent>
-                        {data.event.session_slots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                {data.sessions.length > 5 && (
+                  <button type="button" onClick={() => setShowAllSessions((v) => !v)} className="flex min-h-11 w-full items-center justify-center gap-1 border-t border-border text-sm font-medium text-primary">
+                    {showAllSessions ? "Show fewer" : `Show all ${data.sessions.length} sessions`}
+                    <ChevronDown className={`h-4 w-4 transition-transform ${showAllSessions ? "rotate-180" : ""}`} />
+                  </button>
                 )}
-                <div>
-                  <Label className="text-primary-foreground/80">Anything else for the coaches? (optional — your child's profile medical info is already shared)</Label>
-                  <Textarea value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} className="bg-white/10 border-white/20 text-primary-foreground" rows={2} />
-                </div>
-                <label className="flex items-start gap-2 text-sm text-primary-foreground/80 cursor-pointer">
-                  <Checkbox checked={photoConsent} onCheckedChange={(v) => setPhotoConsent(v === true)} className="mt-0.5" />
-                  I consent to photos of my child being taken at this event for Suffolk Tennis use.
-                </label>
-                {error && <p className="text-red-400 text-sm">{error}</p>}
-                <Button onClick={handleContinue} disabled={submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
-                  {submitting
-                    ? <Loader2 className="w-5 h-5 animate-spin" />
-                    : noCharge ? "Confirm this place" : `Continue to payment · ${priceLabel}`}
-                </Button>
-                <p className="text-[11px] text-primary-foreground/50 text-center">
-                  {noCharge
-                    ? "No payment needed. Your entry QR ticket is emailed to you as soon as you confirm."
-                    : "Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid."}
-                </p>
               </div>
             )}
-          </>
-        )}
-      </main>
-    </div>
+          </section>
+
+          {/* ---- What happens next ---- */}
+          {isCancelled ? (
+            <Notice icon={AlertCircle} title="This event has been cancelled" tone="danger">
+              <p>
+                Suffolk Tennis will be in touch{data.existing_booking?.status === "paid" ? " about your payment" : ""}. Questions:{" "}
+                <a href="mailto:enquiries@suffolktennis.online" className="font-medium text-primary">enquiries@suffolktennis.online</a>
+              </p>
+            </Notice>
+          ) : data.existing_booking?.status === "paid" || data.invitation.status === "booked" ? (
+            <Notice icon={Ticket} title="This place is already booked" tone="success">
+              <p>Your entry ticket was emailed to you — it is also in your Parent Hub.</p>
+              <Button asChild variant="outline"><Link to="/parent-hub?tab=bookings">Go to my bookings</Link></Button>
+            </Notice>
+          ) : data.bookings_status !== "open" ? (
+            /* Pre-launch wall: bookings (and payment) are not open yet. */
+            <Notice icon={Clock} title="Booking opens soon">
+              <p>
+                We're putting the finishing touches to the new Suffolk Tennis booking system. Your place is noted against this
+                invitation — you'll be able to confirm and pay for it here shortly, and we'll email you the moment booking opens.
+              </p>
+              <p className="text-xs">
+                Keep this link — it stays valid. Questions in the meantime:{" "}
+                <a href="mailto:enquiries@suffolktennis.online" className="font-medium text-primary">enquiries@suffolktennis.online</a>
+              </p>
+            </Notice>
+          ) : setup && elementsOptions && stripePromise ? (
+            <Elements stripe={stripePromise} options={elementsOptions}>
+              <PaymentStep setup={setup} priceLabel={payLabel} onBack={() => setSetup(null)} />
+            </Elements>
+          ) : authLoading ? (
+            <SkeletonBlock className="h-40" />
+          ) : !user ? (
+            /* Onboarding gate 1: an account is required before booking. */
+            <Notice icon={UserPlus} title="Sign in to book this place">
+              <p>
+                Bookings are made through your Suffolk Tennis account, so your child's profile, tickets and coach feedback
+                all live in one place. It takes a minute to set up.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+                <Button asChild size="lg">
+                  <Link to={`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`}><UserPlus className="w-4 h-4" /> Create free account</Link>
+                </Button>
+                <Button asChild variant="outline" size="lg">
+                  <Link to={`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`}><LogIn className="w-4 h-4" /> Sign in</Link>
+                </Button>
+              </div>
+              <p className="text-xs">You'll come straight back here to finish booking.</p>
+            </Notice>
+          ) : data.invitation.parent_email &&
+            user.email?.toLowerCase() !== data.invitation.parent_email.toLowerCase() ? (
+            /* Personal invitation: only the invited account can book with it. */
+            <Notice icon={AlertCircle} title="This invitation isn't for this account" tone="warning">
+              <p>
+                It was sent to <strong className="text-foreground">{data.invitation.parent_email}</strong>, but you're signed in as{" "}
+                <strong className="text-foreground">{user.email}</strong>. Please switch to the invited account to book.
+              </p>
+              <Button size="lg" onClick={async () => { await signOut(); window.location.assign(`/auth?redirect=${encodeURIComponent(`/book/${token}`)}`); }}>
+                <LogIn className="w-4 h-4" /> Switch account
+              </Button>
+            </Notice>
+          ) : children && children.length === 0 ? (
+            /* Onboarding gate 2: the child must be registered (photo included). */
+            <Notice icon={UserPlus} title={`Add ${data.invitation.child_name ?? "your child"} to your account`}>
+              <p>
+                Before booking, add your child's profile (including a photo — coaches use it on the session register).
+                Then come back to this page to finish.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+                <Button asChild size="lg">
+                  <a href="/parent-hub?tab=children" target="_blank" rel="noreferrer"><UserPlus className="w-4 h-4" /> Add my child</a>
+                </Button>
+                <Button variant="outline" size="lg" onClick={loadChildren}><RefreshCcw className="w-4 h-4" /> I've added them</Button>
+              </div>
+            </Notice>
+          ) : (
+            <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-card md:p-6">
+              <div>
+                <h2 className="font-display text-lg font-semibold">Book this place</h2>
+                <p className="text-xs text-muted-foreground">Booking as {user.email}</p>
+              </div>
+              <Field label="Which child is this for?" htmlFor="bk-child" required>
+                <Select value={childId} onValueChange={setChildId}>
+                  <SelectTrigger id="bk-child"><SelectValue placeholder="Choose your child" /></SelectTrigger>
+                  <SelectContent>
+                    {(children ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <a href="/parent-hub?tab=children" target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center text-xs font-medium text-primary">
+                  Add another child
+                </a>
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Your name" htmlFor="bk-name" required>
+                  <Input id="bk-name" autoComplete="name" value={parentName} onChange={(e) => setParentName(e.target.value)} />
+                </Field>
+                <Field label="Phone" htmlFor="bk-phone" hint="Optional — for on-the-day contact.">
+                  <Input id="bk-phone" type="tel" inputMode="tel" autoComplete="tel" value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} />
+                </Field>
+              </div>
+              {Array.isArray(data.event.session_slots) && data.event.session_slots.length > 0 && (
+                <Field label="Session" htmlFor="bk-slot">
+                  <Select value={sessionSlot} onValueChange={setSessionSlot}>
+                    <SelectTrigger id="bk-slot"><SelectValue placeholder="Choose a session" /></SelectTrigger>
+                    <SelectContent>
+                      {data.event.session_slots.map((sl) => <SelectItem key={sl} value={sl}>{sl}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+              <Field label="Anything else for the coaches?" htmlFor="bk-notes" hint="Optional — your child's profile medical info is already shared.">
+                <Textarea id="bk-notes" value={medicalNotes} onChange={(e) => setMedicalNotes(e.target.value)} rows={2} />
+              </Field>
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-muted/60 px-3.5 py-3 text-sm">
+                <Checkbox checked={photoConsent} onCheckedChange={(v) => setPhotoConsent(v === true)} className="mt-0.5" />
+                <span>I consent to photos of my child being taken at this event for Suffolk Tennis use.</span>
+              </label>
+              {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+              <Button onClick={handleContinue} disabled={submitting} size="lg" className="w-full">
+                {submitting
+                  ? <Loader2 className="w-5 h-5 animate-spin" />
+                  : noCharge ? "Confirm this place" : `Continue to payment · ${payLabel}`}
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                {noCharge
+                  ? "No payment needed. Your entry QR ticket is emailed to you as soon as you confirm."
+                  : "Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid."}
+              </p>
+            </section>
+          )}
+        </div>
+      )}
+    </FlowShell>
   );
 };
 

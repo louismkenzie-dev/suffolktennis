@@ -14,6 +14,7 @@ import {
   ChevronDown, ChevronRight, Loader2, Mail, MailX, Phone, Plus, Search, ShieldCheck, Users,
   UserMinus, UserPlus,
 } from "lucide-react";
+import { ListGroup, KeyValueList, StatusBadge } from "@/components/app";
 
 // The generated Supabase types predate these tables, and the rest of the admin
 // panels take the same escape hatch rather than regenerating a 48KB file.
@@ -261,7 +262,7 @@ const CoachDirectory = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string)
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2">
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input className="pl-9" placeholder="Search name, email, mobile or club"
@@ -290,7 +291,67 @@ const CoachDirectory = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string)
             <Loader2 className="w-5 h-5 animate-spin mx-auto" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phone: one row per coach, tap to expand the safeguarding/contact detail */}
+          <ListGroup className="md:hidden">
+            {filtered.length === 0 && <p className="bg-card px-4 py-8 text-center text-sm text-muted-foreground">No coaches match that search.</p>}
+            {filtered.map((c) => {
+              const off = unsubscribed.has(c.email);
+              const open = expanded === c.id;
+              return (
+                <div key={c.id} className={`bg-card ${c.active ? "" : "opacity-60"}`}>
+                  <div className="flex items-center gap-3 px-4 py-2.5">
+                    <Checkbox
+                      checked={selected.has(c.id)}
+                      onCheckedChange={(v) => setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (v) next.add(c.id); else next.delete(c.id);
+                        return next;
+                      })}
+                      aria-label={`Select ${fullName(c)}`}
+                    />
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setExpanded(open ? null : c.id)} aria-expanded={open}>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[15px] font-medium">{fullName(c)}</span>
+                        {off && <StatusBadge tone="neutral" dot={false}>Unsubscribed</StatusBadge>}
+                      </div>
+                      <div className="truncate text-[13px] text-muted-foreground">{c.email}</div>
+                      <div className="truncate text-[12px] text-muted-foreground/80">
+                        {(c.county_coach_affiliations ?? []).map((a) => a.organisation).join(" · ") || "No club"}
+                        {c.accreditation_tier ? ` · ${c.accreditation_tier}` : ""}
+                      </div>
+                    </button>
+                    {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground/60" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />}
+                  </div>
+                  {open && (
+                    <div className="space-y-3 border-t border-border bg-muted/40 px-4 py-3 text-sm">
+                      <KeyValueList items={[
+                        { label: "Mobile", value: c.mobile ? <a href={`tel:${c.mobile}`} className="text-primary">{c.mobile}</a> : null },
+                        { label: "Home", value: c.home_phone, hidden: !c.home_phone },
+                        { label: "Work", value: c.work_phone, hidden: !c.work_phone },
+                        { label: "Accreditation", value: `${c.accreditation_tier ?? "—"}${c.qualification_level != null ? ` · Level ${c.qualification_level}` : ""}` },
+                        { label: "Expires", value: <span className={isExpired(c.accreditation_expires) ? "text-destructive" : ""}>{fmtDate(c.accreditation_expires)}</span> },
+                        { label: "DBS", value: fmtDate(c.dbs_date) },
+                        { label: "SWIT expires", value: <span className={isExpired(c.swit_expires) ? "text-destructive" : ""}>{fmtDate(c.swit_expires)}</span> },
+                        { label: "LTA number", value: c.lta_number },
+                        { label: "LTA marketing", value: c.lta_marketing_opt_in == null ? "unknown" : c.lta_marketing_opt_in ? "opted in" : "opted out" },
+                      ]} />
+                      {c.never_call && <Badge variant="destructive">Do not call</Badge>}
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="flex-1" disabled={busy === c.email} onClick={() => setSubscription(c.email, off)}>
+                          {busy === c.email ? <Loader2 className="w-4 h-4 animate-spin" /> : off ? <><Mail className="w-4 h-4" /> Resubscribe</> : <><MailX className="w-4 h-4" /> Unsubscribe</>}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="flex-1" disabled={busy === c.id} onClick={() => setActive(c, !c.active)}>
+                          {c.active ? <><UserMinus className="w-4 h-4" /> Deactivate</> : <><UserPlus className="w-4 h-4" /> Restore</>}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </ListGroup>
+          <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -423,6 +484,7 @@ const CoachDirectory = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string)
               </TableBody>
             </Table>
           </div>
+          </>
         )}
 
         <p className="text-xs text-muted-foreground">

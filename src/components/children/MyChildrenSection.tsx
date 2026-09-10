@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Plus, User, Calendar, ChevronRight, Trash2, Sparkles, Pencil, Star, Zap, Trophy, CreditCard, RefreshCw, ExternalLink } from "lucide-react";
-import freddiePhoto from "@/assets/freddie-sutton.jpeg";
+import { Plus, User, ChevronRight, Sparkles, Pencil, Star, Zap, Trophy, CreditCard, RefreshCw, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { StatusBadge, EmptyState, SkeletonCards } from "@/components/app";
 import AddChildForm from "./AddChildForm";
 import EditChildForm from "./EditChildForm";
 import PlayerReportView from "./PlayerReportView";
@@ -223,11 +224,7 @@ const MyChildrenSection = () => {
 
   if (selectedChild) {
     if (reportsLoading) {
-      return (
-        <div className="text-center py-16">
-          <div className="animate-spin w-8 h-8 border-2 border-lta-cyan border-t-transparent rounded-full mx-auto" />
-        </div>
-      );
+      return <SkeletonCards count={2} className="md:grid-cols-1 lg:grid-cols-1" />;
     }
     return (
       <PlayerReportView
@@ -249,35 +246,41 @@ const MyChildrenSection = () => {
     );
   }
 
+  const ageGroupOf = (dob: string | null): string | null => {
+    if (!dob) return null;
+    const birth = new Date(dob);
+    const now = new Date();
+    const jan1 = new Date(now.getFullYear(), 0, 1);
+    const ageOnJan1 = jan1.getFullYear() - birth.getFullYear() -
+      (jan1 < new Date(jan1.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0);
+    if (ageOnJan1 <= 7) return "8U";
+    if (ageOnJan1 <= 8) return "9U";
+    if (ageOnJan1 <= 9) return "10U";
+    if (ageOnJan1 <= 10) return "11U";
+    if (ageOnJan1 <= 11) return "12U";
+    if (ageOnJan1 <= 13) return "14U";
+    if (ageOnJan1 <= 15) return "16U";
+    if (ageOnJan1 <= 17) return "18U";
+    return "Senior";
+  };
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="font-display text-2xl font-bold text-foreground">My Children</h2>
-          <p className="text-muted-foreground font-body text-sm mt-1">
-            Add your children's details and view their performance reports.
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+      {!showForm && !editingChild && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {children.length === 0 ? "Add your children so coaches can invite them and share reports." : `${children.length} ${children.length === 1 ? "child" : "children"}`}
           </p>
-        </div>
-        {!showForm && (
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {children.length === 0 && (
-              <button
-                onClick={seedDemoData}
-                disabled={seeding}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted text-muted-foreground font-display font-bold text-sm hover:bg-muted/80 transition-all disabled:opacity-50"
-              >
-                <Sparkles size={16} /> {seeding ? "Loading..." : "Load Demo"}
-              </button>
+              <Button variant="outline" size="sm" onClick={seedDemoData} disabled={seeding}>
+                <Sparkles size={16} /> {seeding ? "Loading…" : "Load demo"}
+              </Button>
             )}
-            <button
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-lta-cyan text-suffolk-navy font-display font-bold text-sm hover:brightness-110 transition-all"
-            >
-              <Plus size={16} /> Add Child
-            </button>
+            <Button size="sm" onClick={() => setShowForm(true)}><Plus size={16} /> Add child</Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="mb-6">
@@ -299,213 +302,129 @@ const MyChildrenSection = () => {
       )}
 
       {loading ? (
-        <div className="text-center py-16">
-          <div className="animate-spin w-8 h-8 border-2 border-lta-cyan border-t-transparent rounded-full mx-auto" />
-        </div>
+        <SkeletonCards count={2} className="md:grid-cols-2 lg:grid-cols-2" />
       ) : children.length === 0 && !showForm ? (
-        <div className="text-center py-16 bg-card rounded-2xl border border-border">
-          <User size={40} className="mx-auto mb-4 text-muted-foreground/30" />
-          <h3 className="font-display text-lg font-bold text-foreground mb-2">No Children Added Yet</h3>
-          <p className="text-muted-foreground font-body max-w-md mx-auto mb-6">
-            Add your child's details so coaches can upload their performance reports.
-          </p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-lta-cyan text-suffolk-navy font-display font-bold text-sm hover:brightness-110 transition-all"
-          >
-            <Plus size={16} /> Add Your First Child
-          </button>
-        </div>
+        <EmptyState
+          icon={User}
+          title="No children added yet"
+          description="Add your child's details so coaches can invite them to sessions and upload their performance reports."
+          action={<Button onClick={() => setShowForm(true)}><Plus size={16} /> Add your first child</Button>}
+        />
       ) : (
-        <div className="grid sm:grid-cols-2 gap-6">
+        <div className="grid gap-4 md:grid-cols-2">
           {children.map((child, i) => {
             const age = child.date_of_birth
               ? Math.floor((Date.now() - new Date(child.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
               : null;
-
-            // LTA age group: age on Sept 1 of current season
-            const getAgeGroup = (dob: string | null): string | null => {
-              if (!dob) return null;
-              const birth = new Date(dob);
-              const now = new Date();
-              const jan1 = new Date(now.getFullYear(), 0, 1);
-              const ageOnJan1 = jan1.getFullYear() - birth.getFullYear() -
-                (jan1 < new Date(jan1.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0);
-              if (ageOnJan1 <= 7) return "8U";
-              if (ageOnJan1 <= 8) return "9U";
-              if (ageOnJan1 <= 9) return "10U";
-              if (ageOnJan1 <= 10) return "11U";
-              if (ageOnJan1 <= 11) return "12U";
-              if (ageOnJan1 <= 13) return "14U";
-              if (ageOnJan1 <= 15) return "16U";
-              if (ageOnJan1 <= 17) return "18U";
-              return "Senior";
-            };
-
-            const ageGroup = getAgeGroup(child.date_of_birth);
+            const ageGroup = ageGroupOf(child.date_of_birth);
+            const ranked = ageGroup && ageGroup !== "8U";
+            const c = child as any;
+            const hasMedical = c.has_medical_needs || c.medical_conditions?.length || c.medical_details;
+            const hasSend = c.has_send_needs || c.send_conditions?.length || c.send_details;
 
             return (
-              <motion.div
+              <motion.article
                 key={child.id}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="group bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-all hover:-translate-y-1 relative"
+                transition={{ delay: i * 0.04, duration: 0.2 }}
+                className="overflow-hidden rounded-2xl border border-border bg-card shadow-card"
               >
-                {/* Bold ranking badges — top right (large screens only, to avoid overlap on tablet) */}
-                {ageGroup && ageGroup !== "8U" && (
-                  <div className="hidden lg:flex absolute top-0 right-0 gap-2 p-4 z-10">
-                    <div className="flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-lg shadow-amber-500/25">
-                      <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider leading-none">County</span>
-                      <span className="text-xl font-black text-white leading-tight">{(child as any).county_rank ?? "—"}</span>
-                    </div>
-                    <div className="flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-br from-lta-cyan to-sky-500 shadow-lg shadow-lta-cyan/25">
-                      <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider leading-none">National</span>
-                      <span className="text-xl font-black text-white leading-tight">{(child as any).national_rank ?? "—"}</span>
+                <div className="p-4 md:p-5">
+                  <div className="flex items-start gap-4">
+                    <button type="button" onClick={() => handleSelectChild(child)} className="press shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border" aria-label={`Open ${child.name}'s performance plan`}>
+                      <div className="h-20 w-20 md:h-24 md:w-24">
+                        <SignedImage bucket="child-photos" value={child.photo_url} alt={child.name} className="h-full w-full object-cover" />
+                      </div>
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="line-clamp-2 font-display text-lg font-semibold leading-tight text-foreground md:text-xl">{child.name}</h3>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        {[age !== null ? `Age ${age}` : null, child.date_of_birth ? new Date(child.date_of_birth).toLocaleDateString("en-GB") : null].filter(Boolean).join(" · ") || "Date of birth to add"}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {ageGroup && <StatusBadge tone="brand" dot={false}>{ageGroup} programme</StatusBadge>}
+                        {c.btm_number && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"><CreditCard size={11} /> BTM {c.btm_number}</span>}
+                      </div>
                     </div>
                   </div>
-                )}
 
-                <div className="p-6 sm:p-8">
-                  <div className="flex items-start gap-4 sm:gap-6 mb-5">
-                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-muted overflow-hidden shrink-0 ring-2 ring-border">
-                      <SignedImage
-                        bucket="child-photos"
-                        value={child.photo_url}
-                        alt={child.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="pt-1 lg:pr-40 min-w-0 flex-1">
-                      <h3 className="font-display text-xl font-bold text-foreground group-hover:text-lta-cyan transition-colors">{child.name}</h3>
-                      {age !== null && (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-1">
-                          <Calendar size={14} /> Age {age}
-                        </p>
-                      )}
-                      {ageGroup && (
-                        <span className="inline-block mt-1.5 px-3 py-1 rounded-full bg-lta-cyan/10 text-lta-cyan text-xs font-display font-bold">
-                          {ageGroup} Programme
-                        </span>
-                      )}
-                      {child.date_of_birth && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          DOB: {new Date(child.date_of_birth).toLocaleDateString("en-GB")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {/* Inline ranking badges — mobile & tablet */}
-                  {ageGroup && ageGroup !== "8U" && (
-                    <div className="flex lg:hidden gap-2 mb-4">
-                      <div className="flex flex-col items-center justify-center flex-1 py-2 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-md shadow-amber-500/25">
-                        <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider leading-none">County</span>
-                        <span className="text-lg font-black text-white leading-tight">{(child as any).county_rank ?? "—"}</span>
+                  {ranked ? (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-muted/70 px-3 py-2.5">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">County rank</p>
+                        <p className="mt-0.5 text-xl font-semibold leading-none text-foreground tabular">{c.county_rank ?? "—"}</p>
                       </div>
-                      <div className="flex flex-col items-center justify-center flex-1 py-2 rounded-xl bg-gradient-to-br from-lta-cyan to-sky-500 shadow-md shadow-lta-cyan/25">
-                        <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider leading-none">National</span>
-                        <span className="text-lg font-black text-white leading-tight">{(child as any).national_rank ?? "—"}</span>
+                      <div className="rounded-xl bg-muted/70 px-3 py-2.5">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">National rank</p>
+                        <p className="mt-0.5 text-xl font-semibold leading-none text-foreground tabular">{c.national_rank ?? "—"}</p>
+                      </div>
+                      <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSyncRanking(child)}
+                          disabled={syncingId === child.id}
+                          className="inline-flex min-h-8 items-center gap-1.5 text-sm font-medium text-primary disabled:opacity-50"
+                        >
+                          <RefreshCw size={13} className={syncingId === child.id ? "animate-spin" : ""} />
+                          {syncingId === child.id ? "Syncing…" : "Sync from LTA"}
+                        </button>
+                        <a href="https://competitions.lta.org.uk/ranking/category.aspx?id=51942" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-8 items-center gap-1 text-sm text-muted-foreground hover:text-primary">
+                          Open LTA <ExternalLink size={11} />
+                        </a>
                       </div>
                     </div>
-                  )}
-                  {ageGroup && ageGroup !== "8U" && (
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <button
-                        type="button"
-                        onClick={() => handleSyncRanking(child)}
-                        disabled={syncingId === child.id}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-lta-cyan/10 text-lta-cyan text-xs font-bold hover:bg-lta-cyan/20 transition-colors disabled:opacity-50"
-                      >
-                        <RefreshCw size={11} className={syncingId === child.id ? "animate-spin" : ""} />
-                        {syncingId === child.id ? "Syncing…" : "Sync rankings from LTA"}
-                      </button>
-                      <a
-                        href={`https://competitions.lta.org.uk/ranking/category.aspx?id=51942`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-lta-cyan transition-colors"
-                      >
-                        Open LTA <ExternalLink size={10} />
-                      </a>
-                    </div>
-                  )}
-                  {child.description && (
-                    <p className="text-sm text-muted-foreground leading-relaxed mb-2">{child.description}</p>
-                  )}
+                  ) : ageGroup === "8U" ? (
+                    <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Trophy size={12} /> Rankings begin at 9U</p>
+                  ) : null}
+
+                  {child.description && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{child.description}</p>}
+
                   {(child.favorite_player || child.favorite_shot) && (
-                    <div className="flex flex-wrap gap-2 mb-2">
+                    <div className="mt-3 flex flex-wrap gap-1.5">
                       {child.favorite_player && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs font-bold">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/15">
                           <Star size={11} />
-                          {getPlayerFlag(child.favorite_player) && (
-                            <span className="text-sm leading-none">{getPlayerFlag(child.favorite_player)}</span>
-                          )}
+                          {getPlayerFlag(child.favorite_player) && <span className="text-sm leading-none">{getPlayerFlag(child.favorite_player)}</span>}
                           {child.favorite_player}
                         </span>
                       )}
                       {child.favorite_shot && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/10 text-violet-400 text-xs font-bold">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-800 ring-1 ring-inset ring-violet-600/15">
                           <Zap size={11} /> {child.favorite_shot}
                         </span>
                       )}
                     </div>
                   )}
-                  {ageGroup === "8U" && (
-                    <div className="mb-2">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs">
-                        <Trophy size={11} /> Rankings begin at 9U
-                      </span>
+
+                  {hasMedical ? (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5">
+                      <p className="text-xs font-semibold text-red-800">Medical needs</p>
+                      {c.medical_conditions?.length > 0 && <p className="mt-0.5 text-xs text-red-900">{c.medical_conditions.join(", ")}</p>}
+                      {c.medical_details && <p className="mt-0.5 text-xs text-red-900/80">{c.medical_details}</p>}
                     </div>
-                  )}
-                  {(child as any).btm_number && (
-                    <p className="text-xs text-muted-foreground/70 flex items-center gap-1">
-                      <CreditCard size={11} /> BTM: {(child as any).btm_number}
-                    </p>
-                  )}
-                  {((child as any).has_medical_needs || (child as any).medical_conditions?.length || (child as any).medical_details) && (
-                    <div className="mt-2 p-3 rounded-lg bg-rose-500/5 border border-rose-500/20">
-                      <p className="text-xs font-display font-bold text-rose-600 dark:text-rose-400 mb-1">Medical needs</p>
-                      {(child as any).medical_conditions?.length > 0 && (
-                        <p className="text-xs text-foreground">{(child as any).medical_conditions.join(", ")}</p>
-                      )}
-                      {(child as any).medical_details && (
-                        <p className="text-xs text-muted-foreground mt-1 italic">{(child as any).medical_details}</p>
-                      )}
+                  ) : null}
+                  {hasSend ? (
+                    <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2.5">
+                      <p className="text-xs font-semibold text-violet-800">SEND / additional needs</p>
+                      {c.send_conditions?.length > 0 && <p className="mt-0.5 text-xs text-violet-900">{c.send_conditions.join(", ")}</p>}
+                      {c.send_details && <p className="mt-0.5 text-xs text-violet-900/80">{c.send_details}</p>}
                     </div>
-                  )}
-                  {((child as any).has_send_needs || (child as any).send_conditions?.length || (child as any).send_details) && (
-                    <div className="mt-2 p-3 rounded-lg bg-violet-500/5 border border-violet-500/20">
-                      <p className="text-xs font-display font-bold text-violet-600 dark:text-violet-400 mb-1">SEND / additional needs</p>
-                      {(child as any).send_conditions?.length > 0 && (
-                        <p className="text-xs text-foreground">{(child as any).send_conditions.join(", ")}</p>
-                      )}
-                      {(child as any).send_details && (
-                        <p className="text-xs text-muted-foreground mt-1 italic">{(child as any).send_details}</p>
-                      )}
-                    </div>
-                  )}
-                  {!(child as any).has_medical_needs && !(child as any).has_send_needs && child.medical_needs && (
-                    <p className="text-xs text-muted-foreground/70 italic mt-2">Medical: {child.medical_needs}</p>
+                  ) : null}
+                  {!c.has_medical_needs && !c.has_send_needs && child.medical_needs && (
+                    <p className="mt-2 text-xs italic text-muted-foreground">Medical: {child.medical_needs}</p>
                   )}
                 </div>
 
-                <div className="border-t border-border px-8 py-4 flex items-center gap-3">
-                  <button
-                    onClick={() => handleSelectChild(child)}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-lta-cyan text-suffolk-navy font-display font-bold text-sm hover:brightness-110 transition-all"
-                  >
-                    View Player Performance Plan <ChevronRight size={16} />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditingChild(child); }}
-                    className="flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-muted-foreground hover:text-lta-cyan hover:border-lta-cyan/30 hover:bg-lta-cyan/5 transition-all font-display font-semibold text-sm"
-                    title="Edit child"
-                  >
+                <div className="flex items-center gap-2 border-t border-border px-4 py-3 md:px-5">
+                  <Button onClick={() => handleSelectChild(child)} className="flex-1">
+                    Performance plan <ChevronRight size={16} />
+                  </Button>
+                  <Button variant="outline" size="icon" aria-label={`Edit ${child.name}`} onClick={(e) => { e.stopPropagation(); setEditingChild(child); }}>
                     <Pencil size={16} />
-                    <span>Edit</span>
-                  </button>
+                  </Button>
                 </div>
-              </motion.div>
+              </motion.article>
             );
           })}
         </div>

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,10 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Pencil, Trash2, Upload, X } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, X } from "lucide-react";
 import CoachDirectory from "./CoachDirectory";
+import { FormListLayout, Section, ListGroup, ListRow, Avatar, StatusBadge, EmptyState } from "@/components/app";
 
 export type CoachRow = {
   id: string;
@@ -53,6 +52,7 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
   const [items, setItems] = useState<CoachRow[]>([]);
   const [users, setUsers] = useState<{ user_id: string; first_name: string; last_name: string }[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<Form>(emptyForm());
   const [newAch, setNewAch] = useState("");
   const [busyPhoto, setBusyPhoto] = useState(false);
@@ -71,6 +71,7 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
   const startNew = () => { setEditingId(null); setForm(emptyForm()); };
   const startEdit = (c: CoachRow) => {
     setEditingId(c.id);
+    setFormOpen(true);
     setForm({
       linked_user_id: c.linked_user_id,
       name: c.name, role: c.role ?? "", experience: c.experience ?? "",
@@ -104,7 +105,7 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
       : await supabase.from("coaches").insert(payload);
     if (error) { toast.error(error.message); return; }
     toast.success(editingId ? "Coach updated" : "Coach added");
-    startNew(); load();
+    startNew(); setFormOpen(false); load();
   };
 
   const remove = async (id: string) => {
@@ -120,15 +121,14 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
   };
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      <Card ref={formRef}>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{editingId ? "Edit coach" : "Add a coach"}</CardTitle>
-            {editingId && <Button size="sm" variant="ghost" onClick={startNew}><Plus className="w-4 h-4 mr-1" />New</Button>}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <div className="space-y-8">
+    <FormListLayout
+      formRef={formRef}
+      formTitle={editingId ? "Edit coach" : "Add a coach"}
+      formActions={editingId ? <Button size="sm" variant="ghost" onClick={startNew}><Plus className="w-4 h-4" />New</Button> : undefined}
+      formOpen={formOpen}
+      onFormOpenChange={(o) => { setFormOpen(o); if (!o) startNew(); }}
+      form={<>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <Label>Name</Label>
@@ -247,54 +247,38 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
           </label>
 
           <Button className="w-full" onClick={save}>{editingId ? "Save changes" : "Add coach"}</Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Website coaches ({items.length})</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Coach</TableHead>
-                <TableHead>Order</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        </>}
+      list={
+        <Section title="Website coaches" count={items.length} description="The coaching team shown on the public site." action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
+          {items.length === 0 ? <EmptyState icon={Plus} title="No coaches yet" compact /> : (
+            <ListGroup>
               {items.map(c => (
-                <TableRow key={c.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {c.photo_url ? <img src={c.photo_url} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-muted" />}
-                      <div>
-                        <div className="font-medium">{c.name}</div>
-                        <div className="text-xs text-muted-foreground">{c.role}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{c.display_order}</TableCell>
-                  <TableCell>
-                    <button onClick={() => togglePublished(c)}>
-                      <Badge variant={c.published ? "default" : "secondary"}>{c.published ? "Live" : "Hidden"}</Badge>
-                    </button>
-                  </TableCell>
-                  <TableCell className="text-right space-x-1">
-                    <Button size="sm" variant="outline" onClick={() => startEdit(c)}><Pencil className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove(c.id)}><Trash2 className="w-4 h-4" /></Button>
-                  </TableCell>
-                </TableRow>
+                <ListRow
+                  key={c.id}
+                  onClick={() => startEdit(c)}
+                  selected={editingId === c.id}
+                  leading={<Avatar name={c.name} src={c.photo_url} size="md" />}
+                  title={c.name}
+                  subtitle={c.role ?? "Coach"}
+                  detail={`Order ${c.display_order}`}
+                  trailing={
+                    <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="inline-flex min-h-9 items-center" onClick={() => togglePublished(c)} aria-label={c.published ? "Hide from website" : "Show on website"}>
+                        <StatusBadge tone={c.published ? "success" : "neutral"}>{c.published ? "Live" : "Hidden"}</StatusBadge>
+                      </button>
+                      <Button size="icon-sm" variant="ghost" aria-label={`Delete ${c.name}`} onClick={() => remove(c.id)}><Trash2 className="w-4 h-4" /></Button>
+                    </span>
+                  }
+                  chevron
+                />
               ))}
-              {items.length === 0 && (
-                <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">No coaches yet.</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </ListGroup>
+          )}
+        </Section>
+      }
+    />
 
-      <CoachDirectory onEmailCoaches={onEmailCoaches} />
+    <CoachDirectory onEmailCoaches={onEmailCoaches} />
     </div>
   );
 };

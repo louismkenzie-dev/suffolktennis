@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,9 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Pencil, Trash2, Upload, X } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { FormListLayout, Section, ListGroup, ListRow, Avatar, StatusBadge, EmptyState } from "@/components/app";
 
 export type VenueRow = {
   id: string;
@@ -144,6 +143,7 @@ const ImageDropzone = ({
 const VenuesPanel = () => {
   const [items, setItems] = useState<VenueRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<Form>(emptyForm());
   const [newHl, setNewHl] = useState("");
   const formRef = useRef<HTMLDivElement>(null);
@@ -159,6 +159,7 @@ const VenuesPanel = () => {
   const startNew = () => { setEditingId(null); setForm(emptyForm()); };
   const startEdit = (v: VenueRow) => {
     setEditingId(v.id);
+    setFormOpen(true);
     setForm({
       venue_type: v.venue_type, name: v.name, slug: v.slug ?? "",
       tagline: v.tagline ?? "", location: v.location ?? "",
@@ -198,7 +199,7 @@ const VenuesPanel = () => {
       : await supabase.from("venues").insert(payload);
     if (error) { toast.error(error.message); return; }
     toast.success(editingId ? "Venue updated" : "Venue added");
-    startNew(); load();
+    startNew(); setFormOpen(false); load();
   };
 
   const remove = async (id: string) => {
@@ -217,15 +218,13 @@ const VenuesPanel = () => {
   const feeders = items.filter(v => v.venue_type === "feeder");
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      <Card ref={formRef}>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{editingId ? "Edit venue" : "Add a venue"}</CardTitle>
-            {editingId && <Button size="sm" variant="ghost" onClick={startNew}><Plus className="w-4 h-4 mr-1" />New</Button>}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <FormListLayout
+      formRef={formRef}
+      formTitle={editingId ? "Edit venue" : "Add a venue"}
+      formActions={editingId ? <Button size="sm" variant="ghost" onClick={startNew}><Plus className="w-4 h-4" />New</Button> : undefined}
+      formOpen={formOpen}
+      onFormOpenChange={(o) => { setFormOpen(o); if (!o) startNew(); }}
+      form={<>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <Label>Venue type</Label>
@@ -363,71 +362,52 @@ const VenuesPanel = () => {
           </label>
 
           <Button className="w-full" onClick={save}>{editingId ? "Save changes" : "Add venue"}</Button>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-6">
-        <Card>
-          <CardHeader><CardTitle>Partner venues ({partners.length})</CardTitle></CardHeader>
-          <CardContent>
-            <VenueTable rows={partners} onEdit={startEdit} onDelete={remove} onToggle={togglePublished} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle>Feeder clubs ({feeders.length})</CardTitle></CardHeader>
-          <CardContent>
-            <VenueTable rows={feeders} onEdit={startEdit} onDelete={remove} onToggle={togglePublished} />
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+        </>}
+      list={
+        <>
+          <Section title="Partner venues" count={partners.length} action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
+            <VenueList rows={partners} editingId={editingId} onEdit={startEdit} onDelete={remove} onToggle={togglePublished} />
+          </Section>
+          <Section title="Feeder clubs" count={feeders.length}>
+            <VenueList rows={feeders} editingId={editingId} onEdit={startEdit} onDelete={remove} onToggle={togglePublished} />
+          </Section>
+        </>
+      }
+    />
   );
 };
 
-const VenueTable = ({ rows, onEdit, onDelete, onToggle }: {
+const VenueList = ({ rows, editingId, onEdit, onDelete, onToggle }: {
   rows: VenueRow[];
+  editingId: string | null;
   onEdit: (v: VenueRow) => void;
   onDelete: (id: string) => void;
   onToggle: (v: VenueRow) => void;
-}) => (
-  <Table>
-    <TableHeader>
-      <TableRow>
-        <TableHead>Name</TableHead>
-        <TableHead>Order</TableHead>
-        <TableHead>Status</TableHead>
-        <TableHead className="text-right">Actions</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {rows.map(v => (
-        <TableRow key={v.id}>
-          <TableCell className="font-medium">
-            <div className="flex items-center gap-2">
-              {v.logo_url && <img src={v.logo_url} className="w-8 h-8 rounded-full object-contain border" style={{ background: v.logo_bg_color || "#fff" }} />}
-              <div>
-                <div>{v.name}</div>
-                {v.tagline && <div className="text-xs text-muted-foreground">{v.tagline}</div>}
-              </div>
-            </div>
-          </TableCell>
-          <TableCell>{v.display_order}</TableCell>
-          <TableCell>
-            <button onClick={() => onToggle(v)}>
-              <Badge variant={v.published ? "default" : "secondary"}>{v.published ? "Live" : "Hidden"}</Badge>
+}) => rows.length === 0 ? <EmptyState icon={Plus} title="None yet" compact /> : (
+  <ListGroup>
+    {rows.map(v => (
+      <ListRow
+        key={v.id}
+        onClick={() => onEdit(v)}
+        selected={editingId === v.id}
+        leading={v.logo_url
+          ? <img src={v.logo_url} alt="" className="h-10 w-10 rounded-full border border-border object-contain" style={{ background: v.logo_bg_color || "#fff" }} />
+          : <Avatar name={v.name} size="md" />}
+        title={v.name}
+        subtitle={v.tagline ?? undefined}
+        detail={`Order ${v.display_order}`}
+        trailing={
+          <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="inline-flex min-h-9 items-center" onClick={() => onToggle(v)} aria-label={v.published ? "Hide from website" : "Show on website"}>
+              <StatusBadge tone={v.published ? "success" : "neutral"}>{v.published ? "Live" : "Hidden"}</StatusBadge>
             </button>
-          </TableCell>
-          <TableCell className="text-right space-x-1">
-            <Button size="sm" variant="outline" onClick={() => onEdit(v)}><Pencil className="w-4 h-4" /></Button>
-            <Button size="sm" variant="ghost" onClick={() => onDelete(v.id)}><Trash2 className="w-4 h-4" /></Button>
-          </TableCell>
-        </TableRow>
-      ))}
-      {rows.length === 0 && (
-        <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">None yet.</TableCell></TableRow>
-      )}
-    </TableBody>
-  </Table>
+            <Button size="icon-sm" variant="ghost" aria-label={`Delete ${v.name}`} onClick={() => onDelete(v.id)}><Trash2 className="w-4 h-4" /></Button>
+          </span>
+        }
+        chevron
+      />
+    ))}
+  </ListGroup>
 );
 
 export default VenuesPanel;

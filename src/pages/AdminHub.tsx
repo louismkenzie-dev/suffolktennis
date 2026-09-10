@@ -2,9 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import RoleViewSwitcher from "@/components/RoleViewSwitcher";
 import { supabase } from "@/integrations/supabase/client";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,7 +18,16 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { ArrowLeft, Award, CalendarDays, Crop, FileText, GraduationCap, ImageIcon, Loader2, LogOut, Mail, MapPin, Newspaper, Pencil, Plus, Send, Shield, Sparkles, Star, Target, Ticket, Trash2, Upload, UserCog, Users, Video, X } from "lucide-react";
+import { ArrowLeft, Award, CalendarDays, Crop, Database, FileText, GraduationCap, ImageIcon, Loader2, Mail, MapPin, Newspaper, Pencil, Phone, Plus, QrCode, Send, Shield, Sparkles, Star, Target, Ticket, Trash2, Upload, UserCog, Users, Video, X } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AppShell, type NavItem, PageHeader, Section, SegmentedControl, SearchField, ListGroup, ListRow, Avatar,
+  StatusBadge, EmptyState, SkeletonRows, KeyValueList, IdentityHeader, FormListLayout,
+} from "@/components/app";
 import VenuesPanel from "@/components/admin/VenuesPanel";
 import CoachesPanel from "@/components/admin/CoachesPanel";
 import BookingsPanel from "@/components/admin/BookingsPanel";
@@ -95,107 +102,124 @@ type NewsRow = {
 
 type AdminRow = { user_id: string; first_name?: string; last_name?: string; email?: string };
 
+const ADMIN_NAV: NavItem[] = [
+  { id: "bookings", label: "Bookings", icon: Ticket },
+  { id: "people", label: "People", icon: Database },
+  { id: "families", label: "Families", icon: Users },
+  { id: "email", label: "Email", icon: Mail },
+  { id: "reports", label: "Reports", icon: FileText },
+  { id: "goals", label: "Goals", icon: Target },
+  { id: "events", label: "Events", icon: CalendarDays },
+  { id: "news", label: "News", icon: Newspaper },
+  { id: "players", label: "Players", icon: Star },
+  { id: "venues", label: "Venues", icon: MapPin },
+  { id: "coaches", label: "Coaches", icon: GraduationCap },
+  { id: "admins", label: "Admins", icon: UserCog },
+  { id: "scan", label: "Scanner", icon: QrCode, to: "/admin/scan" },
+];
+const ADMIN_TAB_IDS = ADMIN_NAV.filter((n) => !n.to).map((n) => n.id);
+
 const AdminHub = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const { isAdmin, loading: adminLoading } = useIsAdmin();
   const navigate = useNavigate();
-  // Controlled so the Coaches tab can send the admin to the composer with an
-  // audience already chosen.
-  const [tab, setTab] = useState("families");
+  // Deep-linkable: /admin?tab=people. Controlled so the Coaches tab can send
+  // the admin to the composer with an audience already chosen.
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return t && ADMIN_TAB_IDS.includes(t) ? t : "bookings";
+  });
   const [emailGroupId, setEmailGroupId] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
 
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("profiles").select("first_name, last_name").eq("user_id", user.id).maybeSingle()
+      .then(({ data }) => { if (data) setProfileName(`${data.first_name ?? ""} ${data.last_name ?? ""}`.trim() || null); });
+  }, [user]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("tab") !== tab) {
+      url.searchParams.set("tab", tab);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, [tab]);
+
   if (authLoading || adminLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading…</p>
+      <div className="app-shell min-h-screen bg-background">
+        <div className="h-14 border-b border-border" />
+        <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 md:px-6">
+          <Skeleton className="h-7 w-40 rounded-lg" />
+          <SkeletonRows rows={6} />
+        </div>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4 p-6">
-        <Shield className="w-12 h-12 text-muted-foreground" />
-        <h1 className="text-2xl font-bold">Admin access required</h1>
-        <p className="text-muted-foreground text-center max-w-md">
-          Your account does not have administrator privileges. Contact a Suffolk Tennis admin if you believe this is a mistake.
-        </p>
-        <Button asChild variant="outline"><Link to="/parent-hub"><ArrowLeft className="w-4 h-4 mr-2" />Back to Parent Hub</Link></Button>
+      <div className="app-shell min-h-screen bg-background">
+        <div className="mx-auto max-w-md px-6 py-24">
+          <EmptyState
+            icon={Shield}
+            title="Admin access required"
+            description="Your account does not have administrator privileges. Contact a Suffolk Tennis admin if you believe this is a mistake."
+            action={<Button asChild variant="outline"><Link to="/parent-hub"><ArrowLeft className="w-4 h-4" />Back to Parent Hub</Link></Button>}
+          />
+        </div>
       </div>
     );
   }
 
+  const current = ADMIN_NAV.find((n) => n.id === tab);
+
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card/50 backdrop-blur sticky top-0 z-30">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Shield className="w-6 h-6 text-primary" />
-            <div>
-              <h1 className="font-bold text-lg leading-tight">Admin Hub</h1>
-              <p className="text-xs text-muted-foreground">Suffolk Tennis</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <RoleViewSwitcher className="max-sm:hidden" />
-            <Button variant="outline" size="sm" onClick={signOut}>
-              <LogOut className="w-4 h-4 mr-2" />Sign out
-            </Button>
-          </div>
-        </div>
-      </header>
-      <div className="sm:hidden container mx-auto px-4 pt-3">
-        <RoleViewSwitcher />
-      </div>
-
-      <main className="container mx-auto px-4 py-6">
-        <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid grid-cols-3 md:grid-cols-6 xl:grid-cols-12 w-full mb-6 h-auto">
-            <TabsTrigger value="bookings" className="gap-2"><Ticket className="w-4 h-4" />Bookings</TabsTrigger>
-            <TabsTrigger value="people" className="gap-2"><Users className="w-4 h-4" />People</TabsTrigger>
-            <TabsTrigger value="families" className="gap-2"><Users className="w-4 h-4" />Families</TabsTrigger>
-            <TabsTrigger value="reports" className="gap-2"><FileText className="w-4 h-4" />Reports</TabsTrigger>
-            <TabsTrigger value="goals" className="gap-2"><Target className="w-4 h-4" />Goals</TabsTrigger>
-            <TabsTrigger value="events" className="gap-2"><CalendarDays className="w-4 h-4" />Events</TabsTrigger>
-            <TabsTrigger value="news" className="gap-2"><Newspaper className="w-4 h-4" />News</TabsTrigger>
-            <TabsTrigger value="players" className="gap-2"><Star className="w-4 h-4" />Players</TabsTrigger>
-            <TabsTrigger value="venues" className="gap-2"><MapPin className="w-4 h-4" />Venues</TabsTrigger>
-            <TabsTrigger value="coaches" className="gap-2"><GraduationCap className="w-4 h-4" />Coaches</TabsTrigger>
-            <TabsTrigger value="email" className="gap-2"><Mail className="w-4 h-4" />Email</TabsTrigger>
-            <TabsTrigger value="admins" className="gap-2"><UserCog className="w-4 h-4" />Admins</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="bookings"><BookingsPanel /></TabsContent>
-          <TabsContent value="people"><PeoplePanel /></TabsContent>
-          <TabsContent value="families"><FamiliesPanel /></TabsContent>
-          <TabsContent value="reports"><ReportsPanel /></TabsContent>
-          <TabsContent value="goals"><GoalsPanel /></TabsContent>
-          <TabsContent value="events"><EventsPanel currentUserId={user!.id} /></TabsContent>
-          <TabsContent value="news"><NewsPanel /></TabsContent>
-          <TabsContent value="players"><PlayerWatchPanel /></TabsContent>
-          <TabsContent value="venues"><VenuesPanel /></TabsContent>
-          <TabsContent value="coaches">
-            <CoachesPanel onEmailCoaches={(groupId) => { setEmailGroupId(groupId); setTab("email"); }} />
-          </TabsContent>
-          <TabsContent value="email"><EmailPanel initialGroupId={emailGroupId} /></TabsContent>
-          <TabsContent value="admins"><AdminsPanel /></TabsContent>
-
-        </Tabs>
-      </main>
-    </div>
+    <AppShell
+      role="admin"
+      title={current?.label ?? "Admin"}
+      nav={ADMIN_NAV}
+      primary={["bookings", "people", "families", "email"]}
+      active={tab}
+      onNavigate={setTab}
+      userName={profileName}
+      userEmail={user?.email}
+      onSignOut={async () => { await signOut(); navigate("/"); }}
+    >
+      {tab === "bookings" && <BookingsPanel />}
+      {tab === "people" && <PeoplePanel />}
+      {tab === "families" && <FamiliesPanel />}
+      {tab === "reports" && <ReportsPanel />}
+      {tab === "goals" && <GoalsPanel />}
+      {tab === "events" && <EventsPanel currentUserId={user!.id} />}
+      {tab === "news" && <NewsPanel />}
+      {tab === "players" && <PlayerWatchPanel />}
+      {tab === "venues" && <VenuesPanel />}
+      {tab === "coaches" && <CoachesPanel onEmailCoaches={(groupId) => { setEmailGroupId(groupId); setTab("email"); }} />}
+      {tab === "email" && <EmailPanel initialGroupId={emailGroupId} />}
+      {tab === "admins" && <AdminsPanel />}
+    </AppShell>
   );
 };
 
 /* ---------- Families ---------- */
+const ageOf = (dob: string | null | undefined): number | null =>
+  dob ? Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+const genderLabel = (g: string | null | undefined) =>
+  g === "boy" ? "Boy" : g === "girl" ? "Girl" : g === "male" ? "Boy" : g === "female" ? "Girl" : g ? g[0]!.toUpperCase() + g.slice(1) : null;
+const parentName = (p: Profile | undefined) => (p ? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() : "");
+
 const FamiliesPanel = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [emails, setEmails] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"children" | "parents">("children");
 
   const load = async () => {
     setLoading(true);
@@ -230,51 +254,44 @@ const FamiliesPanel = () => {
   }, [children]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>All families ({children.length} children · {profiles.length} parents)</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? <p className="text-muted-foreground">Loading…</p> : (
-          <Tabs defaultValue="children" className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="children" className="gap-2"><Users className="w-4 h-4" />Children ({children.length})</TabsTrigger>
-              <TabsTrigger value="parents" className="gap-2"><UserCog className="w-4 h-4" />Parents ({profiles.length})</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="children">
-              <ChildrenTab
-                children={children}
-                profileMap={profileMap}
-                onChanged={load}
-              />
-            </TabsContent>
-
-            <TabsContent value="parents">
-              <ParentsTab
-                profiles={profiles}
-                emails={emails}
-                childrenByParent={childrenByParent}
-                onChanged={load}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <PageHeader
+        title="Families"
+        hideTitleOnPhone
+        description={loading ? "Loading the registered families…" : `${children.length} children · ${profiles.length} parents registered on the site`}
+        className="mb-0"
+      />
+      <SegmentedControl
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "children", label: "Children", count: children.length },
+          { value: "parents", label: "Parents", count: profiles.length },
+        ]}
+        className="md:max-w-sm"
+      />
+      {loading ? <SkeletonRows rows={7} /> : view === "children" ? (
+        <ChildrenTab children={children} profileMap={profileMap} emails={emails} onChanged={load} />
+      ) : (
+        <ParentsTab profiles={profiles} emails={emails} childrenByParent={childrenByParent} onChanged={load} />
+      )}
+    </div>
   );
 };
 
 /* ---------- Children tab ---------- */
 const ChildrenTab = ({
-  children, profileMap, onChanged,
+  children, profileMap, emails, onChanged,
 }: {
   children: Child[];
   profileMap: Map<string, Profile>;
+  emails: Map<string, string>;
   onChanged: () => void;
 }) => {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Child | null>(null);
+  const [open, setOpen] = useState<Child | null>(null);
+  const [deleting, setDeleting] = useState<Child | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -282,86 +299,179 @@ const ChildrenTab = ({
     if (!q) return sorted;
     return sorted.filter(c => {
       const p = profileMap.get(c.parent_user_id);
-      const parentName = p ? `${p.first_name} ${p.last_name}`.toLowerCase() : "";
-      return c.name.toLowerCase().includes(q) || parentName.includes(q) || (c.btm_number ?? "").toLowerCase().includes(q);
+      return c.name.toLowerCase().includes(q) || parentName(p).toLowerCase().includes(q) || (c.btm_number ?? "").toLowerCase().includes(q);
     });
   }, [children, query, profileMap]);
 
-  const deleteChild = async (id: string) => {
-    if (!confirm("Permanently delete this child profile? This cannot be undone.")) return;
-    const { error } = await supabase.from("children").delete().eq("id", id);
-    if (error) toast.error(error.message); else { toast.success("Child deleted"); onChanged(); }
+  const deleteChild = async (c: Child) => {
+    const { error } = await supabase.from("children").delete().eq("id", c.id);
+    setDeleting(null);
+    if (error) toast.error(error.message); else { toast.success(`${c.name} removed`); setOpen(null); onChanged(); }
   };
+
+  const openParent = open ? profileMap.get(open.parent_user_id) : undefined;
+  const openEmail = open ? emails.get(open.parent_user_id) : undefined;
+  const openPhone = openParent?.primary_phone || openParent?.phone || null;
 
   return (
     <>
-      <Input
-        placeholder="Search by child, parent or BTM number…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="mb-4 max-w-md"
-      />
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Child</TableHead>
-              <TableHead>Parent</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead>Gender</TableHead>
-              <TableHead>BTM</TableHead>
-              <TableHead>County / National</TableHead>
-              <TableHead>Handedness</TableHead>
-              <TableHead>Flags</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      <SearchField value={query} onChange={setQuery} placeholder="Search by child, parent or BTM number" className="md:max-w-md" />
+      <p className="px-0.5 text-xs text-muted-foreground tabular">{filtered.length} of {children.length}</p>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={Users} title={query ? "No children match" : "No children registered yet"} description={query ? "Try a different name, parent or BTM number." : "Children appear here once a parent adds them in their Parent Hub."} compact />
+      ) : (
+        <>
+          {/* Phone: person rows */}
+          <ListGroup className="md:hidden">
             {filtered.map(c => {
               const p = profileMap.get(c.parent_user_id);
-              const age = c.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+              const age = ageOf(c.date_of_birth);
+              const bits = [age !== null ? `Age ${age}` : null, genderLabel(c.gender)].filter(Boolean).join(" · ");
               return (
-                <TableRow key={c.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setEditing(c)}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-3">
-                      <ChildAvatar photoUrl={c.photo_url} name={c.name} size={36} />
-                      <span className="underline-offset-2 hover:underline">{c.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{p ? `${p.first_name} ${p.last_name}` : <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell>
-                    {age !== null ? (
-                      <span title={`DOB: ${c.date_of_birth}`} className="cursor-help underline decoration-dotted underline-offset-2">
-                        {age}
-                      </span>
-                    ) : "—"}
-                  </TableCell>
-                  <TableCell>{c.gender ?? "—"}</TableCell>
-                  <TableCell>{c.btm_number ?? "—"}</TableCell>
-                  <TableCell>{c.county_rank ?? "—"} / {c.national_rank ?? "—"}</TableCell>
-                  <TableCell>{c.handedness ?? "—"}</TableCell>
-                  <TableCell className="space-x-1">
-                    {c.has_medical_needs && <Badge variant="destructive">Medical</Badge>}
-                    {c.has_send_needs && <Badge variant="secondary">SEND</Badge>}
-                  </TableCell>
-                  <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="outline" onClick={() => setEditing(c)}><Pencil className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => deleteChild(c.id)}><Trash2 className="w-4 h-4" /></Button>
-                  </TableCell>
-                </TableRow>
+                <ListRow
+                  key={c.id}
+                  onClick={() => setOpen(c)}
+                  leading={<ChildAvatar photoUrl={c.photo_url} name={c.name} size={40} />}
+                  title={c.name}
+                  subtitle={bits || "Details to complete"}
+                  detail={p ? `Parent: ${parentName(p)}` : "Parent not registered"}
+                  trailing={(c.has_medical_needs || c.has_send_needs) ? (
+                    <span className="flex gap-1">
+                      {c.has_medical_needs && <StatusBadge tone="danger" dot={false}>Medical</StatusBadge>}
+                      {c.has_send_needs && <StatusBadge tone="info" dot={false}>SEND</StatusBadge>}
+                    </span>
+                  ) : undefined}
+                  chevron
+                />
               );
             })}
-            {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No children found</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+          </ListGroup>
+
+          {/* Desktop: the richer table */}
+          <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Child</TableHead>
+                  <TableHead>Parent</TableHead>
+                  <TableHead>Age</TableHead>
+                  <TableHead>Gender</TableHead>
+                  <TableHead>BTM</TableHead>
+                  <TableHead>County / National</TableHead>
+                  <TableHead>Handedness</TableHead>
+                  <TableHead>Flags</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map(c => {
+                  const p = profileMap.get(c.parent_user_id);
+                  const age = ageOf(c.date_of_birth);
+                  return (
+                    <TableRow key={c.id} className="cursor-pointer" onClick={() => setOpen(c)}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          <ChildAvatar photoUrl={c.photo_url} name={c.name} size={36} />
+                          <span>{c.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{p ? parentName(p) : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell>{age !== null ? <span title={`DOB: ${c.date_of_birth}`}>{age}</span> : "—"}</TableCell>
+                      <TableCell>{genderLabel(c.gender) ?? "—"}</TableCell>
+                      <TableCell>{c.btm_number ?? "—"}</TableCell>
+                      <TableCell>{c.county_rank ?? "—"} / {c.national_rank ?? "—"}</TableCell>
+                      <TableCell className="capitalize">{c.handedness ?? "—"}</TableCell>
+                      <TableCell className="space-x-1">
+                        {c.has_medical_needs && <StatusBadge tone="danger" dot={false}>Medical</StatusBadge>}
+                        {c.has_send_needs && <StatusBadge tone="info" dot={false}>SEND</StatusBadge>}
+                      </TableCell>
+                      <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}>
+                        <Button size="icon-sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil className="w-4 h-4" /></Button>
+                        <Button size="icon-sm" variant="ghost" aria-label={`Delete ${c.name}`} onClick={() => setDeleting(c)}><Trash2 className="w-4 h-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      {/* Child detail */}
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        <DialogContent className="gap-5 md:max-w-lg">
+          <DialogHeader><DialogTitle className="sr-only">{open?.name}</DialogTitle></DialogHeader>
+          {open && (
+            <>
+              <IdentityHeader
+                avatar={<ChildAvatar photoUrl={open.photo_url} name={open.name} size={64} />}
+                title={open.name}
+                subtitle={[ageOf(open.date_of_birth) !== null ? `${ageOf(open.date_of_birth)} years` : null, genderLabel(open.gender), open.btm_number ? `BTM ${open.btm_number}` : null].filter(Boolean).join(" · ") || "Details to complete"}
+                badges={(open.has_medical_needs || open.has_send_needs) ? (
+                  <>
+                    {open.has_medical_needs && <StatusBadge tone="danger">Medical needs</StatusBadge>}
+                    {open.has_send_needs && <StatusBadge tone="info">SEND needs</StatusBadge>}
+                  </>
+                ) : undefined}
+                actions={
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => setEditing(open)}><Pencil className="w-4 h-4" /> Edit</Button>
+                    {openEmail && <Button asChild variant="outline" size="sm"><a href={`mailto:${openEmail}`}><Mail className="w-4 h-4" /> Email parent</a></Button>}
+                    {openPhone && <Button asChild variant="outline" size="sm"><a href={`tel:${openPhone}`}><Phone className="w-4 h-4" /> Call</a></Button>}
+                  </>
+                }
+              />
+              <div>
+                <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Player</p>
+                <KeyValueList items={[
+                  { label: "Date of birth", value: open.date_of_birth ? new Date(open.date_of_birth).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : null },
+                  { label: "Gender", value: genderLabel(open.gender) },
+                  { label: "BTM number", value: open.btm_number },
+                  { label: "County rank", value: open.county_rank },
+                  { label: "National rank", value: open.national_rank },
+                  { label: "Handedness", value: open.handedness ? open.handedness[0]!.toUpperCase() + open.handedness.slice(1) : null },
+                  { label: "Favourite player", value: open.favorite_player, hidden: !open.favorite_player },
+                  { label: "Favourite shot", value: open.favorite_shot, hidden: !open.favorite_shot },
+                ]} />
+              </div>
+              <div>
+                <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Parent</p>
+                {openParent ? (
+                  <KeyValueList items={[
+                    { label: "Name", value: parentName(openParent) },
+                    { label: "Email", value: openEmail ? <a href={`mailto:${openEmail}`} className="text-primary break-all">{openEmail}</a> : null },
+                    { label: "Phone", value: openPhone ? <a href={`tel:${openPhone}`} className="text-primary">{openPhone}</a> : null },
+                    { label: "Town", value: openParent.address_city, hidden: !openParent.address_city },
+                  ]} />
+                ) : <p className="text-sm text-muted-foreground">No parent profile on record.</p>}
+              </div>
+              <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleting(open)}>
+                <Trash2 className="w-4 h-4" /> Delete child profile
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>This permanently removes the child profile, their reports and goals. It cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={(e) => { e.preventDefault(); if (deleting) deleteChild(deleting); }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ChildEditDialog
         child={editing}
         onClose={() => setEditing(null)}
-        onSaved={() => { setEditing(null); onChanged(); }}
+        onSaved={() => { setEditing(null); setOpen(null); onChanged(); }}
       />
     </>
   );
@@ -500,7 +610,7 @@ const ParentsTab = ({
     const sorted = [...profiles].sort((a, b) => (a.first_name || "").localeCompare(b.first_name || "") || (a.last_name || "").localeCompare(b.last_name || ""));
     if (!q) return sorted;
     return sorted.filter(p => {
-      const name = `${p.first_name} ${p.last_name}`.toLowerCase();
+      const name = parentName(p).toLowerCase();
       const email = (emails.get(p.user_id) ?? "").toLowerCase();
       const phone = `${p.primary_phone ?? ""} ${p.phone ?? ""} ${p.secondary_phone ?? ""}`;
       const kids = (childrenByParent.get(p.user_id) ?? []).map(k => k.name.toLowerCase()).join(" ");
@@ -508,134 +618,127 @@ const ParentsTab = ({
     });
   }, [profiles, query, emails, childrenByParent]);
 
+  const selEmail = selected ? emails.get(selected.user_id) : undefined;
+  const selPhone = selected ? (selected.primary_phone || selected.phone) : null;
+  const selKids = selected ? (childrenByParent.get(selected.user_id) ?? []) : [];
+
   return (
     <>
-      <Input
-        placeholder="Search by parent, email, phone or child name…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="mb-4 max-w-md"
-      />
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Parent</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Children</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      <SearchField value={query} onChange={setQuery} placeholder="Search by parent, email, phone or child" className="md:max-w-md" />
+      <p className="px-0.5 text-xs text-muted-foreground tabular">{filtered.length} of {profiles.length}</p>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={UserCog} title={query ? "No parents match" : "No parents yet"} description={query ? "Try a name, email, phone number or a child's name." : "Parents appear here when they create an account."} compact />
+      ) : (
+        <>
+          <ListGroup className="md:hidden">
             {filtered.map(p => {
               const kids = childrenByParent.get(p.user_id) ?? [];
               const email = emails.get(p.user_id);
-              const phone = p.primary_phone || p.phone;
               return (
-                <TableRow key={p.user_id} className="cursor-pointer hover:bg-muted/40" onClick={() => setSelected(p)}>
-                  <TableCell className="font-medium">{p.first_name} {p.last_name}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {email ? <a href={`mailto:${email}`} className="text-primary hover:underline">{email}</a> : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {phone ? <a href={`tel:${phone}`} className="text-primary hover:underline">{phone}</a> : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className="inline-flex items-center gap-1 relative group"
-                      title={kids.map(k => k.name).join(", ") || "No children"}
-                    >
-                      <Badge variant="secondary">{kids.length}</Badge>
-                      {kids.length > 0 && (
-                        <span className="hidden md:inline text-xs text-muted-foreground truncate max-w-[220px]">
-                          {kids.map(k => k.name).join(", ")}
-                        </span>
-                      )}
-                    </span>
-                  </TableCell>
-                  <TableCell>{p.address_city ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setSelected(p)}>View</Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditing(p)}><Pencil className="w-3.5 h-3.5" /></Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <ListRow
+                  key={p.user_id}
+                  onClick={() => setSelected(p)}
+                  leading={<Avatar name={parentName(p) || email} size="md" />}
+                  title={parentName(p) || <span className="text-muted-foreground">Name not set</span>}
+                  subtitle={email ?? "No email"}
+                  detail={kids.length === 0 ? "No children registered" : `${kids.length} ${kids.length === 1 ? "child" : "children"} · ${kids.map(k => k.name.split(" ")[0]).join(", ")}`}
+                  chevron
+                />
               );
             })}
-            {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No parents found</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+          </ListGroup>
 
+          <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Parent</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Children</TableHead>
+                  <TableHead>City</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map(p => {
+                  const kids = childrenByParent.get(p.user_id) ?? [];
+                  const email = emails.get(p.user_id);
+                  const phone = p.primary_phone || p.phone;
+                  return (
+                    <TableRow key={p.user_id} className="cursor-pointer" onClick={() => setSelected(p)}>
+                      <TableCell className="font-medium">{parentName(p)}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {email ? <a href={`mailto:${email}`} className="text-primary hover:underline">{email}</a> : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {phone ? <a href={`tel:${phone}`} className="text-primary hover:underline">{phone}</a> : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center gap-2" title={kids.map(k => k.name).join(", ") || "No children"}>
+                          <Badge variant="secondary">{kids.length}</Badge>
+                          {kids.length > 0 && <span className="hidden text-xs text-muted-foreground truncate max-w-[220px] lg:inline">{kids.map(k => k.name).join(", ")}</span>}
+                        </span>
+                      </TableCell>
+                      <TableCell>{p.address_city ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <Button size="icon-sm" variant="ghost" aria-label={`Edit ${parentName(p)}`} onClick={() => setEditing(p)}><Pencil className="w-4 h-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      {/* Parent detail */}
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="max-w-2xl max-h-dialog overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selected ? `${selected.first_name} ${selected.last_name}` : ""}</DialogTitle>
-          </DialogHeader>
-          {selected && (() => {
-            const email = emails.get(selected.user_id);
-            const kids = childrenByParent.get(selected.user_id) ?? [];
-            return (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="col-span-2">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Email</p>
-                    {email ? <a href={`mailto:${email}`} className="text-primary hover:underline font-medium">{email}</a> : <p className="font-medium">—</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Primary phone</p>
-                    {selected.primary_phone || selected.phone
-                      ? <a href={`tel:${selected.primary_phone ?? selected.phone}`} className="text-primary hover:underline font-medium">{selected.primary_phone ?? selected.phone}</a>
-                      : <p className="font-medium">—</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Secondary phone</p>
-                    {selected.secondary_phone
-                      ? <a href={`tel:${selected.secondary_phone}`} className="text-primary hover:underline font-medium">{selected.secondary_phone}</a>
-                      : <p className="font-medium">—</p>}
-                  </div>
-                  <Info label="Address line 1" value={selected.address_line1} />
-                  <Info label="Address line 2" value={selected.address_line2} />
-                  <Info label="City" value={selected.address_city} />
-                  <Info label="Postcode" value={selected.address_postcode} />
-                  <Info label="Plays tennis" value={selected.plays_tennis ? "Yes" : "No"} />
-                  <Info label="Playing ability" value={selected.playing_ability} />
-                  <div className="col-span-2">
-                    <Info label="Notes" value={selected.parent_notes} />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Children ({kids.length})</p>
-                  {kids.length === 0 ? <p className="text-sm text-muted-foreground">No children registered.</p> : (
-                    <div className="space-y-2">
-                      {kids.map(k => (
-                        <div key={k.id} className="flex items-center gap-3 border rounded-md p-2">
-                          <ChildAvatar photoUrl={k.photo_url} name={k.name} size={40} />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium">{k.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {k.date_of_birth ?? "DOB —"} · {k.gender ?? "—"} · BTM {k.btm_number ?? "—"}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
+        <DialogContent className="gap-5 md:max-w-lg">
+          <DialogHeader><DialogTitle className="sr-only">{selected ? parentName(selected) : ""}</DialogTitle></DialogHeader>
           {selected && (
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setEditing(selected); setSelected(null); }}>
-                <Pencil className="w-4 h-4 mr-2" />Edit details
-              </Button>
-            </DialogFooter>
+            <>
+              <IdentityHeader
+                avatar={<Avatar name={parentName(selected) || selEmail} size="xl" />}
+                title={parentName(selected) || "Name not set"}
+                subtitle={selEmail ?? "No email on record"}
+                actions={
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => { setEditing(selected); setSelected(null); }}><Pencil className="w-4 h-4" /> Edit</Button>
+                    {selEmail && <Button asChild variant="outline" size="sm"><a href={`mailto:${selEmail}`}><Mail className="w-4 h-4" /> Email</a></Button>}
+                    {selPhone && <Button asChild variant="outline" size="sm"><a href={`tel:${selPhone}`}><Phone className="w-4 h-4" /> Call</a></Button>}
+                  </>
+                }
+              />
+              <div>
+                <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Contact</p>
+                <KeyValueList items={[
+                  { label: "Primary phone", value: selPhone ? <a href={`tel:${selPhone}`} className="text-primary">{selPhone}</a> : null },
+                  { label: "Secondary phone", value: selected.secondary_phone ? <a href={`tel:${selected.secondary_phone}`} className="text-primary">{selected.secondary_phone}</a> : null, hidden: !selected.secondary_phone },
+                  { label: "Address", value: [selected.address_line1, selected.address_line2, selected.address_city, selected.address_postcode].filter(Boolean).join(", ") || null },
+                  { label: "Plays tennis", value: selected.plays_tennis ? `Yes${selected.playing_ability ? ` · ${selected.playing_ability}` : ""}` : "No" },
+                  { label: "Notes", value: selected.parent_notes, hidden: !selected.parent_notes },
+                ]} />
+              </div>
+              <div>
+                <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Children · {selKids.length}</p>
+                {selKids.length === 0 ? <p className="text-sm text-muted-foreground">No children registered.</p> : (
+                  <ListGroup>
+                    {selKids.map(k => (
+                      <ListRow
+                        key={k.id}
+                        size="sm"
+                        leading={<ChildAvatar photoUrl={k.photo_url} name={k.name} size={36} />}
+                        title={k.name}
+                        subtitle={[ageOf(k.date_of_birth) !== null ? `Age ${ageOf(k.date_of_birth)}` : "DOB —", genderLabel(k.gender), k.btm_number ? `BTM ${k.btm_number}` : "No BTM"].filter(Boolean).join(" · ")}
+                      />
+                    ))}
+                  </ListGroup>
+                )}
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -752,6 +855,7 @@ const ChildAvatar = ({ photoUrl, name, size = 36 }: { photoUrl: string | null; n
 
 /* ---------- Reports ---------- */
 const ReportsPanel = () => {
+  const [formOpen, setFormOpen] = useState(false);
   const [children, setChildren] = useState<Child[]>([]);
   const [childId, setChildId] = useState<string>("");
   const [reports, setReports] = useState<any[]>([]);
@@ -781,6 +885,7 @@ const ReportsPanel = () => {
     if (error) toast.error(error.message);
     else {
       toast.success("Report saved");
+      setFormOpen(false);
       setForm({ report_title: "", report_date: new Date().toISOString().slice(0, 10), coach_comments: "", programme: "", individual_coach: "", national_coach: "" });
       const { data } = await supabase.from("player_reports").select("*").eq("child_id", childId).order("report_date", { ascending: false });
       setReports(data ?? []);
@@ -795,10 +900,7 @@ const ReportsPanel = () => {
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader><CardTitle>Write a coach report</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+    <FormListLayout formTitle="Write a coach report" formOpen={formOpen} onFormOpenChange={setFormOpen} form={<>
           <div>
             <Label>Child</Label>
             <Select value={childId} onValueChange={setChildId}>
@@ -818,33 +920,48 @@ const ReportsPanel = () => {
             <div><Label>National coach</Label><Input value={form.national_coach} onChange={e => setForm({ ...form, national_coach: e.target.value })} /></div>
           </div>
           <div><Label>Coach comments</Label><Textarea rows={6} value={form.coach_comments} onChange={e => setForm({ ...form, coach_comments: e.target.value })} /></div>
-          <Button onClick={save} className="w-full"><Plus className="w-4 h-4 mr-2" />Save report</Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Existing reports</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {!childId && <p className="text-muted-foreground text-sm">Select a child to view their reports.</p>}
-          {reports.map(r => (
-            <div key={r.id} className="border rounded-lg p-3 flex items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold">{r.report_title}</p>
-                <p className="text-xs text-muted-foreground">{r.report_date} · {r.programme || "—"}</p>
-                {r.coach_comments && <p className="text-sm mt-1 line-clamp-3">{r.coach_comments}</p>}
+          <Button onClick={save} className="w-full"><Plus className="w-4 h-4" />Save report</Button>
+        </>} list={
+      <Section
+        title="Reports"
+        count={childId ? reports.length : undefined}
+        action={<Button size="sm" className="md:hidden" onClick={() => setFormOpen(true)}><Plus className="w-4 h-4" />Write</Button>}
+      >
+        <div className="md:hidden">
+          <Label>Child</Label>
+          <Select value={childId} onValueChange={setChildId}>
+            <SelectTrigger><SelectValue placeholder="Choose a child to see their reports" /></SelectTrigger>
+            <SelectContent>
+              {children.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {!childId ? (
+          <EmptyState icon={FileText} title="Choose a child" description="Pick a child to see and write their coach reports." compact />
+        ) : reports.length === 0 ? (
+          <EmptyState icon={FileText} title="No reports yet" description={`Reports written for ${children.find(c => c.id === childId)?.name ?? "this child"} will appear here.`} compact />
+        ) : (
+          <ListGroup>
+            {reports.map(r => (
+              <div key={r.id} className="flex items-start gap-3 bg-card px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-medium leading-snug">{r.report_title}</p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">{r.report_date} · {r.programme || "—"}</p>
+                  {r.coach_comments && <p className="mt-1.5 text-sm text-muted-foreground line-clamp-3">{r.coach_comments}</p>}
+                </div>
+                <Button size="icon-sm" variant="ghost" aria-label="Delete report" onClick={() => remove(r.id)}><Trash2 className="w-4 h-4" /></Button>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => remove(r.id)}><Trash2 className="w-4 h-4" /></Button>
-            </div>
-          ))}
-          {childId && reports.length === 0 && <p className="text-muted-foreground text-sm">No reports yet.</p>}
-        </CardContent>
-      </Card>
-    </div>
+            ))}
+          </ListGroup>
+        )}
+      </Section>
+    } />
   );
 };
 
 /* ---------- Goals ---------- */
 const GoalsPanel = () => {
+  const [formOpen, setFormOpen] = useState(false);
   const [children, setChildren] = useState<Child[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [form, setForm] = useState({ child_id: "", title: "", description: "", category: "technical", target_date: "" });
@@ -874,7 +991,7 @@ const GoalsPanel = () => {
       set_by: "coach",
     });
     if (error) toast.error(error.message);
-    else { toast.success("Goal added"); setForm({ child_id: "", title: "", description: "", category: "technical", target_date: "" }); load(); }
+    else { toast.success("Goal added"); setFormOpen(false); setForm({ child_id: "", title: "", description: "", category: "technical", target_date: "" }); load(); }
   };
 
   const remove = async (id: string) => {
@@ -883,10 +1000,7 @@ const GoalsPanel = () => {
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader><CardTitle>Set a goal for a child</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+    <FormListLayout formTitle="Set a goal for a child" formOpen={formOpen} onFormOpenChange={setFormOpen} form={<>
           <div><Label>Child</Label>
             <Select value={form.child_id} onValueChange={(v) => setForm({ ...form, child_id: v })}>
               <SelectTrigger><SelectValue placeholder="Select child" /></SelectTrigger>
@@ -910,26 +1024,25 @@ const GoalsPanel = () => {
             </div>
             <div><Label>Target date</Label><Input type="date" value={form.target_date} onChange={e => setForm({ ...form, target_date: e.target.value })} /></div>
           </div>
-          <Button onClick={add} className="w-full"><Plus className="w-4 h-4 mr-2" />Add goal</Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>All goals ({goals.length})</CardTitle></CardHeader>
-        <CardContent className="space-y-2 max-h-[500px] overflow-y-auto">
-          {goals.map(g => (
-            <div key={g.id} className="border rounded p-2 flex items-start justify-between gap-2">
-              <div>
-                <p className="font-medium text-sm">{g.title}</p>
-                <p className="text-xs text-muted-foreground">{childMap.get(g.child_id)?.name ?? "Unknown"} · {g.category} {g.target_date && `· due ${g.target_date}`}</p>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => remove(g.id)}><Trash2 className="w-4 h-4" /></Button>
-            </div>
-          ))}
-          {goals.length === 0 && <p className="text-muted-foreground text-sm">No goals yet.</p>}
-        </CardContent>
-      </Card>
-    </div>
+          <Button onClick={add} className="w-full"><Plus className="w-4 h-4" />Add goal</Button>
+        </>} list={
+      <Section title="All goals" count={goals.length} action={<Button size="sm" className="md:hidden" onClick={() => setFormOpen(true)}><Plus className="w-4 h-4" />New</Button>}>
+        {goals.length === 0 ? (
+          <EmptyState icon={Target} title="No goals yet" description="Goals you set for a child appear in their Parent Hub." compact />
+        ) : (
+          <ListGroup>
+            {goals.map(g => (
+              <ListRow
+                key={g.id}
+                title={g.title}
+                subtitle={`${childMap.get(g.child_id)?.name ?? "Unknown"} · ${g.category}${g.target_date ? ` · due ${new Date(g.target_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}`}
+                trailing={<Button size="icon-sm" variant="ghost" aria-label="Delete goal" onClick={() => remove(g.id)}><Trash2 className="w-4 h-4" /></Button>}
+              />
+            ))}
+          </ListGroup>
+        )}
+      </Section>
+    } />
   );
 };
 
@@ -942,6 +1055,7 @@ const emptyEventForm = {
 type EventForm = typeof emptyEventForm;
 
 const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
+  const [formOpen, setFormOpen] = useState(false);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [signups, setSignups] = useState<any[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
@@ -972,6 +1086,7 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
 
   const startEdit = (ev: EventRow) => {
     setEditingId(ev.id);
+    setFormOpen(true);
     const dt = new Date(ev.event_date);
     dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
     setForm({
@@ -1012,7 +1127,7 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
       ? await supabase.from("events").update(payload).eq("id", editingId)
       : await supabase.from("events").insert(payload);
     if (error) toast.error(error.message);
-    else { toast.success(editingId ? "Event updated" : "Event created"); resetForm(); load(); }
+    else { toast.success(editingId ? "Event updated" : "Event created"); resetForm(); setFormOpen(false); load(); }
   };
 
   const uploadPoster = async (file: File) => {
@@ -1072,12 +1187,8 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
   const signupsForEvent = (id: string) => signups.filter(s => s.event_id === id);
 
   return (
-    <div className="grid lg:grid-cols-3 gap-6">
-      <Card className="lg:col-span-1" ref={formRef as any}>
-        <CardHeader>
-          <CardTitle>{editingId ? "Edit event" : "Create event"}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+    <>
+    <FormListLayout wide formRef={formRef} formTitle={editingId ? "Edit event" : "Create event"} formOpen={formOpen} onFormOpenChange={(o) => { setFormOpen(o); if (!o) resetForm(); }} form={<>
           <div>
             <Label>Event type</Label>
             <select
@@ -1141,25 +1252,23 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
 
           <div className="flex gap-2">
             <Button onClick={save} className="flex-1">
-              <Plus className="w-4 h-4 mr-2" />{editingId ? "Save changes" : "Create event"}
+              <Plus className="w-4 h-4" />{editingId ? "Save changes" : "Create event"}
             </Button>
-            {editingId && <Button variant="outline" onClick={resetForm}>Cancel</Button>}
+            {editingId && <Button variant="outline" onClick={() => { resetForm(); setFormOpen(false); }}>Cancel</Button>}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-2">
-        <CardHeader><CardTitle>All events ({events.length})</CardTitle></CardHeader>
-        <CardContent className="space-y-2 max-h-[720px] overflow-y-auto">
+        </>} list={
+      <Section title="Website events" count={events.length} description="What shows on the public events page and homepage." action={<Button size="sm" className="md:hidden" onClick={() => { resetForm(); setFormOpen(true); }}><Plus className="w-4 h-4" />New</Button>}>
+        {events.length === 0 && <EmptyState icon={CalendarDays} title="No events yet" description="Create an event to feature it on the website." compact />}
+        <div className="space-y-2">
           {events.map(ev => {
             const invitedCount = invitations.filter(i => i.event_id === ev.id).length;
             const signupCount = signupsForEvent(ev.id).length;
             return (
-              <div key={ev.id} className="border rounded-lg p-3">
-                <div className="flex items-start justify-between gap-2">
+              <div key={ev.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex gap-3 flex-1 min-w-0">
                     {ev.poster_url && (
-                      <img src={ev.poster_url} alt="" className="w-16 h-16 rounded object-cover flex-shrink-0" />
+                      <img src={ev.poster_url} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
                     )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1170,7 +1279,7 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
                         {ev.featured && <Badge className="text-[10px] bg-lta-yellow text-suffolk-navy">Featured</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(ev.event_date).toLocaleString()} {ev.location && `· ${ev.location}`} {ev.age_group && `· ${ev.age_group}`}
+                        {new Date(ev.event_date).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} {ev.location && `· ${ev.location}`} {ev.age_group && `· ${ev.age_group}`}
                       </p>
                       {ev.description && <p className="text-sm mt-1 line-clamp-2">{ev.description}</p>}
                       <div className="flex gap-2 mt-2 flex-wrap">
@@ -1183,18 +1292,18 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1 flex-shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => startEdit(ev)}><Pencil className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="outline" onClick={() => openInvite(ev)}><Send className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove(ev.id)}><Trash2 className="w-4 h-4" /></Button>
+                  <div className="flex flex-col gap-1 flex-shrink-0 sm:flex-row">
+                    <Button size="icon-sm" variant="ghost" aria-label="Edit event" onClick={() => startEdit(ev)}><Pencil className="w-4 h-4" /></Button>
+                    <Button size="icon-sm" variant="ghost" aria-label="Invite children" onClick={() => openInvite(ev)}><Send className="w-4 h-4" /></Button>
+                    <Button size="icon-sm" variant="ghost" aria-label="Delete event" onClick={() => remove(ev.id)}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 </div>
               </div>
             );
           })}
-          {events.length === 0 && <p className="text-muted-foreground text-sm">No events yet.</p>}
-        </CardContent>
-      </Card>
+        </div>
+      </Section>
+    } />
 
       <Dialog open={!!inviteOpen} onOpenChange={(o) => !o && setInviteOpen(null)}>
         <DialogContent className="max-w-lg">
@@ -1240,7 +1349,7 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 };
 
@@ -1330,6 +1439,7 @@ const FocalPointEditor = ({ media, onSave }: { media: NewsMedia; onSave: (fx: nu
 };
 
 const NewsPanel = () => {
+  const [formOpen, setFormOpen] = useState(false);
   const [items, setItems] = useState<NewsRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -1359,6 +1469,7 @@ const NewsPanel = () => {
 
   const startEdit = (n: NewsRow) => {
     setEditingId(n.id);
+    setFormOpen(true);
     setForm({
       title: n.title,
       content: n.content,
@@ -1435,6 +1546,7 @@ const NewsPanel = () => {
     else {
       toast.success(editingId ? "Article updated" : "News saved");
       resetForm();
+      setFormOpen(false);
       load();
     }
   };
@@ -1451,19 +1563,12 @@ const NewsPanel = () => {
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-2">
-            <span>{editingId ? "Edit Suffolk news" : "Write Suffolk news"}</span>
-            {editingId && (
-              <Button type="button" size="sm" variant="ghost" onClick={resetForm}>
-                <X className="w-4 h-4 mr-1" /> Cancel
-              </Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <FormListLayout
+      formTitle={editingId ? "Edit Suffolk news" : "Write Suffolk news"}
+      formActions={editingId ? <Button type="button" size="sm" variant="ghost" onClick={resetForm}><X className="w-4 h-4" /> Cancel</Button> : undefined}
+      formOpen={formOpen}
+      onFormOpenChange={(o) => { setFormOpen(o); if (!o) resetForm(); }}
+      form={<>
           <div>
             <Label>Title</Label>
             <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
@@ -1572,23 +1677,22 @@ const NewsPanel = () => {
           </label>
 
           <Button onClick={save} className="w-full">
-            {editingId ? <><Pencil className="w-4 h-4 mr-2" />Update article</> : <><Plus className="w-4 h-4 mr-2" />Save article</>}
+            {editingId ? <><Pencil className="w-4 h-4" />Update article</> : <><Plus className="w-4 h-4" />Save article</>}
           </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Articles ({items.length})</CardTitle></CardHeader>
-        <CardContent className="space-y-2 max-h-[700px] overflow-y-auto">
+        </>}
+      list={
+      <Section title="Articles" count={items.length} action={<Button size="sm" className="md:hidden" onClick={() => { resetForm(); setFormOpen(true); }}><Plus className="w-4 h-4" />Write</Button>}>
+        {items.length === 0 && <EmptyState icon={Newspaper} title="No articles yet" description="Suffolk news you publish appears on the website and in the Parent Hub." compact />}
+        <div className="space-y-2">
           {items.map(n => {
             const cover = n.image_url || (Array.isArray(n.media) ? n.media.find(m => m.type === "image")?.url : null);
             const mediaCount = Array.isArray(n.media) ? n.media.length : 0;
             return (
-              <div key={n.id} className="border rounded-lg p-3">
+              <div key={n.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex gap-3 flex-1 min-w-0">
                     {cover && (
-                      <img src={cover} alt="" className="w-16 h-16 rounded object-cover flex-shrink-0" />
+                      <img src={cover} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
                     )}
                     <div className="min-w-0">
                       <p className="font-semibold truncate">{n.title}</p>
@@ -1603,26 +1707,19 @@ const NewsPanel = () => {
                       <p className="text-sm mt-1 line-clamp-2">{n.content}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1 flex-shrink-0">
-                    <Badge variant={n.published ? "default" : "secondary"}>{n.published ? "Live" : "Draft"}</Badge>
-                    <Button size="sm" variant="outline" onClick={() => startEdit(n)}>
-                      <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => togglePublished(n)}>
-                      {n.published ? "Unpublish" : "Publish"}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove(n.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <StatusBadge tone={n.published ? "success" : "neutral"}>{n.published ? "Live" : "Draft"}</StatusBadge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                  <Button size="sm" variant="outline" onClick={() => startEdit(n)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button size="sm" variant="outline" onClick={() => togglePublished(n)}>{n.published ? "Unpublish" : "Publish"}</Button>
+                  <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" aria-label="Delete article" onClick={() => remove(n.id)}><Trash2 className="w-4 h-4" /></Button>
                 </div>
               </div>
             );
           })}
-          {items.length === 0 && <p className="text-muted-foreground text-sm">No articles yet.</p>}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </Section>
+    } />
   );
 };
 
@@ -1668,6 +1765,7 @@ const emptyPlayerForm = (): PlayerForm => ({
 });
 
 const PlayerWatchPanel = () => {
+  const [formOpen, setFormOpen] = useState(false);
   const [items, setItems] = useState<PlayerWatchRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PlayerForm>(emptyPlayerForm());
@@ -1688,6 +1786,7 @@ const PlayerWatchPanel = () => {
 
   const startEdit = (p: PlayerWatchRow) => {
     setEditingId(p.id);
+    setFormOpen(true);
     setForm({
       name: p.name,
       subtitle: p.subtitle ?? "",
@@ -1771,6 +1870,7 @@ const PlayerWatchPanel = () => {
     if (error) { toast.error(error.message); return; }
     toast.success(editingId ? "Player updated" : "Player added");
     startNew();
+    setFormOpen(false);
     load();
   };
 
@@ -1788,19 +1888,13 @@ const PlayerWatchPanel = () => {
   };
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      <Card ref={formRef}>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{editingId ? "Edit player" : "Add a featured player"}</CardTitle>
-            {editingId && (
-              <Button size="sm" variant="ghost" onClick={startNew}>
-                <Plus className="w-4 h-4 mr-1" /> New
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <FormListLayout
+      formRef={formRef}
+      formTitle={editingId ? "Edit player" : "Add a featured player"}
+      formActions={editingId ? <Button size="sm" variant="ghost" onClick={startNew}><Plus className="w-4 h-4" /> New</Button> : undefined}
+      formOpen={formOpen}
+      onFormOpenChange={(o) => { setFormOpen(o); if (!o) startNew(); }}
+      form={<>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <Label>Name</Label>
@@ -1939,22 +2033,21 @@ const PlayerWatchPanel = () => {
           </label>
 
           <Button onClick={save} className="w-full">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4" />
             {editingId ? "Save changes" : "Add player"}
           </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Featured players ({items.length})</CardTitle></CardHeader>
-        <CardContent className="space-y-2 max-h-[800px] overflow-y-auto">
+        </>}
+      list={
+      <Section title="Featured players" count={items.length} description="The Player Watch cards on the homepage." action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
+        {items.length === 0 && <EmptyState icon={Star} title="No featured players yet" compact />}
+        <div className="space-y-2">
           {items.map(p => (
-            <div key={p.id} className={`border rounded-lg p-3 ${editingId === p.id ? "ring-2 ring-primary" : ""}`}>
+            <div key={p.id} className={`rounded-2xl border bg-card p-4 shadow-card ${editingId === p.id ? "border-primary" : "border-border"}`}>
               <div className="flex items-start gap-3">
                 {p.main_image_url ? (
-                  <img src={p.main_image_url} alt="" className="w-16 h-16 rounded object-cover flex-shrink-0" />
+                  <img src={p.main_image_url} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
                 ) : (
-                  <div className="w-16 h-16 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                  <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
                     <ImageIcon className="w-5 h-5 text-muted-foreground" />
                   </div>
                 )}
@@ -1975,25 +2068,18 @@ const PlayerWatchPanel = () => {
                     )}
                   </div>
                 </div>
-                <div className="flex flex-col gap-1 flex-shrink-0">
-                  <Badge variant={p.published ? "default" : "secondary"}>{p.published ? "Live" : "Hidden"}</Badge>
-                  <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
-                    <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => togglePublished(p)}>
-                    {p.published ? "Hide" : "Show"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => remove(p.id)}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
+                <StatusBadge tone={p.published ? "success" : "neutral"}>{p.published ? "Live" : "Hidden"}</StatusBadge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                <Button size="sm" variant="outline" onClick={() => startEdit(p)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                <Button size="sm" variant="outline" onClick={() => togglePublished(p)}>{p.published ? "Hide" : "Show"}</Button>
+                <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" aria-label="Delete player" onClick={() => remove(p.id)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             </div>
           ))}
-          {items.length === 0 && <p className="text-sm text-muted-foreground">No players yet.</p>}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </Section>
+    } />
   );
 };
 
@@ -2003,6 +2089,8 @@ const AdminsPanel = () => {
   const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [pickUser, setPickUser] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [removing, setRemoving] = useState<AdminRow | null>(null);
 
   const load = async () => {
     const [{ data: roles }, { data: p }] = await Promise.all([
@@ -2015,6 +2103,7 @@ const AdminsPanel = () => {
       const prof = pMap.get(r.user_id);
       return { user_id: r.user_id, first_name: prof?.first_name, last_name: prof?.last_name };
     }));
+    setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
@@ -2026,8 +2115,8 @@ const AdminsPanel = () => {
   };
 
   const removeAdmin = async (userId: string) => {
-    if (!confirm("Remove admin access for this user?")) return;
     const { error } = await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", "admin");
+    setRemoving(null);
     if (error) toast.error(error.message); else load();
   };
 
@@ -2035,39 +2124,55 @@ const AdminsPanel = () => {
   const nonAdmins = profiles.filter(p => !adminIds.has(p.user_id));
 
   return (
-    <Card>
-      <CardHeader><CardTitle>Administrators</CardTitle></CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex gap-2 items-end max-w-lg">
-          <div className="flex-1">
-            <Label>Promote a parent to admin</Label>
-            <Select value={pickUser} onValueChange={setPickUser}>
-              <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-              <SelectContent>
-                {nonAdmins.map(p => <SelectItem key={p.user_id} value={p.user_id}>{p.first_name} {p.last_name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button onClick={addAdmin}><Plus className="w-4 h-4 mr-2" />Add</Button>
-        </div>
+    <div className="space-y-6 md:max-w-2xl">
+      <PageHeader title="Administrators" hideTitleOnPhone description="Admins can see every family, send invitations and emails, and take payments." className="mb-0" />
 
-        <div>
-          <h3 className="font-semibold mb-2">Current admins</h3>
-          <Table>
-            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {admins.map(a => (
-                <TableRow key={a.user_id}>
-                  <TableCell>{a.first_name || ""} {a.last_name || ""}{!a.first_name && <span className="text-muted-foreground text-xs">{a.user_id}</span>}</TableCell>
-                  <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={() => removeAdmin(a.user_id)}><Trash2 className="w-4 h-4" /></Button></TableCell>
-                </TableRow>
-              ))}
-              {admins.length === 0 && <TableRow><TableCell colSpan={2} className="text-muted-foreground text-center">No admins yet.</TableCell></TableRow>}
-            </TableBody>
-          </Table>
+      <Section title="Promote a parent">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Select value={pickUser} onValueChange={setPickUser}>
+            <SelectTrigger className="sm:flex-1"><SelectValue placeholder="Choose a registered parent" /></SelectTrigger>
+            <SelectContent>
+              {nonAdmins.map(p => <SelectItem key={p.user_id} value={p.user_id}>{p.first_name} {p.last_name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button onClick={addAdmin} disabled={!pickUser}><Plus className="w-4 h-4" />Make admin</Button>
         </div>
-      </CardContent>
-    </Card>
+      </Section>
+
+      <Section title="Current admins" count={admins.length}>
+        {loading ? <SkeletonRows rows={3} /> : admins.length === 0 ? (
+          <EmptyState icon={UserCog} title="No admins yet" compact />
+        ) : (
+          <ListGroup>
+            {admins.map(a => {
+              const name = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
+              return (
+                <ListRow
+                  key={a.user_id}
+                  leading={<Avatar name={name || "?"} size="md" />}
+                  title={name || <span className="font-mono text-xs text-muted-foreground">{a.user_id}</span>}
+                  subtitle="Administrator"
+                  trailing={<Button size="icon-sm" variant="ghost" aria-label={`Remove admin access for ${name || a.user_id}`} onClick={() => setRemoving(a)}><Trash2 className="w-4 h-4" /></Button>}
+                />
+              );
+            })}
+          </ListGroup>
+        )}
+      </Section>
+
+      <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove admin access?</AlertDialogTitle>
+            <AlertDialogDescription>{`${removing?.first_name ?? ""} ${removing?.last_name ?? ""}`.trim() || "This user"} will go back to a normal parent account. Their profile and children are untouched.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={(e) => { e.preventDefault(); if (removing) removeAdmin(removing.user_id); }}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 };
 

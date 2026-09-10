@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { coachLabel, loadCoachContacts, type CoachContact } from "@/lib/coachLookup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ListGroup, ListRow, StatusBadge } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -88,8 +89,8 @@ export default function EmailPanel({ initialGroupId }: { initialGroupId?: string
   return (
     <div className="space-y-6">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="compose" className="gap-2"><Mail className="w-4 h-4" />Compose &amp; send</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 md:inline-flex md:w-auto">
+          <TabsTrigger value="compose" className="gap-2"><Mail className="w-4 h-4" /><span className="md:hidden">Compose</span><span className="hidden md:inline">Compose &amp; send</span></TabsTrigger>
           <TabsTrigger value="groups" className="gap-2"><Users className="w-4 h-4" />Groups</TabsTrigger>
           <TabsTrigger value="recipients" className="gap-2"><UserMinus className="w-4 h-4" />Recipients</TabsTrigger>
         </TabsList>
@@ -432,9 +433,9 @@ function BlockEditor({ block, index, total, onChange, onMove, onRemove, onUpload
       <div className="flex items-center justify-between">
         <Badge variant="secondary" className="text-[11px]">{meta?.label ?? block.type}</Badge>
         <div className="flex gap-1">
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => onMove(-1)}><ArrowUp className="w-3.5 h-3.5" /></Button>
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === total - 1} onClick={() => onMove(1)}><ArrowDown className="w-3.5 h-3.5" /></Button>
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={onRemove}><Trash2 className="w-3.5 h-3.5" /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 md:h-7 md:w-7" disabled={index === 0} onClick={() => onMove(-1)}><ArrowUp className="w-3.5 h-3.5" /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 md:h-7 md:w-7" disabled={index === total - 1} onClick={() => onMove(1)}><ArrowDown className="w-3.5 h-3.5" /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-destructive md:h-7 md:w-7" onClick={onRemove}><Trash2 className="w-3.5 h-3.5" /></Button>
         </div>
       </div>
 
@@ -566,24 +567,19 @@ function GroupsTab() {
           {loading ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" /></div>
             : groups.length === 0 ? <p className="text-sm text-muted-foreground py-4">No groups yet. Create one above — for example "10U parents".</p>
             : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Group</TableHead><TableHead>People</TableHead><TableHead /></TableRow></TableHeader>
-                <TableBody>
-                  {groups.map((g) => (
-                    <TableRow key={g.id}>
-                      <TableCell>
-                        <div className="font-medium">{g.name}</div>
-                        {g.description && <div className="text-xs text-muted-foreground">{g.description}</div>}
-                      </TableCell>
-                      <TableCell><Badge variant="secondary">{g.member_count}</Badge></TableCell>
-                      <TableCell className="text-right space-x-1">
-                        <Button variant="outline" size="sm" onClick={() => setOpenGroup(g)}>Manage people</Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => remove(g)}><Trash2 className="w-4 h-4" /></Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <ListGroup>
+                {groups.map((g) => (
+                  <ListRow
+                    key={g.id}
+                    onClick={() => setOpenGroup(g)}
+                    title={g.name}
+                    subtitle={g.description ?? undefined}
+                    meta={`${g.member_count} ${g.member_count === 1 ? "person" : "people"}`}
+                    trailing={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={`Delete ${g.name}`} onClick={(e) => { e.stopPropagation(); remove(g); }}><Trash2 className="w-4 h-4" /></Button>}
+                    chevron
+                  />
+                ))}
+              </ListGroup>
             )}
         </CardContent>
       </Card>
@@ -697,8 +693,8 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
       <DialogContent className="max-w-3xl">
         <DialogHeader><DialogTitle>{group.name} — {members.length} {members.length === 1 ? "person" : "people"}</DialogTitle></DialogHeader>
         {loading ? <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin" /></div> : (
-          <div className="grid md:grid-cols-2 gap-4 max-h-[60vh]">
-            <div className="space-y-2 overflow-y-auto">
+          <div className="grid gap-4 md:max-h-[60vh] md:grid-cols-2">
+            <div className="space-y-2 md:overflow-y-auto">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">In this group</Label>
               {members.length === 0 && <p className="text-sm text-muted-foreground">Nobody yet.</p>}
               {members.map((m) => (
@@ -712,13 +708,13 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
                     ) : m.email}
                     {m.unsubscribed && <Badge variant="outline" className="ml-2 text-[10px]">unsubscribed</Badge>}
                   </span>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={saving} onClick={() => drop(m.email)}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 md:h-8 md:w-8" disabled={saving} onClick={() => drop(m.email)}>
                     <UserMinus className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               ))}
             </div>
-            <div className="space-y-2 overflow-y-auto">
+            <div className="space-y-2 md:overflow-y-auto">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Paste a list
               </Label>
@@ -761,7 +757,7 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
                         </>
                       : <span className="block">{c.email}</span>}
                   </span>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={saving} onClick={() => add([c.email])}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 md:h-8 md:w-8" disabled={saving} onClick={() => add([c.email])}>
                     <UserPlus className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -821,15 +817,34 @@ function RecipientsTab() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex gap-2">
-          <Input value={search} onChange={(e) => setSearch(e.target.value)}
+          <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load(search)}
             placeholder="Search by email or player name" />
-          <Button variant="outline" onClick={() => load(search)}><RefreshCcw className="w-4 h-4" /></Button>
+          <Button variant="outline" size="icon" aria-label="Search" onClick={() => load(search)}><RefreshCcw className="w-4 h-4" /></Button>
         </div>
 
         {loading ? <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin" /></div> : (
           <>
             {data?.truncated && <p className="text-xs text-muted-foreground">Showing the first 500 — search to narrow it down.</p>}
+            <ListGroup className="md:hidden">
+              {(data?.recipients ?? []).map((r) => (
+                <ListRow
+                  key={r.email}
+                  size="sm"
+                  title={[...r.players, coaches.has(r.email) ? coachLabel(coaches.get(r.email)!) : null].filter(Boolean).join(", ") || r.email}
+                  subtitle={r.email}
+                  trailing={
+                    <span className="flex items-center gap-1.5">
+                      <StatusBadge tone={r.unsubscribed ? "danger" : "success"} dot={false}>{r.unsubscribed ? "Unsubscribed" : "Subscribed"}</StatusBadge>
+                      <Button variant="ghost" size="icon-sm" aria-label={r.unsubscribed ? "Resubscribe" : "Unsubscribe"} disabled={busy === r.email} onClick={() => toggle(r)}>
+                        {busy === r.email ? <Loader2 className="w-4 h-4 animate-spin" /> : r.unsubscribed ? <UserPlus className="w-4 h-4" /> : <UserMinus className="w-4 h-4" />}
+                      </Button>
+                    </span>
+                  }
+                />
+              ))}
+            </ListGroup>
+            <div className="hidden md:block">
             <Table>
               <TableHeader><TableRow><TableHead>Email</TableHead><TableHead>Player or coach</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
@@ -856,6 +871,7 @@ function RecipientsTab() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </>
         )}
       </CardContent>
