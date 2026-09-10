@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket } from "lucide-react";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
-  SearchField, Chip, ChipRow, InlineNote, SegmentedControl, useIsPhone,
+  SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone,
 } from "@/components/app";
 type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
@@ -1233,7 +1233,10 @@ const BookingsPanel = () => {
               {form.programme_type !== "programme" && (
                 <div><Label>Date &amp; time</Label><Input type="datetime-local" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></div>
               )}
-              <div className={form.programme_type === "programme" ? "sm:col-span-2" : ""}><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Used as the venue for every session" /></div>
+              <div className={form.programme_type === "programme" ? "sm:col-span-2" : ""}>
+                <Label>Venue</Label>
+                <VenueSelect value={form.location} onChange={(v) => setForm({ ...form, location: v })} placeholder={form.programme_type === "programme" ? "Where every session is held" : "Choose a venue"} />
+              </div>
               <div>
                 <Label>Visibility</Label>
                 <Select value={form.visibility} onValueChange={(v) => setForm({ ...form, visibility: v })}>
@@ -1393,7 +1396,7 @@ const BookingsPanel = () => {
               )}
               <div><Label>Start time</Label><Input type="time" value={genTime} onChange={(e) => setGenTime(e.target.value)} /></div>
               <div><Label>End time</Label><Input type="time" value={genEndTime} onChange={(e) => setGenEndTime(e.target.value)} /></div>
-              <div className="col-span-2"><Label>Venue</Label><Input value={genVenue} onChange={(e) => setGenVenue(e.target.value)} placeholder={selected?.location ?? "Venue"} /></div>
+              <div className="col-span-2"><Label>Venue</Label><VenueSelect value={genVenue} onChange={setGenVenue} /></div>
             </div>
 
             {genMode === "repeat" && (
@@ -1453,7 +1456,7 @@ const BookingsPanel = () => {
             <div className="grid grid-cols-2 gap-3">
               <div><Label>New date</Label><Input type="date" value={changeDate} onChange={(e) => setChangeDate(e.target.value)} /></div>
               <div><Label>Start time</Label><Input type="time" value={changeTime} onChange={(e) => setChangeTime(e.target.value)} /></div>
-              <div className="col-span-2"><Label>Venue</Label><Input value={changeVenue} onChange={(e) => setChangeVenue(e.target.value)} /></div>
+              <div className="col-span-2"><Label>Venue</Label><VenueSelect value={changeVenue} onChange={setChangeVenue} /></div>
             </div>
           )}
           <div>
