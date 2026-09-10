@@ -64,6 +64,30 @@ const ageGroupOf = (dob: string | null): string => {
   return g ? `${g}U` : "18+";
 };
 
+type DraftSession = { date: string; start: string; end: string };
+
+/** Dates from a start date at a cadence: +7 days, +14 days, or the same day
+ *  of the following month (clamped to the month's length). */
+const buildDates = (startIso: string, cadence: Cadence, count: number): string[] => {
+  const n = Math.max(1, Math.min(52, count || 1));
+  const start = new Date(startIso + "T12:00:00");
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(start);
+    if (cadence === "monthly") {
+      const dayOfMonth = start.getDate();
+      d.setDate(1);
+      d.setMonth(start.getMonth() + i);
+      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      d.setDate(Math.min(dayOfMonth, last));
+    } else {
+      d.setDate(start.getDate() + i * (cadence === "fortnightly" ? 14 : 7));
+    }
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+};
+
 const emptyForm = {
   id: null as string | null,
   title: "", description: "", event_date: "", location: "", capacity: "",
@@ -115,6 +139,12 @@ const BookingsPanel = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
   const [savingEvent, setSavingEvent] = useState(false);
+  // New programme: sessions are generated inside the form and saved with it.
+  const [pStart, setPStart] = useState("");
+  const [pTime, setPTime] = useState("");
+  const [pEnd, setPEnd] = useState("");
+  const [pCount, setPCount] = useState("12");
+  const [draft, setDraft] = useState<DraftSession[]>([]);
 
   // Add sessions: one date, or a run generated from a start date and cadence.
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -273,11 +303,19 @@ const BookingsPanel = () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
     const isProgrammeForm = form.programme_type === "programme";
     if (isProgrammeForm && !form.price) { toast.error("Programmes need a price"); return; }
+    const newProgramme = isProgrammeForm && !form.id;
+    if (newProgramme && draft.length === 0) { toast.error("Generate the sessions first"); return; }
+    if (newProgramme && draft.some((d) => !d.date)) { toast.error("Every session needs a date"); return; }
+    // A new programme starts when its first session does.
+    const firstSession = newProgramme ? [...draft].sort((a, b) => a.date.localeCompare(b.date))[0] : null;
+    const eventDate = firstSession
+      ? new Date(`${firstSession.date}T${firstSession.start || "09:00"}:00`).toISOString()
+      : form.event_date ? new Date(form.event_date).toISOString() : new Date().toISOString();
     setSavingEvent(true);
     const payload: Record<string, unknown> = {
       title: form.title.trim(),
       description: form.description.trim() || null,
-      event_date: form.event_date ? new Date(form.event_date).toISOString() : new Date().toISOString(),
+      event_date: eventDate,
       location: form.location.trim() || null,
       // Programmes have no capacity; free events have no price.
       capacity: isProgrammeForm || !form.capacity ? null : Number(form.capacity),
@@ -288,15 +326,26 @@ const BookingsPanel = () => {
       meeting_cadence: isProgrammeForm ? form.meeting_cadence : null,
       sign_up_enabled: form.sign_up_enabled,
     };
-    const q = form.id
-      ? db.from("events").update(payload).eq("id", form.id)
-      : db.from("events").insert(payload);
-    const { error } = await q;
+    const { data: saved, error } = form.id
+      ? await db.from("events").update(payload).eq("id", form.id).select("id").single()
+      : await db.from("events").insert(payload).select("id").single();
+    if (error) { setSavingEvent(false); toast.error(error.message); return; }
+    if (newProgramme && saved?.id) {
+      const rows = draft.map((d) => ({
+        event_id: saved.id,
+        session_date: d.date,
+        start_time: d.start || null,
+        end_time: d.end || null,
+        venue: form.location.trim() || null,
+      }));
+      const { error: sErr } = await db.from("event_sessions").insert(rows);
+      if (sErr) toast.warning(`Programme created, but the sessions could not be saved: ${sErr.message}`);
+    }
     setSavingEvent(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(form.id ? "Event updated" : "Event created");
+    toast.success(form.id ? (isProgrammeForm ? "Programme updated" : "Event updated") : newProgramme ? `Programme created with ${draft.length} session${draft.length === 1 ? "" : "s"}` : "Event created");
     setFormOpen(false);
     setForm({ ...emptyForm });
+    setDraft([]);
     loadEvents();
   };
 
@@ -313,27 +362,9 @@ const BookingsPanel = () => {
     setSessionsOpen(true);
   };
 
-  /** Dates from the start date at the chosen cadence: +7 days, +14 days, or
-   *  the same day of the following month (clamped to the month's length). */
   const generateDates = () => {
     if (!genStart) { toast.error("Choose the start date first"); return; }
-    const n = Math.max(1, Math.min(52, Number(genCount) || 1));
-    const start = new Date(genStart + "T12:00:00");
-    const dates: string[] = [];
-    for (let i = 0; i < n; i++) {
-      const d = new Date(start);
-      if (genCadence === "monthly") {
-        const dayOfMonth = start.getDate();
-        d.setDate(1);
-        d.setMonth(start.getMonth() + i);
-        const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-        d.setDate(Math.min(dayOfMonth, last));
-      } else {
-        d.setDate(start.getDate() + i * (genCadence === "fortnightly" ? 14 : 7));
-      }
-      dates.push(d.toISOString().slice(0, 10));
-    }
-    setGenPreview(dates);
+    setGenPreview(buildDates(genStart, genCadence, Number(genCount)));
   };
 
   const addSessions = async () => {
@@ -465,6 +496,7 @@ const BookingsPanel = () => {
   /** New programme (fee preset to £250) or new event (no preset price). */
   const startNew = (type: "programme" | "event") => {
     setForm({ ...emptyForm, programme_type: type, price: type === "programme" ? "250" : "", meeting_cadence: "weekly" });
+    setPStart(""); setPTime(""); setPEnd(""); setPCount("12"); setDraft([]);
     setFormOpen(true);
   };
 
@@ -1198,8 +1230,10 @@ const BookingsPanel = () => {
             <div><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div><Label>Description</Label><Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div><Label>Date &amp; time</Label><Input type="datetime-local" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></div>
-              <div><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
+              {form.programme_type !== "programme" && (
+                <div><Label>Date &amp; time</Label><Input type="datetime-local" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></div>
+              )}
+              <div className={form.programme_type === "programme" ? "sm:col-span-2" : ""}><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Used as the venue for every session" /></div>
               <div>
                 <Label>Visibility</Label>
                 <Select value={form.visibility} onValueChange={(v) => setForm({ ...form, visibility: v })}>
@@ -1263,6 +1297,54 @@ const BookingsPanel = () => {
                 <Checkbox checked={form.sign_up_enabled} onCheckedChange={(v) => setForm({ ...form, sign_up_enabled: v === true })} />
                 Open sign-ups on the public events page
               </label>
+            )}
+
+            {form.programme_type === "programme" && form.id && (
+              <p className="rounded-xl bg-muted/70 px-3.5 py-3 text-xs text-muted-foreground">Session dates are managed from the programme page with the Add sessions button.</p>
+            )}
+
+            {form.programme_type === "programme" && !form.id && (
+              <div className="space-y-4 border-t border-border pt-4">
+                <div>
+                  <p className="text-[15px] font-semibold">Sessions</p>
+                  <p className="text-xs text-muted-foreground">Start date and time, then generate the run — every date and time can be changed before you create the programme.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Start date</Label><Input type="date" value={pStart} onChange={(e) => setPStart(e.target.value)} /></div>
+                  <div><Label>Number of sessions</Label><Input type="number" inputMode="numeric" min="1" max="52" value={pCount} onChange={(e) => setPCount(e.target.value)} /></div>
+                  <div><Label>Start time</Label><Input type="time" value={pTime} onChange={(e) => setPTime(e.target.value)} /></div>
+                  <div><Label>End time</Label><Input type="time" value={pEnd} onChange={(e) => setPEnd(e.target.value)} /></div>
+                </div>
+                <Button
+                  type="button"
+                  variant={draft.length === 0 ? "default" : "outline"}
+                  className="w-full"
+                  disabled={!pStart}
+                  onClick={() => setDraft(buildDates(pStart, form.meeting_cadence as Cadence, Number(pCount)).map((date) => ({ date, start: pTime, end: pEnd })))}
+                >
+                  <Repeat className="w-4 h-4" /> {draft.length === 0 ? "Generate sessions" : "Regenerate sessions"}
+                </Button>
+                {draft.length > 0 && (
+                  <div>
+                    <div className="mb-2 flex items-center justify-between px-0.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{draft.length} session{draft.length === 1 ? "" : "s"} · {form.meeting_cadence}</p>
+                      <button type="button" className="inline-flex min-h-8 items-center text-xs font-medium text-primary" onClick={() => setDraft((d) => [...d, { date: "", start: pTime, end: pEnd }])}>+ Add another</button>
+                    </div>
+                    <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+                      {draft.map((d, i) => (
+                        <div key={i} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-2">
+                          <div className="min-w-0">
+                            <Input type="date" aria-label={`Session ${i + 1} date`} value={d.date} onChange={(e) => setDraft((all) => all.map((x, j) => j === i ? { ...x, date: e.target.value } : x))} className="h-10" />
+                            {d.date && <p className="mt-1 px-1 text-[11px] text-muted-foreground">{new Date(d.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</p>}
+                          </div>
+                          <Input type="time" aria-label={`Session ${i + 1} start time`} value={d.start} onChange={(e) => setDraft((all) => all.map((x, j) => j === i ? { ...x, start: e.target.value } : x))} className="h-10 w-[7.25rem] self-start" />
+                          <Button type="button" size="icon-sm" variant="ghost" className="self-start" aria-label={`Remove session ${i + 1}`} onClick={() => setDraft((all) => all.filter((_, j) => j !== i))}><X className="w-4 h-4" /></Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <DialogFooter>
