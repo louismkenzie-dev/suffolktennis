@@ -9,10 +9,14 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload, Undo2 } from "lucide-react";
 
 const db = supabase as any;
 
@@ -65,6 +69,8 @@ const BookingsPanel = () => {
   const [selected, setSelected] = useState<EventRow | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [refundTarget, setRefundTarget] = useState<Booking | null>(null);
+  const [refunding, setRefunding] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; venue: string | null }>>([]);
   const [pastDue, setPastDue] = useState<Array<{ id: string; child_name: string; parent_email: string; event_id: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -393,6 +399,32 @@ const BookingsPanel = () => {
     setFormOpen(true);
   };
 
+  const refund = async () => {
+    if (!refundTarget) return;
+    setRefunding(true);
+    const { data, error } = await supabase.functions.invoke("refund-booking", {
+      body: {
+        booking_id: refundTarget.id,
+        // Programme bookings: stop the monthly subscription as well, otherwise
+        // the parent keeps being charged after their refund.
+        ...(refundTarget.membership_id ? { cancel_membership: true } : {}),
+      },
+    });
+    setRefunding(false);
+    if (error || data?.error) {
+      toast.error(data?.error ?? "Refund failed");
+      return;
+    }
+    toast.success(
+      `${gbp(data.amount_refunded_pence)} refunded to ${refundTarget.parent_email}` +
+      (refundTarget.membership_id ? " and the monthly plan cancelled" : ""),
+    );
+    (data.warnings ?? []).forEach((w: string) => toast.warning(w));
+    setRefundTarget(null);
+    if (selected) openEvent(selected);
+    loadEvents();
+  };
+
   const statusBadge = (s: string) => {
     const map: Record<string, string> = {
       invited: "bg-muted text-muted-foreground", opened: "bg-blue-100 text-blue-800",
@@ -552,7 +584,7 @@ const BookingsPanel = () => {
               <h3 className="font-semibold text-sm mb-2">Bookings ({bookings.length})</h3>
               <Table>
                 <TableHeader><TableRow>
-                  <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Paid</TableHead>
+                  <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Paid</TableHead><TableHead className="text-right">Actions</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {bookings.map((b) => (
@@ -562,6 +594,13 @@ const BookingsPanel = () => {
                       <TableCell>{gbp(b.amount_pence)}{b.membership_id ? "/mo" : ""}</TableCell>
                       <TableCell>{statusBadge(b.status)}</TableCell>
                       <TableCell className="text-muted-foreground text-xs">{b.paid_at ? new Date(b.paid_at).toLocaleDateString("en-GB") : "—"}</TableCell>
+                      <TableCell className="text-right">
+                        {b.status === "paid" && (
+                          <Button variant="ghost" size="sm" onClick={() => setRefundTarget(b)}>
+                            <Undo2 className="w-4 h-4 mr-1" /> Refund
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -734,6 +773,41 @@ const BookingsPanel = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Refunds are irreversible in Stripe, so they are confirmed explicitly. */}
+      <AlertDialog open={!!refundTarget} onOpenChange={(o) => !o && setRefundTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Refund this booking?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {gbp(refundTarget?.amount_pence ?? null)} goes back to{" "}
+                  <strong>{refundTarget?.parent_email}</strong> for{" "}
+                  <strong>{refundTarget?.child_name}</strong>. Their entry ticket is
+                  cancelled and our 2.5% fee is returned to Suffolk Tennis.
+                </p>
+                {refundTarget?.membership_id && (
+                  <p>
+                    This is a monthly programme — the subscription is cancelled too, so no
+                    further payments are taken.
+                  </p>
+                )}
+                <p className="text-muted-foreground">
+                  Stripe cannot undo a refund. The parent normally sees the money in 5–10 days.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={refunding}>Keep the booking</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); refund(); }} disabled={refunding}>
+              {refunding ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Refund {gbp(refundTarget?.amount_pence ?? null)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

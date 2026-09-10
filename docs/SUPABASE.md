@@ -297,7 +297,11 @@ one.
 Invitational booking portal with Stripe payments, mirroring The Dance
 Exclusive's payments architecture: Stripe Connect **direct charges** on the
 client's connected account using the Nullshift platform's API keys, with a
-platform application fee (default 1%, override with `PLATFORM_FEE_PERCENT`).
+platform application fee (**2.5% of gross**, the agreed commercial rate,
+overridable with `PLATFORM_FEE_PERCENT`). Stripe's own processing fees come
+off the connected account, so Suffolk Tennis receives the amount paid less
+Stripe's fee less our 2.5%. The rate is pinned by `src/test/platformFee.test.ts`
+so it cannot be changed silently.
 The sandbox/live switch is server-side in `app_settings.payments_mode`
 (currently `sandbox`; flip with
 `update app_settings set value='live' where key='payments_mode';`).
@@ -310,7 +314,16 @@ Stripe subscriptions committed to `programme_months` payments), `tickets`
 
 Edge functions (all deployed): `get-invitation`, `create-booking-checkout`,
 `booking-payments-webhook`, `get-booking-status`, `send-booking-invitations`
-(admin), `scan-ticket` (admin).
+(admin), `scan-ticket` (admin), `refund-booking` (admin).
+
+**Refunds (10 Sep 2026)**: `refund-booking` issues the refund on the connected
+account with `refund_application_fee: true`, so our 2.5% goes back to Suffolk
+Tennis rather than being absorbed by them — Ollie refunding from his own Stripe
+dashboard would NOT return the fee, so refunds should be done from the admin
+Bookings tab. It voids the entry ticket, and for a monthly programme cancels
+the subscription so no further payments are taken. The environment comes from
+the booking row, not the current `payments_mode`, so sandbox bookings stay
+refundable after go-live.
 
 Frontend: `/book/:token` (invitation booking page), `/booking/return`,
 `/ticket/:qrToken` (QR entry ticket), `/admin/scan` (camera scanner), and
@@ -326,7 +339,7 @@ Dashboard → Edge Functions → Secrets:
 | `STRIPE_SANDBOX_API_KEY` | Platform account **test** secret key |
 | `STRIPE_LIVE_API_KEY` | Platform account **live** secret key |
 | `STRIPE_SANDBOX_CONNECTED_ACCOUNT_ID` | `acct_...` of the client's test connected account |
-| `STRIPE_LIVE_CONNECTED_ACCOUNT_ID` | `acct_...` of the client's live connected account (Karen's) |
+| `STRIPE_LIVE_CONNECTED_ACCOUNT_ID` | `acct_1UE6iZE7yIm0GTnR` (Suffolk Tennis's live connected account) |
 | `PAYMENTS_SANDBOX_WEBHOOK_SECRET` | signing secret of the sandbox webhook endpoint |
 | `PAYMENTS_LIVE_WEBHOOK_SECRET` | signing secret of the live webhook endpoint |
 | `RESEND_API_KEY` | Resend key (invitation + confirmation emails) |
@@ -351,8 +364,8 @@ one-offs settle via `payment_intent.succeeded` (bookingId metadata),
 programmes via `invoice.payment_succeeded` — the old
 `checkout.session.completed` handler remains for the legacy hosted flow.
 Client key pairs (publishable key + connected account per env) live in
-`src/lib/stripe.ts`; the live pair is empty and fails closed until Karen's
-account exists.
+`src/lib/stripe.ts`; the live connected account is set, but the live
+publishable key is still empty, so live mode fails closed until it is filled in.
 
 **Sandbox endpoint created 21 Aug 2026**: `we_1U6qmgE0aLvInrlqpuWFwsap`
 (acacia-pinned, connect). Its `whsec_…` signing secret was handed to Louis to

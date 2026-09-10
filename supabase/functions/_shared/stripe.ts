@@ -35,7 +35,7 @@ export { platformFeePence };
  * Nullshift PLATFORM account, and every charge is created as a DIRECT charge
  * on Suffolk Tennis's CONNECTED account via the Stripe-Account header.
  * Stripe deducts its processing fees on the connected account, the platform
- * collects a 1% application fee, and the remainder settles with
+ * collects a 2.5% application fee, and the remainder settles with
  * Suffolk Tennis (the LTA county partnership).
  *
  * When no connected-account id is configured for the environment, everything
@@ -56,7 +56,7 @@ export function connectRequestOptions(env: StripeEnv): { stripeAccount: string }
   return acct ? { stripeAccount: acct } : {};
 }
 
-/** Platform fee percent (default 1%), overridable via PLATFORM_FEE_PERCENT. */
+/** Platform fee percent (default 2.5%), overridable via PLATFORM_FEE_PERCENT. */
 export function getPlatformFeePercent(): number {
   const raw = Deno.env.get("PLATFORM_FEE_PERCENT");
   const parsed = raw != null ? Number(raw) : NaN;

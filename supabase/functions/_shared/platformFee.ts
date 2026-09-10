@@ -2,7 +2,7 @@
 // charges. Pure module — no Deno APIs — so the frontend test suite can import
 // and verify it.
 
-export const DEFAULT_PLATFORM_FEE_PERCENT = 1;
+export const DEFAULT_PLATFORM_FEE_PERCENT = 2.5;
 
 /**
  * Application fee in pence for a charge of `amountInPence`.
