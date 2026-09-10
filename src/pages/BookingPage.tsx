@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, Clock } from "lucide-react";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
+import { formatTimeRange } from "@/lib/timeFormat";
 
 type InvitationPayload = {
   /** Pre-launch wall — "coming_soon" until Suffolk Tennis opens bookings. */
@@ -26,9 +27,9 @@ type InvitationPayload = {
     id: string; title: string; description: string | null; event_date: string | null;
     location: string | null; poster_url: string | null; session_slots: string[] | null;
     programme_type: string; price_pence: number | null; is_free: boolean;
-    meeting_cadence: string | null; capacity: number | null;
+    meeting_cadence: string | null; capacity: number | null; cancelled_at?: string | null;
   };
-  sessions: Array<{ id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null }>;
+  sessions: Array<{ id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>;
   existing_booking: { id: string; status: string } | null;
 };
 
@@ -346,17 +347,27 @@ const BookingPage = () => {
                 </h3>
                 <ul className="text-sm text-primary-foreground/80 space-y-1">
                   {data.sessions.map((s) => (
-                    <li key={s.id}>
+                    <li key={s.id} className={s.cancelled_at ? "line-through opacity-60" : undefined}>
                       {new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                      {s.start_time ? ` · ${s.start_time.slice(0, 5)}${s.end_time ? `–${s.end_time.slice(0, 5)}` : ""}` : ""}
+                      {s.start_time ? ` · ${formatTimeRange(s.start_time, s.end_time)}` : ""}
                       {s.venue ? ` · ${s.venue}` : ""}
+                      {s.cancelled_at ? " · cancelled" : s.moved_from_date ? " · moved" : ""}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {data.existing_booking?.status === "paid" || data.invitation.status === "booked" ? (
+            {data.event.cancelled_at ? (
+              <div className="mt-8 bg-white/5 border border-red-400/30 rounded-2xl p-6 text-center space-y-2">
+                <AlertCircle className="w-8 h-8 text-red-300 mx-auto" />
+                <h3 className="font-display font-bold text-lg">This event has been cancelled</h3>
+                <p className="text-sm text-primary-foreground/70">
+                  Suffolk Tennis will be in touch{data.existing_booking?.status === "paid" ? " about your payment" : ""}. Questions:{" "}
+                  <a href="mailto:enquiries@suffolktennis.online" className="text-lta-cyan hover:underline">enquiries@suffolktennis.online</a>
+                </p>
+              </div>
+            ) : data.existing_booking?.status === "paid" || data.invitation.status === "booked" ? (
               <div className="mt-8 bg-lta-cyan/10 border border-lta-cyan/30 rounded-2xl p-6 text-center">
                 <Ticket className="w-8 h-8 text-lta-cyan mx-auto mb-3" />
                 <p className="font-bold">This place is already booked.</p>

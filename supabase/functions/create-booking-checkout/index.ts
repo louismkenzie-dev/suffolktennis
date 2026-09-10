@@ -119,10 +119,13 @@ Deno.serve(async (req) => {
 
   const { data: event } = await admin
     .from("events")
-    .select("id, title, location, visibility, sign_up_enabled, capacity, programme_type, price_pence, is_free, meeting_cadence")
+    .select("id, title, location, visibility, sign_up_enabled, capacity, programme_type, price_pence, is_free, meeting_cadence, cancelled_at")
     .eq("id", eventId)
     .maybeSingle();
   if (!event) return json({ error: "Event not found" }, 404);
+  if (event.cancelled_at) {
+    return json({ error: "This event has been cancelled — Suffolk Tennis will be in touch." }, 410);
+  }
 
   // Private events strictly require an invitation; public ones require
   // sign-ups to be open.
@@ -134,6 +137,25 @@ Deno.serve(async (req) => {
   }
 
   const isProgramme = event.programme_type === "programme";
+
+  // --- Duplicate guard, BEFORE any money moves: one paid place per child per
+  // event. The booking page hides the form once booked, but a stale tab or a
+  // second invitation must never charge a parent twice. ---
+  const { data: alreadyPaid } = await admin
+    .from("bookings")
+    .select("id")
+    .eq("event_id", event.id)
+    .eq("child_id", child.id)
+    .eq("status", "paid")
+    .limit(1)
+    .maybeSingle();
+  if (alreadyPaid) {
+    return json({
+      error: `${child.name} already has a place on this ${isProgramme ? "programme" : "event"} — check your Parent Hub.`,
+      already_booked: true,
+    }, 409);
+  }
+
   // A complimentary invitation is only honoured on the invitation it was
   // granted for; free events are free for everyone.
   const complimentary = !!invitation?.complimentary;

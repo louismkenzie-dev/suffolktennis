@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
   const { data: eventRow } = await admin
     .from("events")
-    .select("title, location, event_date, programme_type")
+    .select("title, location, event_date, programme_type, cancelled_at")
     .eq("id", booking.event_id).maybeSingle();
 
   const { data: ticketRow } = await admin
@@ -98,8 +98,9 @@ Deno.serve(async (req) => {
 
   const { data: sessions } = await admin
     .from("event_sessions")
-    .select("session_date, start_time, end_time, venue")
+    .select("session_date, start_time, end_time, venue, moved_from_date")
     .eq("event_id", booking.event_id)
+    .is("cancelled_at", null)
     .gte("session_date", new Date().toISOString().slice(0, 10))
     .order("session_date")
     .limit(6);

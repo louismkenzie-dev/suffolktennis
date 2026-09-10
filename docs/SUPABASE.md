@@ -315,7 +315,8 @@ Stripe subscriptions committed to `programme_months` payments), `tickets`
 Edge functions (all deployed): `get-invitation`, `create-booking-checkout`,
 `booking-payments-webhook`, `get-booking-status`, `send-booking-invitations`
 (admin), `scan-ticket` (admin), `refund-booking` (admin), `coach-session`
-(staff; also `notify_report`).
+(staff; also `notify_report`), `cancel-session` (admin), `register-alerts`
+(cron, guard token).
 
 **Refunds (10 Sep 2026)**: `refund-booking` issues the refund on the connected
 account with `refund_application_fee: true`, so our 2.5% goes back to Suffolk
@@ -422,6 +423,42 @@ roster row. Children with no roster row ("Registered, not on database") can
 be added and linked in one click. 11 children were auto-linked on 10 Sep by
 parent email + name (Freddie and Noah Sutton among them); Ollie couldn't find
 Freddie because there was no roster page at all, only the invite picker.
+
+### Additions from the dance-platform handover (10 Sep 2026)
+
+Purely additive; nothing existing was removed
+(`20260910150000_session_changes_and_register_alerts.sql`).
+
+- **Duplicate-booking guard** — `create-booking-checkout` returns 409
+  `already_booked` when the child already has a paid place on the event,
+  before any Stripe object is created. Cancelled events return 410.
+- **Session cancel / move, event cancel** — `cancel-session` (admin).
+  A cancelled session keeps its row (`cancelled_at`, `cancel_reason`) so
+  reports and scans stay attached; a moved session keeps `moved_from_date` /
+  `moved_from_start`. `events.cancelled_at` cancels a whole one-off event.
+  Every parent with a paid place is emailed once per change (idempotent on
+  the change timestamp). **No money moves** — refunds stay on the per-booking
+  Refund button, and the admin dialog says so. Cancelled sessions drop out of
+  the Coach Hub, the ticket page's upcoming list and the register watcher;
+  parents see them struck through with a reason on the booking page.
+  Admin controls are on the session chips in the Bookings tab (move / cancel
+  / delete-silently) plus a "Cancel event" button.
+- **Register watcher** — `register-alerts`, guard-token protected, run by
+  `pg_cron` job `register-alerts` every 10 minutes via `pg_net`. A session
+  that started 15–75 minutes ago (Europe/London) with paid players and no
+  admitted scans gets one email to `ADMIN_NOTIFY_EMAIL`. The claim table
+  `register_alerts (session_id, kind)` is written BEFORE the send and deleted
+  on failure, so a retry can't double-send and a success can't repeat.
+- **Report-notification claim** — `session_reports.notified_at` is stamped by
+  `coach-session notify_report` before the email (matching only unstamped
+  rows) and cleared if Resend fails.
+- **12-hour times** on parent-facing screens via `src/lib/timeFormat.ts`
+  ("1.30–3.30pm"); 24-hour stays everywhere values are stored or compared.
+- **Add-to-calendar** (Google / Outlook links) per upcoming session on the
+  ticket page.
+- **Mobile foundation** in `src/index.css`: `overflow-x: clip`, 16px inputs
+  on phones, `touch-action: manipulation`, and `.max-h-dialog` / `.h-dialog`
+  (dvh with vh fallback) on every tall dialog.
 
 ### Player roster (added 21 Aug 2026)
 

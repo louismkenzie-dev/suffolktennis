@@ -49,10 +49,12 @@ Deno.serve(async (req) => {
       admin.from("events")
         .select("id, title, event_date, location, programme_type")
         .in("id", eventIds)
+        .is("cancelled_at", null)
         .order("event_date", { ascending: false, nullsFirst: false }),
       admin.from("event_sessions")
         .select("id, event_id, session_date, start_time, end_time, venue")
         .in("event_id", eventIds)
+        .is("cancelled_at", null)
         .order("session_date"),
     ]);
 
@@ -112,6 +114,17 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!report) return json({ error: "Report not found" }, 404);
 
+    // Claim the notification before sending: the update only matches an
+    // unstamped row, so two calls for the same report can't both send.
+    const { data: claimed } = await admin
+      .from("session_reports")
+      .update({ notified_at: new Date().toISOString() })
+      .eq("id", report.id)
+      .is("notified_at", null)
+      .select("id")
+      .maybeSingle();
+    if (!claimed) return json({ ok: true, already_notified: true });
+
     const { data: booking } = await admin
       .from("bookings")
       .select("parent_email, parent_name")
@@ -155,6 +168,8 @@ Deno.serve(async (req) => {
         }),
       }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
     } catch (e) {
+      // Release the claim so a retry can send.
+      await admin.from("session_reports").update({ notified_at: null }).eq("id", report.id);
       return json({ ok: false, error: e instanceof Error ? e.message : String(e) });
     }
     return json({ ok: true });

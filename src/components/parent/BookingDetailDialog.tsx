@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatTimeRange } from "@/lib/timeFormat";
 import { Link } from "react-router-dom";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -24,7 +25,7 @@ export type MembershipDetail = {
   months_paid: number; months_total: number; status: string;
 } | null;
 
-type Session = { id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null };
+type Session = { id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null };
 type CoachReport = {
   id: string; session_id: string | null; coach_name: string | null;
   stats: Record<string, number>; comment: string | null; created_at: string;
@@ -84,7 +85,7 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
   useEffect(() => {
     if (!open || !event) { setSessions([]); setReports([]); return; }
     db.from("event_sessions")
-      .select("id, session_date, start_time, end_time, venue")
+      .select("id, session_date, start_time, end_time, venue, cancelled_at, moved_from_date")
       .eq("event_id", event.id)
       .order("session_date")
       .then(({ data }: { data: Session[] | null }) => setSessions(data ?? []));
@@ -217,7 +218,8 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
                     <li key={s.id} className={`flex justify-between gap-3 rounded px-2 py-1 ${past ? "text-muted-foreground/60" : "bg-muted/40"}`}>
                       <span>
                         {new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                        {s.start_time ? ` · ${s.start_time.slice(0, 5)}${s.end_time ? `–${s.end_time.slice(0, 5)}` : ""}` : ""}
+                        {s.start_time ? ` · ${formatTimeRange(s.start_time, s.end_time)}` : ""}
+                        {s.cancelled_at ? <span className="ml-1 text-red-600 font-medium">cancelled</span> : s.moved_from_date ? <span className="ml-1 text-amber-600">moved from {new Date(s.moved_from_date + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span> : null}
                       </span>
                       <span className="text-muted-foreground truncate">{s.venue ?? ""}</span>
                     </li>

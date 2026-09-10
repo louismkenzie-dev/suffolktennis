@@ -4,12 +4,27 @@ import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import logo from "@/assets/suffolk-tennis-logo-v7.png";
+import { calendarLinks, formatTimeRange } from "@/lib/timeFormat";
 
 type TicketData = {
   booking: { status: string; child_name: string; parent_name: string; session_slot: string | null };
-  event: { title: string; location: string | null; event_date: string | null } | null;
-  upcoming_sessions: Array<{ session_date: string; start_time: string | null; venue: string | null }>;
+  event: { title: string; location: string | null; event_date: string | null; cancelled_at?: string | null } | null;
+  upcoming_sessions: Array<{ session_date: string; start_time: string | null; end_time: string | null; venue: string | null; moved_from_date?: string | null }>;
   ticket: { qr_token: string; status: string } | null;
+};
+
+/** "Add to calendar" for one session — Google and Outlook web links. */
+const CalLinks = ({ title, date, start, end, location, details }: {
+  title: string; date: string; start: string | null; end: string | null; location: string | null; details: string;
+}) => {
+  const c = calendarLinks({ title, date, start, end, location, details });
+  return (
+    <span className="ml-2 text-[11px] text-primary-foreground/50 whitespace-nowrap">
+      <a href={c.google} target="_blank" rel="noreferrer" className="underline hover:text-lta-cyan">Google</a>
+      {" · "}
+      <a href={c.outlook} target="_blank" rel="noreferrer" className="underline hover:text-lta-cyan">Outlook</a>
+    </span>
+  );
 };
 
 const TicketPage = () => {
@@ -81,13 +96,25 @@ const TicketPage = () => {
                   <span>{new Date(data.event.event_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
                 </div>
               )}
+              {data.event?.cancelled_at && (
+                <div className="rounded-lg border border-red-400/40 bg-red-500/10 text-red-200 p-3">
+                  This event has been cancelled — Suffolk Tennis will be in touch.
+                </div>
+              )}
               {data.upcoming_sessions.length > 0 && (
                 <div className="pt-2 border-t border-white/10">
                   <div className="text-primary-foreground/60 mb-1">Upcoming sessions</div>
                   {data.upcoming_sessions.map((s, i) => (
                     <div key={i} className="text-primary-foreground/85">
                       {new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                      {s.start_time ? ` · ${s.start_time.slice(0, 5)}` : ""}{s.venue ? ` · ${s.venue}` : ""}
+                      {s.start_time ? ` · ${formatTimeRange(s.start_time, s.end_time)}` : ""}{s.venue ? ` · ${s.venue}` : ""}
+                      {s.moved_from_date ? <span className="text-[11px] text-lta-yellow ml-1">(moved)</span> : null}
+                      <CalLinks
+                        title={data.event?.title ?? "Suffolk Tennis"}
+                        date={s.session_date} start={s.start_time} end={s.end_time}
+                        location={s.venue ?? data.event?.location ?? null}
+                        details={`${data.booking.child_name} — Suffolk Tennis. Entry ticket: ${window.location.href}`}
+                      />
                     </div>
                   ))}
                 </div>

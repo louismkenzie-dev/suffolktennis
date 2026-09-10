@@ -16,7 +16,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload, Undo2 } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock } from "lucide-react";
+import { formatTime } from "@/lib/timeFormat";
 
 const db = supabase as any;
 
@@ -24,7 +25,7 @@ type EventRow = {
   id: string; title: string; description: string | null; event_date: string | null;
   location: string | null; capacity: number | null; visibility: string;
   programme_type: string; price_pence: number | null; is_free: boolean;
-  meeting_cadence: string | null; sign_up_enabled: boolean;
+  meeting_cadence: string | null; sign_up_enabled: boolean; cancelled_at?: string | null;
 };
 type Invitation = {
   id: string; child_name: string | null; parent_email: string; parent_name: string | null;
@@ -74,7 +75,14 @@ const BookingsPanel = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [refundTarget, setRefundTarget] = useState<Booking | null>(null);
   const [refunding, setRefunding] = useState(false);
-  const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; venue: string | null }>>([]);
+  const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; end_time?: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>>([]);
+  // Cancel / move a session, or cancel a whole event — parents are emailed.
+  const [sessionChange, setSessionChange] = useState<{ mode: "cancel_session" | "reschedule_session" | "cancel_event"; session?: { id: string; session_date: string; start_time: string | null; venue: string | null } } | null>(null);
+  const [changeReason, setChangeReason] = useState("");
+  const [changeDate, setChangeDate] = useState("");
+  const [changeTime, setChangeTime] = useState("");
+  const [changeVenue, setChangeVenue] = useState("");
+  const [changing, setChanging] = useState(false);
   const [pastDue, setPastDue] = useState<Array<{ id: string; child_name: string; parent_email: string; event_id: string }>>([]);
   const [loading, setLoading] = useState(true);
 
@@ -138,7 +146,7 @@ const BookingsPanel = () => {
     const [{ data: invs }, { data: bks }, { data: sess }] = await Promise.all([
       db.from("booking_invitations").select("id, child_name, parent_email, parent_name, status, sent_at, reminded_at").eq("event_id", ev.id).order("created_at"),
       db.from("bookings").select("id, child_name, parent_name, parent_email, status, amount_pence, session_slot, paid_at, membership_id").eq("event_id", ev.id).order("created_at", { ascending: false }),
-      db.from("event_sessions").select("id, session_date, start_time, venue").eq("event_id", ev.id).order("session_date"),
+      db.from("event_sessions").select("id, session_date, start_time, end_time, venue, cancelled_at, moved_from_date").eq("event_id", ev.id).order("session_date"),
     ]);
     setInvitations(invs ?? []);
     setBookings(bks ?? []);
@@ -488,6 +496,31 @@ const BookingsPanel = () => {
     loadPlayers();
   };
 
+  const submitSessionChange = async () => {
+    if (!sessionChange || !selected) return;
+    setChanging(true);
+    const { data, error } = await supabase.functions.invoke("cancel-session", {
+      body: {
+        action: sessionChange.mode,
+        session_id: sessionChange.session?.id,
+        event_id: selected.id,
+        reason: changeReason.trim(),
+        ...(sessionChange.mode === "reschedule_session" && {
+          new_date: changeDate,
+          new_start: changeTime || undefined,
+          new_venue: changeVenue.trim() || undefined,
+        }),
+      },
+    });
+    setChanging(false);
+    if (error || data?.error) { toast.error(data?.error ?? "Could not make the change"); return; }
+    toast.success(`Done — ${data.notified}/${data.total} parent${data.total === 1 ? "" : "s"} emailed`);
+    setSessionChange(null);
+    if (sessionChange.mode === "cancel_event") setSelected({ ...selected, cancelled_at: new Date().toISOString() });
+    openEvent(selected);
+    loadEvents();
+  };
+
   const statusBadge = (s: string) => {
     const map: Record<string, string> = {
       invited: "bg-muted text-muted-foreground", opened: "bg-blue-100 text-blue-800",
@@ -567,6 +600,13 @@ const BookingsPanel = () => {
             <CardTitle>{selected.title}</CardTitle>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => editEvent(selected)}><Pencil className="w-4 h-4 mr-1" /> Edit</Button>
+              {selected.cancelled_at ? (
+                <Badge variant="outline" className="text-red-600 border-red-300">Cancelled</Badge>
+              ) : (
+                <Button variant="outline" size="sm" className="text-red-600" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_event" }); }}>
+                  <Ban className="w-4 h-4 mr-1" /> Cancel event
+                </Button>
+              )}
               <Button size="sm" onClick={() => { loadPlayers(); setInviteOpen(true); }}><Send className="w-4 h-4 mr-1" /> Invite players</Button>
             </div>
           </CardHeader>
@@ -576,10 +616,24 @@ const BookingsPanel = () => {
                 <h3 className="font-semibold text-sm mb-2 flex items-center gap-1"><CalendarPlus className="w-4 h-4" /> Programme session dates</h3>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {sessions.map((s) => (
-                    <Badge key={s.id} variant="secondary" className="gap-1">
+                    <Badge key={s.id} variant={s.cancelled_at ? "outline" : "secondary"} className={`gap-1 ${s.cancelled_at ? "line-through text-muted-foreground" : ""}`}>
                       {new Date(s.session_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      {s.start_time ? ` ${s.start_time.slice(0, 5)}` : ""}{s.venue ? ` · ${s.venue}` : ""}
-                      <button onClick={async () => { await db.from("event_sessions").delete().eq("id", s.id); openEvent(selected); }}>
+                      {s.start_time ? ` ${formatTime(s.start_time)}` : ""}{s.venue ? ` · ${s.venue}` : ""}
+                      {s.moved_from_date && !s.cancelled_at ? <span className="text-[10px] text-amber-700">moved</span> : null}
+                      {!s.cancelled_at && (
+                        <>
+                          <button title="Move this session (parents are emailed)" onClick={() => {
+                            setChangeReason(""); setChangeDate(s.session_date); setChangeTime(s.start_time?.slice(0, 5) ?? ""); setChangeVenue(s.venue ?? "");
+                            setSessionChange({ mode: "reschedule_session", session: s });
+                          }}>
+                            <CalendarClock className="w-3 h-3" />
+                          </button>
+                          <button title="Cancel this session (parents are emailed)" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_session", session: s }); }}>
+                            <Ban className="w-3 h-3 text-amber-600" />
+                          </button>
+                        </>
+                      )}
+                      <button title="Delete without telling anyone" onClick={async () => { await db.from("event_sessions").delete().eq("id", s.id); openEvent(selected); }}>
                         <Trash2 className="w-3 h-3 text-red-500" />
                       </button>
                     </Badge>
@@ -972,6 +1026,57 @@ const BookingsPanel = () => {
             <Button onClick={saveEvent} disabled={savingEvent}>
               {savingEvent ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               {form.id ? "Save changes" : "Create event"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel or move a session / cancel an event. Every parent with a paid
+          place is emailed; money never moves from here — refunds stay on the
+          per-booking button. */}
+      <Dialog open={!!sessionChange} onOpenChange={(o) => !o && setSessionChange(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {sessionChange?.mode === "cancel_event"
+                ? `Cancel ${selected?.title}?`
+                : sessionChange?.mode === "reschedule_session" ? "Move this session" : "Cancel this session?"}
+            </DialogTitle>
+          </DialogHeader>
+          {sessionChange?.session && (
+            <p className="text-sm text-muted-foreground">
+              {new Date(sessionChange.session.session_date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
+              {sessionChange.session.start_time ? `, ${formatTime(sessionChange.session.start_time)}` : ""}
+              {sessionChange.session.venue ? ` · ${sessionChange.session.venue}` : ""}
+            </p>
+          )}
+          {sessionChange?.mode === "reschedule_session" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>New date</Label><Input type="date" value={changeDate} onChange={(e) => setChangeDate(e.target.value)} /></div>
+              <div><Label>Start time</Label><Input type="time" value={changeTime} onChange={(e) => setChangeTime(e.target.value)} /></div>
+              <div className="col-span-2"><Label>Venue</Label><Input value={changeVenue} onChange={(e) => setChangeVenue(e.target.value)} /></div>
+            </div>
+          )}
+          <div>
+            <Label>Reason (goes in the email)</Label>
+            <Textarea rows={2} value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="e.g. courts waterlogged" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Every parent with a paid place on {selected?.title} is emailed once.
+            {sessionChange?.mode === "cancel_event" && selected?.price_pence && !selected?.is_free
+              ? " Nothing is refunded automatically — use the Refund button on each booking."
+              : ""}
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSessionChange(null)}>Back</Button>
+            <Button
+              onClick={submitSessionChange}
+              disabled={changing || (sessionChange?.mode === "reschedule_session" && !changeDate)}
+              variant={sessionChange?.mode === "reschedule_session" ? "default" : "destructive"}
+            >
+              {changing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {sessionChange?.mode === "reschedule_session" ? "Move & email parents"
+                : sessionChange?.mode === "cancel_event" ? "Cancel event & email parents" : "Cancel session & email parents"}
             </Button>
           </DialogFooter>
         </DialogContent>
