@@ -13,6 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
+
+const db = supabase as any;
   Loader2, Plus, Trash2, Send, Eye, Image as ImageIcon, Type, Heading1,
   List as ListIcon, MousePointerClick, Square, ArrowUp, ArrowDown, Users,
   Mail, UserMinus, UserPlus, Upload, Save, RefreshCcw,
@@ -595,6 +597,10 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
   const [members, setMembers] = useState<Array<{ email: string; unsubscribed: boolean }>>([]);
   const [all, setAll] = useState<Recipient[]>([]);
   const [coaches, setCoaches] = useState<Map<string, CoachContact>>(new Map());
+  // Player names straight from the roster, keyed by parent email. The
+  // recipients list is capped at 500 and there are 700+ addresses, so names
+  // for anyone past the cut were missing and members showed as bare emails.
+  const [rosterNames, setRosterNames] = useState<Map<string, string>>(new Map());
   const [search, setSearch] = useState("");
   const [bulk, setBulk] = useState("");
   const [loading, setLoading] = useState(true);
@@ -603,11 +609,20 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, r, c] = await Promise.all([
+      const [m, r, c, { data: roster }] = await Promise.all([
         api<{ members: Array<{ email: string; unsubscribed: boolean }> }>({ action: "group_members", group_id: group.id }),
         api<{ recipients: Recipient[] }>({ action: "recipients" }),
         loadCoachContacts(),
+        db.from("player_roster").select("contact_email, first_name, last_name, age_group"),
       ]);
+      const names = new Map<string, string[]>();
+      for (const row of (roster ?? []) as Array<{ contact_email: string | null; first_name: string; last_name: string; age_group: string | null }>) {
+        const e = (row.contact_email ?? "").trim().toLowerCase();
+        if (!e) continue;
+        const label = `${row.first_name} ${row.last_name}`.trim() + (row.age_group ? ` (${row.age_group})` : "");
+        names.set(e, [...(names.get(e) ?? []), label]);
+      }
+      setRosterNames(new Map([...names].map(([e, list]) => [e, list.join(", ")])));
       setMembers(m.members); setAll(r.recipients); setCoaches(c);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load"); }
     finally { setLoading(false); }
@@ -645,10 +660,10 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
 
   /** Names for the "in this group" list, so members are not bare addresses. */
   const nameFor = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const r of people) if (r.players.length) m.set(r.email, r.players.join(", "));
+    const m = new Map<string, string>(rosterNames);
+    for (const r of people) if (r.players.length && !m.has(r.email)) m.set(r.email, r.players.join(", "));
     return m;
-  }, [people]);
+  }, [people, rosterNames]);
 
   /**
    * Pull addresses out of anything pasted in — a comma-separated list, one per
