@@ -373,8 +373,12 @@ publishable key is still empty, so live mode fails closed until it is filled in.
 (acacia-pinned, connect). Its `whsec_…` signing secret was handed to Louis to
 paste as `PAYMENTS_SANDBOX_WEBHOOK_SECRET`. Sandbox connected account:
 `acct_1TnJ2NE0aLUyRazc` ("Test account", fully onboarded, charges enabled —
-replaced `acct_1U6qXsE0aLYAntjY`, which never completed onboarding). The
-live endpoint still needs creating when live keys arrive. A temporary `stripe-bootstrap` edge function (guard-token
+replaced `acct_1U6qXsE0aLYAntjY`, which never completed onboarding). **Live endpoint created 10 Sep 2026**: `we_1UE9jS2QyV8RYLwsxENhbH4Q`
+(acacia-pinned, connect, four events) → `?env=live`; its signing secret is
+`PAYMENTS_LIVE_WEBHOOK_SECRET`. Live connected account `acct_1UE6iZE7yIm0GTnR`
+("Suffolk Tennis", Standard) verified charges- and payouts-enabled with card
+payments and transfers active. The live publishable key is in
+`src/lib/stripe.ts`. A temporary `stripe-bootstrap` edge function (guard-token
 protected form-encoding relay for pg_net → Stripe API calls) is deployed for
 sandbox setup — **delete it once testing is done**.
 

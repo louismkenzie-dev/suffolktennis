@@ -20,10 +20,10 @@ const SANDBOX_PUBLISHABLE_KEY =
   "pk_test_51TgWSaE0aLvInrlqDFLIKrIu5yfVvKINObl3FYzft8FrIWuotaDqMe05whnwLBt33krOYin0PlcK230U0vuhDbqa00gd2rgcIs";
 const SANDBOX_CONNECTED_ACCOUNT = "acct_1TnJ2NE0aLUyRazc";
 
-// Live pair — Suffolk Tennis's live connected account under the Nullshift
-// platform. The publishable key is still blank, so live mode fails closed
-// rather than falling back to test until it is filled in.
-const LIVE_PUBLISHABLE_KEY = "";
+// Live pair — Nullshift platform live publishable key + Suffolk Tennis's
+// live connected account. Both are public by design (they ship in the bundle).
+const LIVE_PUBLISHABLE_KEY =
+  "pk_live_51TgWSQ2QyV8RYLws3fjJsrrvkzTj5PFbPMNEFld1akVXNaHhdYGLjNpD6rjSuzW6sDsVsCJpHclRjDOsWwidj7ra00r1z9If5P";
 const LIVE_CONNECTED_ACCOUNT = "acct_1UE6iZE7yIm0GTnR";
 
 const stripeByEnv = new Map<PaymentsEnvironment, Promise<Stripe | null>>();
