@@ -43,7 +43,7 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         // Base (phone): bottom sheet
-        "app-shell fixed inset-x-0 bottom-0 z-50 grid w-full grid-cols-[minmax(0,1fr)] max-h-[92dvh] gap-4 overflow-y-auto overscroll-contain rounded-t-[1.25rem] border border-border bg-card px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-7 text-card-foreground shadow-elevated duration-200",
+        "app-shell fixed inset-x-0 bottom-0 z-50 grid w-full max-w-[100vw] grid-cols-[minmax(0,1fr)] max-h-[92dvh] gap-4 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y rounded-t-[1.25rem] border border-border bg-card px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-7 text-card-foreground shadow-elevated duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-full data-[state=closed]:slide-out-to-bottom-full",
         // md+: centred modal
         "md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:max-h-[90vh] md:max-w-lg md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:p-6",

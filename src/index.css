@@ -143,6 +143,30 @@
       font-size: 16px !important;
     }
   }
+  /* iOS gives date/time inputs an intrinsic width that ignores width:100%,
+     which makes a form wider than its sheet and lets Safari pan the whole
+     layout sideways when one is focused. Force them to behave like text
+     inputs. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.5em;
+  }
+  /* Nothing in a form may be wider than its container. */
+  input, select, textarea, button[role="combobox"] {
+    max-width: 100%;
+    min-width: 0;
+  }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     font-weight: 600;
