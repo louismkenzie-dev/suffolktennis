@@ -27,6 +27,7 @@ type UpcomingSession = {
   id: string; event_id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null; moved_from_date?: string | null;
 };
 
+const cadenceLabel = (c: string | null | undefined) => (c ? c[0]!.toUpperCase() + c.slice(1) : "Weekly");
 const gbp = (p: number) => `£${(p / 100).toFixed(p % 100 === 0 ? 0 : 2)}`;
 const longDate = (iso: string) => new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
@@ -62,7 +63,7 @@ const InvitationCard = ({ inv, ev }: { inv: Invitation; ev: EventInfo | undefine
             <p className="flex items-center gap-2"><Calendar className="h-4 w-4 shrink-0 text-muted-foreground/70" />{longDate(ev.event_date)}</p>
           )}
           {isProgramme && (
-            <p className="flex items-center gap-2"><Calendar className="h-4 w-4 shrink-0 text-muted-foreground/70" />{ev?.meeting_cadence === "monthly" ? "Monthly" : "Weekly"} programme · every session included</p>
+            <p className="flex items-center gap-2"><Calendar className="h-4 w-4 shrink-0 text-muted-foreground/70" />{cadenceLabel(ev?.meeting_cadence)} programme · every session included</p>
           )}
           {ev?.location && (
             <p className="flex items-center gap-2"><MapPin className="h-4 w-4 shrink-0 text-muted-foreground/70" />{ev.location}</p>

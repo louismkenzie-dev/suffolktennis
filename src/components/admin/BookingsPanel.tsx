@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -15,11 +15,12 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket } from "lucide-react";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
-  SearchField, Chip, ChipRow, InlineNote, useIsPhone,
+  SearchField, Chip, ChipRow, InlineNote, SegmentedControl, useIsPhone,
 } from "@/components/app";
+type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
 
 const db = supabase as any;
@@ -115,10 +116,17 @@ const BookingsPanel = () => {
   const [form, setForm] = useState({ ...emptyForm });
   const [savingEvent, setSavingEvent] = useState(false);
 
-  // Session add
-  const [newSessionDate, setNewSessionDate] = useState("");
-  const [newSessionTime, setNewSessionTime] = useState("");
-  const [newSessionVenue, setNewSessionVenue] = useState("");
+  // Add sessions: one date, or a run generated from a start date and cadence.
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [genMode, setGenMode] = useState<"single" | "repeat">("repeat");
+  const [genCadence, setGenCadence] = useState<Cadence>("weekly");
+  const [genStart, setGenStart] = useState("");
+  const [genTime, setGenTime] = useState("");
+  const [genEndTime, setGenEndTime] = useState("");
+  const [genVenue, setGenVenue] = useState("");
+  const [genCount, setGenCount] = useState("12");
+  const [genPreview, setGenPreview] = useState<string[]>([]);
+  const [addingSessions, setAddingSessions] = useState(false);
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -292,16 +300,59 @@ const BookingsPanel = () => {
     loadEvents();
   };
 
-  const addSession = async () => {
-    if (!selected || !newSessionDate) return;
-    const { error } = await db.from("event_sessions").insert({
+  const openAddSessions = () => {
+    if (!selected) return;
+    setGenMode("repeat");
+    setGenCadence(((selected.meeting_cadence as Cadence | null) ?? "weekly"));
+    setGenStart("");
+    setGenTime(sessions.find((x) => x.start_time)?.start_time?.slice(0, 5) ?? "");
+    setGenEndTime(sessions.find((x) => x.end_time)?.end_time?.slice(0, 5) ?? "");
+    setGenVenue(sessions.find((x) => x.venue)?.venue ?? selected.location ?? "");
+    setGenCount(selected.meeting_cadence === "weekly" || !selected.meeting_cadence ? "12" : "6");
+    setGenPreview([]);
+    setSessionsOpen(true);
+  };
+
+  /** Dates from the start date at the chosen cadence: +7 days, +14 days, or
+   *  the same day of the following month (clamped to the month's length). */
+  const generateDates = () => {
+    if (!genStart) { toast.error("Choose the start date first"); return; }
+    const n = Math.max(1, Math.min(52, Number(genCount) || 1));
+    const start = new Date(genStart + "T12:00:00");
+    const dates: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const d = new Date(start);
+      if (genCadence === "monthly") {
+        const dayOfMonth = start.getDate();
+        d.setDate(1);
+        d.setMonth(start.getMonth() + i);
+        const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(dayOfMonth, last));
+      } else {
+        d.setDate(start.getDate() + i * (genCadence === "fortnightly" ? 14 : 7));
+      }
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    setGenPreview(dates);
+  };
+
+  const addSessions = async () => {
+    if (!selected) return;
+    const dates = genMode === "single" ? (genStart ? [genStart] : []) : genPreview;
+    if (dates.length === 0) { toast.error(genMode === "single" ? "Choose a date" : "Generate the dates first"); return; }
+    setAddingSessions(true);
+    const rows = dates.map((session_date) => ({
       event_id: selected.id,
-      session_date: newSessionDate,
-      start_time: newSessionTime || null,
-      venue: newSessionVenue.trim() || null,
-    });
+      session_date,
+      start_time: genTime || null,
+      end_time: genEndTime || null,
+      venue: genVenue.trim() || null,
+    }));
+    const { error } = await db.from("event_sessions").insert(rows);
+    setAddingSessions(false);
     if (error) { toast.error(error.message); return; }
-    setNewSessionDate(""); setNewSessionTime(""); setNewSessionVenue("");
+    toast.success(dates.length === 1 ? "Session added" : `${dates.length} sessions added`);
+    setSessionsOpen(false);
     openEvent(selected);
   };
 
@@ -409,6 +460,12 @@ const BookingsPanel = () => {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not add the player");
     } finally { setSavingPlayer(false); }
+  };
+
+  /** New programme (fee preset to £250) or new event (no preset price). */
+  const startNew = (type: "programme" | "event") => {
+    setForm({ ...emptyForm, programme_type: type, price: type === "programme" ? "250" : "", meeting_cadence: "weekly" });
+    setFormOpen(true);
   };
 
   const editEvent = (ev: EventRow) => {
@@ -570,12 +627,24 @@ const BookingsPanel = () => {
                   <Button variant="outline" size="sm" onClick={() => setAddPlayerOpen(true)}><Plus className="w-4 h-4" /> Add player</Button>
                 </div>
                 <Button variant="outline" size="icon" className="md:hidden" aria-label="More actions" onClick={() => setActionsOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
-                <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4" /> New event</Button>
                 <input id="roster-csv-input" type="file" accept=".csv,text/csv" className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) importRosterCsv(f); e.target.value = ""; }} />
               </>
             }
           />
+
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => startNew("programme")} className="press rounded-2xl border border-border bg-card p-4 text-left shadow-card transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Repeat className="h-5 w-5" strokeWidth={1.8} /></div>
+              <p className="text-[15px] font-semibold leading-tight">New programme</p>
+              <p className="mt-1 text-[13px] leading-snug text-muted-foreground">A season squad, one payment for every session.</p>
+            </button>
+            <button type="button" onClick={() => startNew("event")} className="press rounded-2xl border border-border bg-card p-4 text-left shadow-card transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><CalendarDays className="h-5 w-5" strokeWidth={1.8} /></div>
+              <p className="text-[15px] font-semibold leading-tight">New event</p>
+              <p className="mt-1 text-[13px] leading-snug text-muted-foreground">A session, camp or open day, priced or free.</p>
+            </button>
+          </div>
 
           {pastDue.length > 0 && (
             <InlineNote tone="danger" icon={AlertTriangle}>
@@ -587,7 +656,7 @@ const BookingsPanel = () => {
           )}
 
           {events.length === 0 ? (
-            <EmptyState icon={Ticket} title="No events yet" description="Create an event or programme, then invite players to it." action={<Button onClick={() => { setForm({ ...emptyForm }); setFormOpen(true); }}><Plus className="w-4 h-4" /> New event</Button>} />
+            <EmptyState icon={Ticket} title="No events yet" description="Create a programme or an event above, then invite players to it." />
           ) : (
             <>
               <ListGroup className="md:hidden">
@@ -674,61 +743,41 @@ const BookingsPanel = () => {
             </div>
 
             <div className={phone ? "mt-6 space-y-6" : "mt-6 space-y-6"}>
-              {isProgramme && (
-                <Section title="Session dates" count={sessions.filter((x) => !x.cancelled_at).length} description="Parents are emailed when a session is moved or cancelled.">
-                  {sessions.length === 0 ? (
-                    <EmptyState icon={CalendarPlus} title="No dates yet" description="Add the first date, or generate a 12-week term." compact />
-                  ) : (
-                    <ListGroup>
-                      {sessions.map((x) => (
-                        <ListRow
-                          key={x.id}
-                          size="sm"
-                          title={<span className={x.cancelled_at ? "line-through text-muted-foreground" : undefined}>{fmtDate(x.session_date)}{x.start_time ? ` · ${formatTime(x.start_time)}` : ""}</span>}
-                          subtitle={[x.venue, x.cancelled_at ? "Cancelled" : x.moved_from_date ? `Moved from ${fmtDate(x.moved_from_date)}` : null].filter(Boolean).join(" · ") || undefined}
-                          trailing={
-                            <span className="flex items-center">
-                              {!x.cancelled_at && (
-                                <>
-                                  <Button size="icon-sm" variant="ghost" aria-label="Move this session" title="Move (parents are emailed)" onClick={() => {
-                                    setChangeReason(""); setChangeDate(x.session_date); setChangeTime(x.start_time?.slice(0, 5) ?? ""); setChangeVenue(x.venue ?? "");
-                                    setSessionChange({ mode: "reschedule_session", session: x });
-                                  }}><CalendarClock className="w-4 h-4" /></Button>
-                                  <Button size="icon-sm" variant="ghost" aria-label="Cancel this session" title="Cancel (parents are emailed)" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_session", session: x }); }}><Ban className="w-4 h-4 text-amber-600" /></Button>
-                                </>
-                              )}
-                              <Button size="icon-sm" variant="ghost" aria-label="Delete without telling anyone" title="Delete without telling anyone" onClick={async () => { await db.from("event_sessions").delete().eq("id", x.id); openEvent(selected); }}><Trash2 className="w-4 h-4 text-muted-foreground" /></Button>
-                            </span>
-                          }
-                        />
-                      ))}
-                    </ListGroup>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-[auto_auto_1fr_auto_auto]">
-                    <Input type="date" aria-label="Session date" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} />
-                    <Input type="time" aria-label="Start time" value={newSessionTime} onChange={(e) => setNewSessionTime(e.target.value)} />
-                    <Input placeholder="Venue" className="col-span-2 sm:col-span-1" value={newSessionVenue} onChange={(e) => setNewSessionVenue(e.target.value)} />
-                    <Button variant="outline" onClick={addSession} disabled={!newSessionDate}>Add date</Button>
-                    <Button variant="outline" onClick={async () => {
-                      // A 12-week term in one click: weekly sessions from the chosen start date.
-                      if (!selected || !newSessionDate) { toast.error("Pick the first session's date"); return; }
-                      const start = new Date(newSessionDate + "T00:00:00");
-                      const rows = Array.from({ length: 12 }, (_, w) => {
-                        const d = new Date(start); d.setDate(d.getDate() + w * 7);
-                        return {
-                          event_id: selected.id,
-                          session_date: d.toISOString().slice(0, 10),
-                          start_time: newSessionTime || null,
-                          venue: newSessionVenue.trim() || null,
-                        };
-                      });
-                      const { error } = await db.from("event_sessions").insert(rows);
-                      if (error) toast.error(error.message);
-                      else { toast.success("12 weekly sessions added"); setNewSessionDate(""); openEvent(selected); }
-                    }} disabled={!newSessionDate}>Weekly ×12</Button>
-                  </div>
-                </Section>
-              )}
+              <Section
+                title="Session dates"
+                count={sessions.filter((x) => !x.cancelled_at).length}
+                description={isProgramme ? "Every date is included in the programme fee. Parents are emailed when a session is moved or cancelled." : "Optional — add dates if this event runs over more than one day."}
+                action={<Button size="sm" variant={sessions.length === 0 ? "default" : "outline"} onClick={openAddSessions} disabled={!!selected.cancelled_at}><CalendarPlus className="w-4 h-4" /> Add sessions</Button>}
+              >
+                {sessions.length === 0 ? (
+                  <EmptyState icon={CalendarPlus} title="No dates yet" description="Add a single date, or generate a run of weekly, fortnightly or monthly sessions from a start date." compact />
+                ) : (
+                  <ListGroup>
+                    {sessions.map((x) => (
+                      <ListRow
+                        key={x.id}
+                        size="sm"
+                        title={<span className={x.cancelled_at ? "line-through text-muted-foreground" : undefined}>{fmtDate(x.session_date)}{x.start_time ? ` · ${formatTime(x.start_time)}` : ""}</span>}
+                        subtitle={[x.venue, x.cancelled_at ? "Cancelled" : x.moved_from_date ? `Moved from ${fmtDate(x.moved_from_date)}` : null].filter(Boolean).join(" · ") || undefined}
+                        trailing={
+                          <span className="flex items-center">
+                            {!x.cancelled_at && (
+                              <>
+                                <Button size="icon-sm" variant="ghost" aria-label="Move this session" title="Move (parents are emailed)" onClick={() => {
+                                  setChangeReason(""); setChangeDate(x.session_date); setChangeTime(x.start_time?.slice(0, 5) ?? ""); setChangeVenue(x.venue ?? "");
+                                  setSessionChange({ mode: "reschedule_session", session: x });
+                                }}><CalendarClock className="w-4 h-4" /></Button>
+                                <Button size="icon-sm" variant="ghost" aria-label="Cancel this session" title="Cancel (parents are emailed)" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_session", session: x }); }}><Ban className="w-4 h-4 text-amber-600" /></Button>
+                              </>
+                            )}
+                            <Button size="icon-sm" variant="ghost" aria-label="Delete without telling anyone" title="Delete without telling anyone" onClick={async () => { await db.from("event_sessions").delete().eq("id", x.id); openEvent(selected); }}><Trash2 className="w-4 h-4 text-muted-foreground" /></Button>
+                          </span>
+                        }
+                      />
+                    ))}
+                  </ListGroup>
+                )}
+              </Section>
 
               <Section
                 title="Invitations"
@@ -1144,7 +1193,7 @@ const BookingsPanel = () => {
       {/* Event create/edit dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="md:max-w-lg">
-          <DialogHeader><DialogTitle>{form.id ? "Edit event" : "New event"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{form.id ? (form.programme_type === "programme" ? "Edit programme" : "Edit event") : form.programme_type === "programme" ? "New programme" : "New event"}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div><Label>Description</Label><Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
@@ -1182,6 +1231,7 @@ const BookingsPanel = () => {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="fortnightly">Fortnightly</SelectItem>
                         <SelectItem value="monthly">Monthly</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1218,7 +1268,81 @@ const BookingsPanel = () => {
           <DialogFooter>
             <Button onClick={saveEvent} disabled={savingEvent}>
               {savingEvent ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {form.id ? "Save changes" : "Create event"}
+              {form.id ? "Save changes" : form.programme_type === "programme" ? "Create programme" : "Create event"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add sessions: one date, or generate a run from a start date. */}
+      <Dialog open={sessionsOpen} onOpenChange={setSessionsOpen}>
+        <DialogContent className="md:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add sessions</DialogTitle>
+            <DialogDescription>{selected?.title}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <SegmentedControl
+              value={genMode}
+              onChange={(m) => { setGenMode(m); setGenPreview([]); }}
+              options={[{ value: "repeat", label: "Repeating" }, { value: "single", label: "One date" }]}
+            />
+            {genMode === "repeat" && (
+              <div>
+                <Label>How often</Label>
+                <SegmentedControl
+                  value={genCadence}
+                  onChange={(c) => { setGenCadence(c); setGenPreview([]); }}
+                  options={[{ value: "weekly", label: "Weekly" }, { value: "fortnightly", label: "Fortnightly" }, { value: "monthly", label: "Monthly" }]}
+                  size="sm"
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className={genMode === "repeat" ? "" : "col-span-2"}>
+                <Label>{genMode === "repeat" ? "Start date" : "Date"}</Label>
+                <Input type="date" value={genStart} onChange={(e) => { setGenStart(e.target.value); setGenPreview([]); }} />
+              </div>
+              {genMode === "repeat" && (
+                <div>
+                  <Label>Number of sessions</Label>
+                  <Input type="number" inputMode="numeric" min="1" max="52" value={genCount} onChange={(e) => { setGenCount(e.target.value); setGenPreview([]); }} />
+                </div>
+              )}
+              <div><Label>Start time</Label><Input type="time" value={genTime} onChange={(e) => setGenTime(e.target.value)} /></div>
+              <div><Label>End time</Label><Input type="time" value={genEndTime} onChange={(e) => setGenEndTime(e.target.value)} /></div>
+              <div className="col-span-2"><Label>Venue</Label><Input value={genVenue} onChange={(e) => setGenVenue(e.target.value)} placeholder={selected?.location ?? "Venue"} /></div>
+            </div>
+
+            {genMode === "repeat" && (
+              <>
+                <Button type="button" variant="outline" className="w-full" onClick={generateDates} disabled={!genStart}>
+                  <Repeat className="w-4 h-4" /> Generate individual sessions
+                </Button>
+                {genPreview.length > 0 && (
+                  <div>
+                    <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{genPreview.length} session{genPreview.length === 1 ? "" : "s"} · remove any you don't want</p>
+                    <ListGroup className="max-h-56 overflow-y-auto">
+                      {genPreview.map((d) => (
+                        <ListRow
+                          key={d}
+                          size="sm"
+                          title={new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
+                          subtitle={[genTime ? formatTime(genTime) : null, genVenue.trim() || null].filter(Boolean).join(" · ") || undefined}
+                          trailing={<Button size="icon-sm" variant="ghost" aria-label={`Remove ${d}`} onClick={() => setGenPreview((p) => p.filter((x) => x !== d))}><X className="w-4 h-4" /></Button>}
+                        />
+                      ))}
+                    </ListGroup>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSessionsOpen(false)}>Cancel</Button>
+            <Button onClick={addSessions} disabled={addingSessions || (genMode === "repeat" ? genPreview.length === 0 : !genStart)}>
+              {addingSessions && <Loader2 className="w-4 h-4 animate-spin" />}
+              {genMode === "repeat" ? `Add ${genPreview.length || ""} session${genPreview.length === 1 ? "" : "s"}` : "Add session"}
             </Button>
           </DialogFooter>
         </DialogContent>

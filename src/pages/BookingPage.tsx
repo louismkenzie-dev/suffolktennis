@@ -338,7 +338,7 @@ const BookingPage = () => {
                 )}
                 {isProgramme && (
                   <p className="flex items-center gap-2"><Calendar size={15} className="shrink-0 text-muted-foreground/70" />
-                    {data.event.meeting_cadence === "monthly" ? "Monthly" : "Weekly"} programme · {data.sessions.length} session{data.sessions.length === 1 ? "" : "s"}
+                    {data.event.meeting_cadence ? data.event.meeting_cadence[0]!.toUpperCase() + data.event.meeting_cadence.slice(1) : "Weekly"} programme · {data.sessions.length} session{data.sessions.length === 1 ? "" : "s"}
                   </p>
                 )}
                 {data.event.location && <p className="flex items-center gap-2"><MapPin size={15} className="shrink-0 text-muted-foreground/70" /> {data.event.location}</p>}
