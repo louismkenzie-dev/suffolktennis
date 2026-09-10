@@ -79,7 +79,7 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
 }) => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [reports, setReports] = useState<CoachReport[]>([]);
-  const isProgramme = event?.programme_type === "monthly_programme";
+  const isProgramme = event?.programme_type === "programme";
 
   useEffect(() => {
     if (!open || !event) { setSessions([]); setReports([]); return; }

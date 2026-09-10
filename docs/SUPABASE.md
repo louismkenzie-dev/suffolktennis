@@ -314,7 +314,8 @@ Stripe subscriptions committed to `programme_months` payments), `tickets`
 
 Edge functions (all deployed): `get-invitation`, `create-booking-checkout`,
 `booking-payments-webhook`, `get-booking-status`, `send-booking-invitations`
-(admin), `scan-ticket` (admin), `refund-booking` (admin).
+(admin), `scan-ticket` (admin), `refund-booking` (admin), `coach-session`
+(staff; also `notify_report`).
 
 **Refunds (10 Sep 2026)**: `refund-booking` issues the refund on the connected
 account with `refund_application_fee: true`, so our 2.5% goes back to Suffolk
@@ -380,6 +381,47 @@ Verified without keys: `get-invitation` serves private events by token
 (HTTP 200 end-to-end), and `create-booking-checkout` fails cleanly when
 Stripe is unconfigured (booking rolled back to cancelled — no capacity
 leak). With keys set, the same call returns the hosted checkout URL.
+
+### Events, programmes and free places (10 Sep 2026)
+
+Ollie's pricing model replaced the monthly subscriptions
+(`20260910120000_event_programme_model.sql`):
+
+- `events.programme_type` is now `event` (a session or camp) or `programme`
+  (a season squad). Old values were migrated (`one_off` → `event`,
+  `monthly_programme` → `programme`).
+- A **programme is one up-front payment** of `price_pence` (£250 by default)
+  covering every session; `meeting_cadence` (`weekly` | `monthly`) is display
+  only. Programmes have no capacity. No new subscriptions are created — the
+  `memberships` table and the invoice webhook handlers remain for the two
+  legacy sandbox rows only.
+- An **event** can be free (`is_free`), in which case booking never touches
+  Stripe.
+- **Complimentary places**: a child with a paid programme booking is included
+  on any other programme at no extra charge. `send-booking-invitations` checks
+  `child_has_paid_programme(child_id)` (roster players resolve through
+  `player_roster.linked_child_id`) and flags the invitation
+  `complimentary`; admins can also tick "free place" in the invite picker to
+  grant one on any event. `create-booking-checkout` settles free and
+  complimentary bookings immediately through `_shared/fulfilment.ts` (the
+  same ticket + confirmation path the webhook uses), returning `{ free: true }`
+  so the booking page skips the Payment Element.
+- Invitation emails now mention the bespoke per-session coach report and the
+  "other programmes at no extra charge once your own is paid" rule.
+
+**Coach reports**: the Coach Hub shows every previous session report on a
+player (any event, any coach — staff RLS on `session_reports` already allowed
+it), and the first save of a report calls `coach-session` `notify_report`,
+which emails the parent a summary with a link to their hub. Edits don't
+re-notify.
+
+**People tab** (`src/components/admin/PeoplePanel.tsx`): the county database
+in one place — search/filter the roster, add/edit/remove players, bulk age
+group / tag / email-group changes, and link registered children to their
+roster row. Children with no roster row ("Registered, not on database") can
+be added and linked in one click. 11 children were auto-linked on 10 Sep by
+parent email + name (Freddie and Noah Sutton among them); Ollie couldn't find
+Freddie because there was no roster page at all, only the invite picker.
 
 ### Player roster (added 21 Aug 2026)
 

@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
   const admin = serviceClient();
   const { data: invitation } = await admin
     .from("booking_invitations")
-    .select("id, event_id, status, child_id, child_name, parent_name, parent_email, parent_user_id")
+    .select("id, event_id, status, child_id, child_name, parent_name, parent_email, parent_user_id, complimentary, complimentary_reason")
     .eq("token", token)
     .maybeSingle();
 
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
   const { data: event } = await admin
     .from("events")
-    .select("id, title, description, event_date, end_date, location, age_group, capacity, cost, poster_url, session_slots, visibility, programme_type, price_pence, monthly_amount_pence, programme_months, sign_up_enabled")
+    .select("id, title, description, event_date, end_date, location, age_group, capacity, cost, poster_url, session_slots, visibility, programme_type, price_pence, is_free, meeting_cadence, sign_up_enabled")
     .eq("id", invitation.event_id)
     .maybeSingle();
   if (!event) return json({ error: "Event not found" }, 404);
@@ -75,6 +75,9 @@ Deno.serve(async (req) => {
       child_name: invitation.child_name,
       parent_name: invitation.parent_name,
       parent_email: invitation.parent_email,
+      // A complimentary place costs nothing — the page skips payment entirely.
+      complimentary: !!invitation.complimentary,
+      complimentary_reason: invitation.complimentary_reason ?? null,
     },
     event,
     sessions: sessions ?? [],

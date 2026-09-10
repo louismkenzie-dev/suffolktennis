@@ -125,7 +125,7 @@ const MyBookingsSection = () => {
                   const ev = events.get(b.event_id);
                   const qr = tickets.get(b.id);
                   const membership = memberships.get(b.id);
-                  const isProgramme = ev?.programme_type === "monthly_programme";
+                  const isProgramme = ev?.programme_type === "programme";
                   return (
                     <Card
                       key={b.id}

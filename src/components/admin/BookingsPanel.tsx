@@ -23,8 +23,8 @@ const db = supabase as any;
 type EventRow = {
   id: string; title: string; description: string | null; event_date: string | null;
   location: string | null; capacity: number | null; visibility: string;
-  programme_type: string; price_pence: number | null; monthly_amount_pence: number | null;
-  programme_months: number | null; sign_up_enabled: boolean;
+  programme_type: string; price_pence: number | null; is_free: boolean;
+  meeting_cadence: string | null; sign_up_enabled: boolean;
 };
 type Invitation = {
   id: string; child_name: string | null; parent_email: string; parent_name: string | null;
@@ -45,6 +45,9 @@ type Player = {
   contact_email: string | null;
   parent_name: string | null;
   wtn: number | null;
+  dob?: string | null;         // children rows only
+  /** Has a paid programme place already — other programmes are free for them. */
+  paid_programme: boolean;
 };
 
 const AGE_GROUPS = [8, 9, 10, 11, 12, 14, 16, 18];
@@ -59,8 +62,8 @@ const ageGroupOf = (dob: string | null): string => {
 const emptyForm = {
   id: null as string | null,
   title: "", description: "", event_date: "", location: "", capacity: "",
-  visibility: "private", programme_type: "one_off", price: "", monthly_amount: "",
-  programme_months: "", sign_up_enabled: false,
+  visibility: "private", programme_type: "event", price: "", is_free: false,
+  meeting_cadence: "weekly", sign_up_enabled: false,
 };
 
 const BookingsPanel = () => {
@@ -89,7 +92,12 @@ const BookingsPanel = () => {
     contact_name: "", contact_email: "", mobile: "", lta_number: "",
   });
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Admin override: grant these selected players a free place on this event.
+  const [freePlace, setFreePlace] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [editPlayer, setEditPlayer] = useState<Player | null>(null);
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", gender: "", age_group: "", contact_name: "", contact_email: "", mobile: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Event form dialog
   const [formOpen, setFormOpen] = useState(false);
@@ -138,12 +146,16 @@ const BookingsPanel = () => {
   };
 
   const loadPlayers = async () => {
-    const [{ data: roster }, { data: kids }, { data: emails }, { data: profiles }] = await Promise.all([
+    const [{ data: roster }, { data: kids }, { data: emails }, { data: profiles }, { data: paidProg }] = await Promise.all([
       db.from("player_roster").select("id, first_name, last_name, gender, age_group, contact_email, contact_name, singles_wtn, linked_child_id").order("last_name"),
       db.from("children").select("id, name, date_of_birth, gender, parent_user_id").order("name"),
       db.rpc("get_parent_emails"),
       db.from("profiles").select("user_id, first_name, last_name"),
+      // Children already paying for a programme: any other programme is free.
+      db.from("bookings").select("child_id, events!inner(programme_type)")
+        .eq("status", "paid").eq("complimentary", false).eq("events.programme_type", "programme"),
     ]);
+    const paidProgramme = new Set<string>((paidProg ?? []).map((b: any) => b.child_id).filter(Boolean));
     const emailMap = new Map<string, string>((emails ?? []).map((e: any) => [e.user_id, e.email]));
     const nameMap = new Map<string, string>((profiles ?? []).map((p: any) => [p.user_id, `${p.first_name} ${p.last_name}`.trim()]));
 
@@ -157,6 +169,7 @@ const BookingsPanel = () => {
       contact_email: r.contact_email,
       parent_name: r.contact_name,
       wtn: r.singles_wtn != null ? Number(r.singles_wtn) : null,
+      paid_programme: !!r.linked_child_id && paidProgramme.has(r.linked_child_id),
     }));
 
     // Registered families not already represented in the roster (matched by
@@ -174,6 +187,8 @@ const BookingsPanel = () => {
         contact_email: emailMap.get(k.parent_user_id) ?? null,
         parent_name: nameMap.get(k.parent_user_id) ?? null,
         wtn: null,
+        dob: k.date_of_birth ?? null,
+        paid_programme: paidProgramme.has(k.id),
       }))
       .filter((p: Player) => !seen.has(`${p.name.toLowerCase()}|${(p.contact_email ?? "").toLowerCase()}`));
 
@@ -198,6 +213,7 @@ const BookingsPanel = () => {
         child_id: p.child_id,
         child_name: p.name,
         parent_email: p.contact_email!,
+        complimentary: freePlace.has(p.key) || undefined,
         parent_name: p.parent_name ?? "",
       }));
     if (invitees.length === 0) {
@@ -236,18 +252,21 @@ const BookingsPanel = () => {
 
   const saveEvent = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
+    const isProgrammeForm = form.programme_type === "programme";
+    if (isProgrammeForm && !form.price) { toast.error("Programmes need a price"); return; }
     setSavingEvent(true);
     const payload: Record<string, unknown> = {
       title: form.title.trim(),
       description: form.description.trim() || null,
       event_date: form.event_date ? new Date(form.event_date).toISOString() : new Date().toISOString(),
       location: form.location.trim() || null,
-      capacity: form.capacity ? Number(form.capacity) : null,
+      // Programmes have no capacity; free events have no price.
+      capacity: isProgrammeForm || !form.capacity ? null : Number(form.capacity),
       visibility: form.visibility,
       programme_type: form.programme_type,
-      price_pence: form.price ? Math.round(Number(form.price) * 100) : null,
-      monthly_amount_pence: form.monthly_amount ? Math.round(Number(form.monthly_amount) * 100) : null,
-      programme_months: form.programme_months ? Number(form.programme_months) : null,
+      price_pence: !isProgrammeForm && form.is_free ? null : form.price ? Math.round(Number(form.price) * 100) : null,
+      is_free: !isProgrammeForm && form.is_free,
+      meeting_cadence: isProgrammeForm ? form.meeting_cadence : null,
       sign_up_enabled: form.sign_up_enabled,
     };
     const q = form.id
@@ -392,8 +411,8 @@ const BookingsPanel = () => {
       visibility: ev.visibility,
       programme_type: ev.programme_type,
       price: ev.price_pence != null ? (ev.price_pence / 100).toString() : "",
-      monthly_amount: ev.monthly_amount_pence != null ? (ev.monthly_amount_pence / 100).toString() : "",
-      programme_months: ev.programme_months?.toString() ?? "",
+      is_free: !!ev.is_free,
+      meeting_cadence: ev.meeting_cadence ?? "weekly",
       sign_up_enabled: ev.sign_up_enabled,
     });
     setFormOpen(true);
@@ -423,6 +442,50 @@ const BookingsPanel = () => {
     setRefundTarget(null);
     if (selected) openEvent(selected);
     loadEvents();
+  };
+
+  const openEditPlayer = (p: Player) => {
+    const [first, ...rest] = p.name.trim().split(/\s+/);
+    setEditForm({
+      first_name: first ?? "",
+      last_name: rest.join(" "),
+      gender: (p.gender ?? "").toLowerCase(),
+      age_group: p.age_group === "?" || p.age_group === "18+" ? "" : p.age_group,
+      contact_name: p.parent_name ?? "",
+      contact_email: p.contact_email ?? "",
+      mobile: "",
+    });
+    setEditPlayer(p);
+  };
+
+  /**
+   * Roster players are updated in place. A registered child with no roster
+   * row is added to the roster and linked to their account, so from here on
+   * they behave like any LTA-imported player (invites, groups, reports).
+   */
+  const saveEditPlayer = async () => {
+    if (!editPlayer) return;
+    const first = editForm.first_name.trim();
+    const last = editForm.last_name.trim();
+    if (!first || !last) { toast.error("First and last name are required"); return; }
+    setSavingEdit(true);
+    const row = {
+      first_name: first,
+      last_name: last,
+      gender: editForm.gender || null,
+      age_group: editForm.age_group || null,
+      contact_name: editForm.contact_name.trim() || null,
+      contact_email: editForm.contact_email.trim().toLowerCase() || null,
+      ...(editForm.mobile.trim() ? { mobile: editForm.mobile.trim() } : {}),
+    };
+    const { error } = editPlayer.roster_id
+      ? await db.from("player_roster").update(row).eq("id", editPlayer.roster_id)
+      : await db.from("player_roster").insert({ ...row, linked_child_id: editPlayer.child_id ?? null, source: "admin" });
+    setSavingEdit(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(editPlayer.roster_id ? `${first} ${last} updated` : `${first} ${last} added to the database`);
+    setEditPlayer(null);
+    loadPlayers();
   };
 
   const statusBadge = (s: string) => {
@@ -485,10 +548,11 @@ const BookingsPanel = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground space-y-1">
-                <div>{ev.programme_type === "monthly_programme"
-                  ? `${gbp(ev.monthly_amount_pence)}/mo × ${ev.programme_months ?? "?"} months`
-                  : gbp(ev.price_pence)}
-                  {ev.capacity ? ` · ${s.paid}/${ev.capacity} places` : ` · ${s.paid} paid`}
+                <div>
+                  {ev.programme_type === "programme"
+                    ? `${gbp(ev.price_pence)} · ${ev.meeting_cadence ?? "regular"} programme`
+                    : ev.is_free ? "Free" : gbp(ev.price_pence)}
+                  {ev.capacity ? ` · ${s.paid}/${ev.capacity} places` : ` · ${s.paid} booked`}
                 </div>
                 <div>{s.invited} invited · {s.booked} booked</div>
               </CardContent>
@@ -507,7 +571,7 @@ const BookingsPanel = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            {selected.programme_type === "monthly_programme" && (
+            {selected.programme_type === "programme" && (
               <div>
                 <h3 className="font-semibold text-sm mb-2 flex items-center gap-1"><CalendarPlus className="w-4 h-4" /> Programme session dates</h3>
                 <div className="flex flex-wrap gap-2 mb-2">
@@ -662,11 +726,14 @@ const BookingsPanel = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Invite players dialog */}
+      {/* Invite players dialog — near full-screen: this is where Ollie works
+          through the whole county database, so it gets the room. */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Invite players — {selected?.title}</DialogTitle></DialogHeader>
-          <div className="flex gap-2">
+        <DialogContent className="max-w-6xl w-[96vw] h-[92vh] flex flex-col gap-3 p-4 sm:p-6">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Invite players — {selected?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2 shrink-0">
             <Select value={playerFilter} onValueChange={setPlayerFilter}>
               <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -683,10 +750,16 @@ const BookingsPanel = () => {
                 <SelectItem value="female">Girls</SelectItem>
               </SelectContent>
             </Select>
-            <Input placeholder="Search players…" value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} />
+            <Input placeholder="Search players…" value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} className="flex-1 min-w-[12rem]" />
+            <Button variant="outline" onClick={() => setAddPlayerOpen(true)}>
+              <Plus className="w-4 h-4 mr-1" /> Add new player
+            </Button>
           </div>
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{filteredPlayers.length} players · {checked.size} selected</span>
+          <div className="flex items-center justify-between text-xs text-muted-foreground shrink-0">
+            <span>
+              {filteredPlayers.length} players · {checked.size} selected
+              {freePlace.size > 0 ? ` · ${freePlace.size} free place${freePlace.size === 1 ? "" : "s"}` : ""}
+            </span>
             <button className="underline" onClick={() => {
               const all = new Set(checked);
               const allChecked = filteredPlayers.every((p) => all.has(p.key));
@@ -694,25 +767,128 @@ const BookingsPanel = () => {
               setChecked(all);
             }}>Select all shown</button>
           </div>
-          <div className="space-y-1 max-h-72 overflow-y-auto border rounded-md p-2">
-            {filteredPlayers.map((p) => (
-              <label key={p.key} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
-                <Checkbox checked={checked.has(p.key)} onCheckedChange={(v) => {
-                  const next = new Set(checked);
-                  v === true ? next.add(p.key) : next.delete(p.key);
-                  setChecked(next);
-                }} />
-                <span className="font-medium">{p.name}</span>
-                <Badge variant="outline" className="text-[10px]">{p.age_group}</Badge>
-                {p.wtn != null && <span className="text-[10px] text-muted-foreground">WTN {p.wtn}</span>}
-                <span className="text-muted-foreground text-xs truncate">{p.contact_email ?? "no parent email"}</span>
-              </label>
-            ))}
+          <div className="flex-1 min-h-0 overflow-y-auto border rounded-md">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  <TableHead className="w-8"></TableHead>
+                  <TableHead>Player</TableHead>
+                  <TableHead>Age</TableHead>
+                  <TableHead className="hidden sm:table-cell">Gender</TableHead>
+                  <TableHead className="hidden md:table-cell">WTN</TableHead>
+                  <TableHead>Parent</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Free place</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPlayers.map((p) => {
+                  const included = selected?.programme_type === "programme" && p.paid_programme;
+                  return (
+                    <TableRow key={p.key} className={checked.has(p.key) ? "bg-muted/40" : undefined}>
+                      <TableCell>
+                        <Checkbox checked={checked.has(p.key)} onCheckedChange={(v) => {
+                          const next = new Set(checked);
+                          v === true ? next.add(p.key) : next.delete(p.key);
+                          setChecked(next);
+                        }} />
+                      </TableCell>
+                      <TableCell>
+                        <button className="font-medium text-left hover:underline" onClick={() => openEditPlayer(p)} title="Edit player details">
+                          {p.name}
+                        </button>
+                        {p.child_id && <Badge variant="outline" className="ml-2 text-[10px]">account</Badge>}
+                        {included && (
+                          <Badge className="ml-2 text-[10px] bg-green-100 text-green-800 hover:bg-green-100" variant="outline">
+                            no extra charge
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell><Badge variant="outline" className="text-[10px]">{p.age_group}</Badge></TableCell>
+                      <TableCell className="hidden sm:table-cell text-muted-foreground capitalize">{p.gender ?? "—"}</TableCell>
+                      <TableCell className="hidden md:table-cell text-muted-foreground">{p.wtn ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        <div className="truncate max-w-[16rem]">{p.contact_email ?? <span className="text-red-600">no parent email</span>}</div>
+                        {p.parent_name && <div className="truncate max-w-[16rem]">{p.parent_name}</div>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {included ? (
+                          <span className="text-[11px] text-muted-foreground">automatic</span>
+                        ) : (
+                          <Checkbox
+                            aria-label={`Give ${p.name} a free place`}
+                            checked={freePlace.has(p.key)}
+                            onCheckedChange={(v) => {
+                              const next = new Set(freePlace);
+                              v === true ? next.add(p.key) : next.delete(p.key);
+                              setFreePlace(next);
+                            }}
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredPlayers.length === 0 && (
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No players match.</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 items-center gap-3 sm:justify-between">
+            <p className="text-xs text-muted-foreground text-left">
+              {selected?.programme_type === "programme"
+                ? "Children already paying for a programme are included free automatically. Tick “free place” to waive the fee for anyone else."
+                : "Tick “free place” to invite someone at no charge."}
+            </p>
             <Button onClick={sendInvites} disabled={sending || checked.size === 0}>
               {sending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Send className="w-4 h-4 mr-1" />}
               Send {checked.size} invitation{checked.size === 1 ? "" : "s"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit a player's details straight from the picker */}
+      <Dialog open={!!editPlayer} onOpenChange={(o) => !o && setEditPlayer(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editPlayer?.roster_id ? "Edit player" : "Add to the county database"}</DialogTitle></DialogHeader>
+          {editPlayer && !editPlayer.roster_id && (
+            <p className="text-sm text-muted-foreground">
+              {editPlayer.name} is registered by a parent but isn't on the county database yet. Saving adds them, linked to the parent's account.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label>First name</Label><Input value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} /></div>
+            <div><Label>Last name</Label><Input value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} /></div>
+            <div>
+              <Label>Age group</Label>
+              <Select value={editForm.age_group} onValueChange={(v) => setEditForm({ ...editForm, age_group: v })}>
+                <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
+                <SelectContent>
+                  {AGE_GROUPS.map((g) => <SelectItem key={g} value={`${g}U`}>{g}U</SelectItem>)}
+                  <SelectItem value="Open">Open</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Gender</Label>
+              <Select value={editForm.gender} onValueChange={(v) => setEditForm({ ...editForm, gender: v })}>
+                <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="male">Boy</SelectItem>
+                  <SelectItem value="female">Girl</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>Parent name</Label><Input value={editForm.contact_name} onChange={(e) => setEditForm({ ...editForm, contact_name: e.target.value })} /></div>
+            <div><Label>Parent email</Label><Input type="email" value={editForm.contact_email} onChange={(e) => setEditForm({ ...editForm, contact_email: e.target.value })} /></div>
+            <div><Label>Mobile</Label><Input value={editForm.mobile} onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditPlayer(null)}>Cancel</Button>
+            <Button onClick={saveEditPlayer} disabled={savingEdit}>
+              {savingEdit && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {editPlayer?.roster_id ? "Save changes" : "Add to database"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -740,23 +916,50 @@ const BookingsPanel = () => {
               </div>
               <div>
                 <Label>Type</Label>
-                <Select value={form.programme_type} onValueChange={(v) => setForm({ ...form, programme_type: v })}>
+                <Select
+                  value={form.programme_type}
+                  onValueChange={(v) => setForm({ ...form, programme_type: v, price: v === "programme" && !form.price ? "250" : form.price })}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="one_off">One-off event / camp</SelectItem>
-                    <SelectItem value="monthly_programme">Monthly programme</SelectItem>
+                    <SelectItem value="event">Event — a session or camp</SelectItem>
+                    <SelectItem value="programme">Programme — a season squad</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {form.programme_type === "one_off" ? (
-                <div><Label>Price (£)</Label><Input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
+              {form.programme_type === "programme" ? (
+                <>
+                  <div>
+                    <Label>Sessions</Label>
+                    <Select value={form.meeting_cadence} onValueChange={(v) => setForm({ ...form, meeting_cadence: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Programme fee (£, paid up front)</Label>
+                    <Input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+                  </div>
+                  <p className="col-span-2 text-xs text-muted-foreground -mt-1">
+                    One payment covers every session. A child already paying for a programme is invited to any other programme at no extra charge.
+                  </p>
+                </>
               ) : (
                 <>
-                  <div><Label>Monthly amount (£)</Label><Input type="number" min="0" step="0.01" value={form.monthly_amount} onChange={(e) => setForm({ ...form, monthly_amount: e.target.value })} /></div>
-                  <div><Label>Programme length (months)</Label><Input type="number" min="1" max="12" value={form.programme_months} onChange={(e) => setForm({ ...form, programme_months: e.target.value })} /></div>
+                  <div>
+                    <Label>Price (£)</Label>
+                    <Input type="number" min="0" step="0.01" value={form.price} disabled={form.is_free} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+                    <label className="flex items-center gap-2 text-sm cursor-pointer mt-2">
+                      <Checkbox checked={form.is_free} onCheckedChange={(v) => setForm({ ...form, is_free: v === true })} />
+                      This session is free
+                    </label>
+                  </div>
+                  <div><Label>Capacity</Label><Input type="number" min="0" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></div>
                 </>
               )}
-              <div><Label>Capacity</Label><Input type="number" min="0" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></div>
             </div>
             {form.visibility === "public" && (
               <label className="flex items-center gap-2 text-sm cursor-pointer">

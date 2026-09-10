@@ -17,12 +17,16 @@ import logo from "@/assets/suffolk-tennis-logo-v7.png";
 type InvitationPayload = {
   /** Pre-launch wall — "coming_soon" until Suffolk Tennis opens bookings. */
   bookings_status?: "coming_soon" | "open";
-  invitation: { id: string; status: string; child_name: string | null; parent_name: string | null; parent_email: string };
+  invitation: {
+    id: string; status: string; child_name: string | null; parent_name: string | null; parent_email: string;
+    /** No charge — a child already paying for a programme, or an admin-granted free place. */
+    complimentary: boolean; complimentary_reason: string | null;
+  };
   event: {
     id: string; title: string; description: string | null; event_date: string | null;
     location: string | null; poster_url: string | null; session_slots: string[] | null;
-    programme_type: string; price_pence: number | null; monthly_amount_pence: number | null;
-    programme_months: number | null; capacity: number | null;
+    programme_type: string; price_pence: number | null; is_free: boolean;
+    meeting_cadence: string | null; capacity: number | null;
   };
   sessions: Array<{ id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null }>;
   existing_booking: { id: string; status: string } | null;
@@ -32,9 +36,9 @@ type PaymentSetup = {
   clientSecret: string;
   bookingId: string;
   environment: PaymentsEnvironment;
-  mode: "payment" | "subscription";
+  mode: "payment";
   amountPence: number;
-  monthsTotal: number | null;
+  isProgramme: boolean;
 };
 
 const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
@@ -129,9 +133,9 @@ const PaymentStep = ({ setup, priceLabel, onBack }: {
           <ArrowLeft size={14} /> Back to details
         </button>
       </div>
-      {setup.mode === "subscription" && setup.monthsTotal && (
+      {setup.isProgramme && (
         <p className="text-sm text-primary-foreground/70">
-          You're signing up for the full programme — every session included. Your card is charged {gbp(setup.amountPence)} today and then monthly, {setup.monthsTotal} payments in total; billing stops automatically once the programme is paid.
+          One payment of {gbp(setup.amountPence)} covers the whole programme — every session included.
         </p>
       )}
       <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
@@ -150,6 +154,7 @@ const PaymentStep = ({ setup, priceLabel, onBack }: {
 type ChildOption = { id: string; name: string };
 
 const BookingPage = () => {
+  const navigate = useNavigate();
   const { token } = useParams<{ token: string }>();
   const { user, loading: authLoading, signOut } = useAuth();
   const [data, setData] = useState<InvitationPayload | null>(null);
@@ -233,7 +238,7 @@ const BookingPage = () => {
           photo_consent: photoConsent,
         },
       });
-      if (error || res?.error || !res?.client_secret) {
+      if (error || res?.error || (!res?.client_secret && !res?.free)) {
         // supabase-js hides the function's JSON body behind error.context —
         // surface the server's message (capacity, invitation-only, …).
         let message = res?.error || "Payment setup failed";
@@ -246,14 +251,19 @@ const BookingPage = () => {
         }
         throw new Error(message);
       }
+      if (res.free) {
+        // Nothing to pay: the place is already confirmed and the ticket issued.
+        navigate(`/booking/return?booking_id=${res.booking_id}&redirect_status=succeeded`);
+        return;
+      }
       setStripePromise(getStripeFor(res.environment as PaymentsEnvironment));
       setSetup({
         clientSecret: res.client_secret,
         bookingId: res.booking_id,
         environment: res.environment,
-        mode: res.mode,
+        mode: "payment",
         amountPence: res.amount_pence,
-        monthsTotal: res.months_total ?? null,
+        isProgramme: !!res.is_programme,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment setup failed — please try again.");
@@ -262,21 +272,19 @@ const BookingPage = () => {
     }
   };
 
-  const isProgramme = data?.event.programme_type === "monthly_programme";
+  const isProgramme = data?.event.programme_type === "programme";
+  const complimentary = !!data?.invitation.complimentary;
+  const noCharge = !!data && (complimentary || data.event.is_free || !data.event.price_pence);
   const priceLabel = data
-    ? isProgramme && data.event.monthly_amount_pence
-      ? `${gbp(data.event.monthly_amount_pence)}/month × ${data.event.programme_months} months`
-      : data.event.price_pence
-        ? gbp(data.event.price_pence)
-        : "Free"
+    ? complimentary
+      ? "No extra charge"
+      : noCharge
+        ? "Free"
+        : isProgramme
+          ? `${gbp(data.event.price_pence!)} for the full programme`
+          : gbp(data.event.price_pence!)
     : "";
-  const payLabel = data
-    ? isProgramme && data.event.monthly_amount_pence
-      ? `${gbp(data.event.monthly_amount_pence)} today`
-      : data.event.price_pence
-        ? gbp(data.event.price_pence)
-        : ""
-    : "";
+  const payLabel = data && !noCharge && data.event.price_pence ? gbp(data.event.price_pence) : "";
 
   const elementsOptions: StripeElementsOptions | null = setup
     ? {
@@ -316,11 +324,15 @@ const BookingPage = () => {
               )}
               {data.event.location && <div className="flex items-center gap-2"><MapPin size={14} className="text-lta-cyan" /> {data.event.location}</div>}
               <div className="text-lta-yellow font-bold mt-2">{priceLabel}</div>
-              {isProgramme && (
+              {complimentary ? (
                 <p className="text-primary-foreground/60 text-xs">
-                  One sign-up covers the <strong className="text-primary-foreground/90">whole programme</strong> — every
-                  session listed below is included. Your card is simply billed monthly
-                  ({data.event.programme_months} payments in total).
+                  This place is <strong className="text-primary-foreground/90">included at no extra charge</strong> because{" "}
+                  {data.invitation.child_name ?? "your child"} is already on one of our programmes — just confirm it below.
+                </p>
+              ) : isProgramme && (
+                <p className="text-primary-foreground/60 text-xs">
+                  One payment covers the <strong className="text-primary-foreground/90">whole programme</strong> — every
+                  session listed below is included{data.event.meeting_cadence ? ` (${data.event.meeting_cadence} sessions)` : ""}.
                 </p>
               )}
             </div>
@@ -477,9 +489,15 @@ const BookingPage = () => {
                 </label>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
                 <Button onClick={handleContinue} disabled={submitting} className="w-full bg-lta-cyan text-suffolk-navy hover:bg-lta-cyan/90 font-bold h-12 text-base">
-                  {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Continue to payment · ${priceLabel}`}
+                  {submitting
+                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    : noCharge ? "Confirm this place" : `Continue to payment · ${priceLabel}`}
                 </Button>
-                <p className="text-[11px] text-primary-foreground/50 text-center">Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid.</p>
+                <p className="text-[11px] text-primary-foreground/50 text-center">
+                  {noCharge
+                    ? "No payment needed. Your entry QR ticket is emailed to you as soon as you confirm."
+                    : "Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid."}
+                </p>
               </div>
             )}
           </>

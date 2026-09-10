@@ -21,8 +21,8 @@ import {
   verifyWebhook,
 } from "../_shared/stripe.ts";
 import { sendEmail } from "../_shared/resend.ts";
-import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
-import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
+import { brandedEmail, emailButton, emailDetails, emailParagraph } from "../_shared/emailLayout.ts";
+import { settleBooking as settleBookingShared } from "../_shared/fulfilment.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -227,71 +227,7 @@ async function handleInvoiceFailed(invoice: any) {
   }
 }
 
-async function settleBooking(bookingId: string, extra: Record<string, unknown>) {
-  const { data: booking } = await supabase
-    .from("bookings")
-    .select("id, status, event_id, invitation_id, parent_name, parent_email, child_name, session_slot")
-    .eq("id", bookingId)
-    .maybeSingle();
-  if (!booking) {
-    console.warn("settle for unknown booking:", bookingId);
-    return;
-  }
-  if (booking.status === "paid") return; // idempotent — webhooks can repeat
-
-  await supabase
-    .from("bookings")
-    .update({ status: "paid", paid_at: new Date().toISOString(), ...extra })
-    .eq("id", booking.id);
-
-  if (booking.invitation_id) {
-    await supabase
-      .from("booking_invitations")
-      .update({ status: "booked" })
-      .eq("id", booking.invitation_id);
-  }
-
-  // Issue the QR ticket (unique per booking; validity re-checked at scan time).
-  const { data: ticket } = await supabase
-    .from("tickets")
-    .upsert(
-      { booking_id: booking.id, event_id: booking.event_id },
-      { onConflict: "booking_id" },
-    )
-    .select("qr_token")
-    .single();
-
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  if (apiKey && ticket) {
-    const { data: eventRow } = await supabase
-      .from("events").select("title, location, event_date").eq("id", booking.event_id).maybeSingle();
-    const ticketUrl = `${SITE_URL}/ticket/${ticket.qr_token}`;
-    const firstName = booking.parent_name.split(" ")[0];
-    const unsubToken = await unsubscribeTokenFor(supabase, booking.parent_email, "booking");
-    try {
-      await sendEmail({
-        to: booking.parent_email,
-        subject: `Booking confirmed — ${eventRow?.title ?? "Suffolk Tennis"}`,
-        unsubscribe_token: unsubToken ?? undefined,
-        html: brandedEmail({
-          unsubscribeUrl: unsubscribeUrlFor(unsubToken),
-          title: "Booking confirmed",
-          preheader: `${booking.child_name} is booked on ${eventRow?.title ?? "the session"}`,
-          body:
-            emailParagraph(`Hi ${firstName},`) +
-            emailParagraph(`<strong>${booking.child_name}</strong> is booked on <strong>${eventRow?.title ?? "the session"}</strong>. Your entry ticket is ready.`) +
-            emailDetails([
-              ["Player", booking.child_name],
-              ["Event", eventRow?.title ?? ""],
-              ["Session", booking.session_slot ?? ""],
-              ["Venue", eventRow?.location ?? ""],
-            ]) +
-            emailButton(ticketUrl, "View your entry ticket") +
-            emailNote("Please have the QR code on that page ready to be scanned when you arrive — a coach will check your child in with it."),
-        }),
-      }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
-    } catch (e) {
-      console.error("confirmation email failed:", e);
-    }
-  }
-}
+// Fulfilment (paid status, invitation closed, ticket, confirmation email)
+// lives in _shared/fulfilment.ts so free bookings can settle without Stripe.
+const settleBooking = (bookingId: string, extra: Record<string, unknown>) =>
+  settleBookingShared(supabase, bookingId, extra);

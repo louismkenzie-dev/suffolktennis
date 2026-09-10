@@ -25,6 +25,7 @@ import VenuesPanel from "@/components/admin/VenuesPanel";
 import CoachesPanel from "@/components/admin/CoachesPanel";
 import BookingsPanel from "@/components/admin/BookingsPanel";
 import EmailPanel from "@/components/admin/EmailPanel";
+import PeoplePanel from "@/components/admin/PeoplePanel";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 
 
@@ -153,8 +154,9 @@ const AdminHub = () => {
 
       <main className="container mx-auto px-4 py-6">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid grid-cols-3 md:grid-cols-10 w-full mb-6 h-auto">
+          <TabsList className="grid grid-cols-3 md:grid-cols-6 xl:grid-cols-12 w-full mb-6 h-auto">
             <TabsTrigger value="bookings" className="gap-2"><Ticket className="w-4 h-4" />Bookings</TabsTrigger>
+            <TabsTrigger value="people" className="gap-2"><Users className="w-4 h-4" />People</TabsTrigger>
             <TabsTrigger value="families" className="gap-2"><Users className="w-4 h-4" />Families</TabsTrigger>
             <TabsTrigger value="reports" className="gap-2"><FileText className="w-4 h-4" />Reports</TabsTrigger>
             <TabsTrigger value="goals" className="gap-2"><Target className="w-4 h-4" />Goals</TabsTrigger>
@@ -168,6 +170,7 @@ const AdminHub = () => {
           </TabsList>
 
           <TabsContent value="bookings"><BookingsPanel /></TabsContent>
+          <TabsContent value="people"><PeoplePanel /></TabsContent>
           <TabsContent value="families"><FamiliesPanel /></TabsContent>
           <TabsContent value="reports"><ReportsPanel /></TabsContent>
           <TabsContent value="goals"><GoalsPanel /></TabsContent>

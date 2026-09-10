@@ -4,9 +4,15 @@
 // go straight to session_reports under RLS; this function only reads.
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireRole, CORS, json } from "../_shared/adminAuth.ts";
+import { sendEmail } from "../_shared/resend.ts";
+import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
+import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
+
+const SITE_URL = (Deno.env.get("SITE_URL") ?? "https://suffolktennis.online").replace(/\/$/, "");
 
 const Body = z.object({
-  action: z.enum(["events", "roster", "mark"]),
+  action: z.enum(["events", "roster", "mark", "notify_report"]),
+  report_id: z.string().uuid().optional(),
   event_id: z.string().uuid().optional(),
   session_id: z.string().uuid().optional(),
   booking_id: z.string().uuid().optional(),
@@ -92,6 +98,66 @@ Deno.serve(async (req) => {
       await admin.from("ticket_scans").delete().in("id", rows!.map((r) => r.id));
     }
     return json({ ok: true, present: body.present });
+  }
+
+  // A coach has just written a session report: tell the parent it's ready.
+  // The hub calls this once, after the first save; edits don't re-notify,
+  // and the idempotency key stops a retry sending twice.
+  if (body.action === "notify_report") {
+    if (!body.report_id) return json({ error: "report_id required" }, 400);
+    const { data: report } = await admin
+      .from("session_reports")
+      .select("id, booking_id, event_id, child_name, coach_name, comment, stats")
+      .eq("id", body.report_id)
+      .maybeSingle();
+    if (!report) return json({ error: "Report not found" }, 404);
+
+    const { data: booking } = await admin
+      .from("bookings")
+      .select("parent_email, parent_name")
+      .eq("id", report.booking_id)
+      .maybeSingle();
+    if (!booking?.parent_email) return json({ error: "No parent email on the booking" }, 404);
+
+    const apiKey = Deno.env.get("RESEND_API_KEY");
+    if (!apiKey) return json({ ok: false, error: "RESEND_API_KEY not configured" });
+
+    const { data: ev } = await admin
+      .from("events").select("title").eq("id", report.event_id).maybeSingle();
+
+    const labels: Record<string, string> = {
+      technique: "Technique", attitude: "Attitude & effort", movement: "Movement", matchplay: "Match play",
+    };
+    const stats = (report.stats ?? {}) as Record<string, number>;
+    const rated = Object.entries(labels)
+      .filter(([k]) => (stats[k] ?? 0) > 0)
+      .map(([k, label]) => [label, "★".repeat(stats[k]) + "☆".repeat(5 - stats[k])] as [string, string]);
+
+    const first = (booking.parent_name ?? "there").split(" ")[0];
+    const unsubToken = await unsubscribeTokenFor(admin, booking.parent_email, "report");
+    try {
+      await sendEmail({
+        to: booking.parent_email,
+        subject: `${report.child_name}'s coach report — ${ev?.title ?? "Suffolk Tennis"}`,
+        unsubscribe_token: unsubToken ?? undefined,
+        idempotency_key: `report-notify-${report.id}`,
+        html: brandedEmail({
+          unsubscribeUrl: unsubscribeUrlFor(unsubToken),
+          title: `${report.child_name}'s session report`,
+          preheader: `${report.coach_name ?? "Their coach"} has written up today's session`,
+          body:
+            emailParagraph(`Hi ${first},`) +
+            emailParagraph(`${report.coach_name ?? "The coach"} has written a report on <strong>${report.child_name}</strong>'s session at <strong>${ev?.title ?? "Suffolk Tennis"}</strong>.`) +
+            (rated.length > 0 ? emailDetails(rated) : "") +
+            (report.comment ? emailParagraph(`<em>“${report.comment}”</em>`) : "") +
+            emailButton(`${SITE_URL}/parent-hub?tab=bookings`, "See the full report") +
+            emailNote("Every session report is kept in your Parent Hub, so you can look back over the season."),
+        }),
+      }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
+    } catch (e) {
+      return json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+    return json({ ok: true });
   }
 
   // roster

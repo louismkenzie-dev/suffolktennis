@@ -34,6 +34,12 @@ const PlayerAvatar = ({ player, size = "w-11 h-11" }: { player: Player; size?: s
       : <span className="text-lta-cyan font-bold text-sm">{initials(player.child_name)}</span>}
   </div>
 );
+/** A past session report on this child — any event, any coach. */
+type HistoryRow = {
+  id: string; event_title: string; when: string | null; coach_name: string | null;
+  stats: Record<string, number>; comment: string | null; created_at: string;
+};
+
 /** One selectable slot on the coach's schedule: an event session, or a
  *  session-less one-off event as a whole. */
 type Slot = { key: string; venue: string; date: string | null; event: EventRow; session: SessionRow | null };
@@ -99,6 +105,8 @@ const CoachHub = () => {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Every previous session report on the open player, newest first.
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
 
   // Formal progress report (player_reports — what parents see under My Children).
   const [tcRatings, setTcRatings] = useState<Record<string, number>>({});
@@ -214,6 +222,8 @@ const CoachHub = () => {
     setTcRatings({});
     setAssessment("");
     setProgressReportId(null);
+    setHistory(null);
+    loadHistory(p);
     // Load this coach's existing progress report for the child on this event.
     if (p.child_id && user && selected) {
       db.from("player_reports")
@@ -233,6 +243,38 @@ const CoachHub = () => {
           setTcRatings(ratings);
         });
     }
+  };
+
+  /**
+   * Report history across every event and coach, so a coach picking up a
+   * player for the first time can see what colleagues have already said.
+   * Matched on the child's account where there is one; by booking otherwise.
+   */
+  const loadHistory = async (p: Player) => {
+    let q = db.from("session_reports")
+      .select("id, event_id, session_id, coach_name, stats, comment, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    q = p.child_id ? q.eq("child_id", p.child_id) : q.eq("booking_id", p.booking_id);
+    const { data: rows } = await q;
+    const reports: any[] = rows ?? [];
+    const eventIds = [...new Set(reports.map((r) => r.event_id).filter(Boolean))];
+    const sessionIds = [...new Set(reports.map((r) => r.session_id).filter(Boolean))];
+    const [{ data: evs }, { data: sess }] = await Promise.all([
+      eventIds.length ? db.from("events").select("id, title").in("id", eventIds) : Promise.resolve({ data: [] }),
+      sessionIds.length ? db.from("event_sessions").select("id, session_date").in("id", sessionIds) : Promise.resolve({ data: [] }),
+    ]);
+    const titleOf = new Map<string, string>((evs ?? []).map((e: any) => [e.id, e.title]));
+    const dateOf = new Map<string, string>((sess ?? []).map((x: any) => [x.id, x.session_date]));
+    setHistory(reports.map((r) => ({
+      id: r.id,
+      event_title: titleOf.get(r.event_id) ?? "Session",
+      when: r.session_id ? dateOf.get(r.session_id) ?? null : null,
+      coach_name: r.coach_name,
+      stats: r.stats ?? {},
+      comment: r.comment,
+      created_at: r.created_at,
+    })));
   };
 
   const saveProgressReport = async () => {
@@ -285,17 +327,27 @@ const CoachHub = () => {
       let q = db.from("session_reports").select("id").eq("booking_id", openPlayer.booking_id).eq("coach_id", user.id);
       q = sid ? q.eq("session_id", sid) : q.is("session_id", null);
       const { data: existing } = await q.maybeSingle();
-      const { error } = existing
-        ? await db.from("session_reports").update(payload).eq("id", existing.id)
-        : await db.from("session_reports").insert({
-            ...payload,
-            booking_id: openPlayer.booking_id,
-            event_id: selected.event.id,
-            session_id: sid,
-            child_id: openPlayer.child_id,
-            child_name: openPlayer.child_name,
-            coach_id: user.id,
-          });
+      let error: any = null;
+      if (existing) {
+        ({ error } = await db.from("session_reports").update(payload).eq("id", existing.id));
+      } else {
+        const { data: inserted, error: insErr } = await db.from("session_reports").insert({
+          ...payload,
+          booking_id: openPlayer.booking_id,
+          event_id: selected.event.id,
+          session_id: sid,
+          child_id: openPlayer.child_id,
+          child_name: openPlayer.child_name,
+          coach_id: user.id,
+        }).select("id").single();
+        error = insErr;
+        // First write only: let the parent know the report is ready. Edits
+        // stay quiet. Best-effort — the report is saved either way.
+        if (!insErr && inserted?.id) {
+          supabase.functions.invoke("coach-session", { body: { action: "notify_report", report_id: inserted.id } })
+            .catch(() => { /* the report itself is what matters */ });
+        }
+      }
       if (error) throw error;
       setOpenPlayer(null);
       loadRoster(true);
@@ -470,10 +522,41 @@ const CoachHub = () => {
             </div>
           )}
           <Tabs defaultValue="session">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="session">Session feedback</TabsTrigger>
-              <TabsTrigger value="progress" disabled={!openPlayer?.child_id}>Progress report</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="session">Session</TabsTrigger>
+              <TabsTrigger value="history">
+                Previous{history && history.length > 0 ? ` (${history.length})` : ""}
+              </TabsTrigger>
+              <TabsTrigger value="progress" disabled={!openPlayer?.child_id}>Progress</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="history" className="space-y-3 pt-2">
+              {history === null ? (
+                <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+              ) : history.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">No previous session reports for {openPlayer?.child_name} yet.</p>
+              ) : (
+                history.map((h) => (
+                  <div key={h.id} className="rounded-lg border border-border p-3 space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="text-sm font-semibold leading-tight">{h.event_title}</div>
+                      <div className="text-[11px] text-muted-foreground whitespace-nowrap">
+                        {new Date(h.when ?? h.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
+                      </div>
+                    </div>
+                    {h.coach_name && <div className="text-[11px] text-muted-foreground">{h.coach_name}</div>}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {RATINGS.filter((r) => (h.stats[r.key] ?? 0) > 0).map((r) => (
+                        <span key={r.key} className="text-[11px] text-muted-foreground">
+                          {r.label} <span className="text-lta-cyan">{"★".repeat(h.stats[r.key])}</span>
+                        </span>
+                      ))}
+                    </div>
+                    {h.comment && <p className="text-sm whitespace-pre-line">{h.comment}</p>}
+                  </div>
+                ))
+              )}
+            </TabsContent>
 
             <TabsContent value="session" className="space-y-4 pt-2">
               {RATINGS.map((r) => (

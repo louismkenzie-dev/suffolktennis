@@ -1,5 +1,10 @@
 // Admin-only: create booking invitations for selected players and email each
 // parent their personal booking link. Also handles resending reminders.
+//
+// Complimentary places: a child who has already paid for a programme is
+// included on any other programme at no extra charge, so their invitation is
+// flagged complimentary automatically. Admins can also grant one by hand
+// (`complimentary: true` on the invitee) — for a free place on any event.
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
 import { sendEmail } from "../_shared/resend.ts";
@@ -12,6 +17,8 @@ const Invitee = z.object({
   child_name: z.string().trim().min(1).max(120),
   parent_email: z.string().trim().email().max(255),
   parent_name: z.string().trim().max(120).optional().or(z.literal("")),
+  // Admin override: grant this place free regardless of eligibility.
+  complimentary: z.boolean().optional(),
 });
 
 const Body = z.object({
@@ -22,31 +29,60 @@ const Body = z.object({
 });
 
 const SITE_URL = Deno.env.get("SITE_URL") ?? "https://suffolktennis.online";
+const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
+
+type EventRow = {
+  id: string; title: string; location: string | null; event_date: string | null;
+  programme_type: string; price_pence: number | null; is_free: boolean; meeting_cadence: string | null;
+};
+
+function costLabel(ev: EventRow, complimentary: boolean): string {
+  if (complimentary) return "No extra charge — included with your existing programme place";
+  if (ev.is_free) return "Free";
+  if (!ev.price_pence) return "";
+  if (ev.programme_type === "programme") {
+    const cadence = ev.meeting_cadence ? `${ev.meeting_cadence} sessions` : "every session";
+    return `${gbp(ev.price_pence)} for the full programme (${cadence} included)`;
+  }
+  return gbp(ev.price_pence);
+}
 
 function invitationEmail(opts: {
-  parentName: string; childName: string; eventTitle: string;
-  dateLabel: string | null; location: string | null; priceLabel: string | null;
+  parentName: string; childName: string; event: EventRow;
+  dateLabel: string | null; complimentary: boolean;
   bookUrl: string; reminder: boolean; unsubscribeUrl?: string;
 }) {
   const first = (opts.parentName || "there").split(" ")[0];
-  const lead = `${opts.reminder ? "A quick reminder that " : ""}<strong>${opts.childName}</strong> has been invited to <strong>${opts.eventTitle}</strong>.`;
+  const isProgramme = opts.event.programme_type === "programme";
+  const noCharge = opts.complimentary || opts.event.is_free;
+  const lead = `${opts.reminder ? "A quick reminder that " : ""}<strong>${opts.childName}</strong> has been invited to <strong>${opts.event.title}</strong>.`;
+
+  const body =
+    emailParagraph(`Hi ${first},`) +
+    emailParagraph(lead) +
+    (opts.complimentary
+      ? emailParagraph(`Because ${opts.childName} is already on one of our programmes, this place is <strong>included at no extra charge</strong> — you just need to confirm it.`)
+      : "") +
+    emailDetails([
+      ["Player", opts.childName],
+      [isProgramme ? "Programme" : "Event", opts.event.title],
+      ["Date", opts.dateLabel ?? ""],
+      ["Venue", opts.event.location ?? ""],
+      ["Cost", costLabel(opts.event, opts.complimentary)],
+    ]) +
+    (isProgramme && !opts.complimentary
+      ? emailParagraph("One payment covers the whole programme — every session is included. And once your child's own programme fee is paid, any other programme we invite them to is included at no extra charge.")
+      : "") +
+    emailParagraph("After every session, your child's coach writes a short, bespoke performance report. You'll find each one in your Parent Hub, so you can follow their progress through the season.") +
+    emailParagraph(noCharge ? "Places are offered by invitation, so please confirm as soon as you can." : "Places are limited and offered by invitation, so please book as soon as you can.") +
+    emailButton(opts.bookUrl, noCharge ? "Confirm your place" : "View details &amp; book") +
+    emailNote(`This link is personal to ${opts.childName} — please don’t forward it. You’ll be asked to sign in (or create your free account) ${noCharge ? "to confirm" : "before paying"}.`);
+
   return brandedEmail({
     unsubscribeUrl: opts.unsubscribeUrl,
     title: opts.reminder ? "Your invitation is waiting" : `${opts.childName} is invited`,
-    preheader: `${opts.eventTitle}${opts.dateLabel ? ` — ${opts.dateLabel}` : ""}`,
-    body:
-      emailParagraph(`Hi ${first},`) +
-      emailParagraph(lead) +
-      emailDetails([
-        ["Player", opts.childName],
-        ["Event", opts.eventTitle],
-        ["Date", opts.dateLabel ?? ""],
-        ["Venue", opts.location ?? ""],
-        ["Cost", opts.priceLabel ?? ""],
-      ]) +
-      emailParagraph("Places are limited and offered by invitation, so please book as soon as you can.") +
-      emailButton(opts.bookUrl, "View details &amp; book") +
-      emailNote(`This link is personal to ${opts.childName} — please don’t forward it. You’ll be asked to sign in (or create your free account) before paying.`),
+    preheader: `${opts.event.title}${opts.dateLabel ? ` — ${opts.dateLabel}` : ""}`,
+    body,
   });
 }
 
@@ -74,22 +110,18 @@ Deno.serve(async (req) => {
 
   const { data: eventRow } = await admin
     .from("events")
-    .select("id, title, location, event_date, programme_type, price_pence, monthly_amount_pence, programme_months")
+    .select("id, title, location, event_date, programme_type, price_pence, is_free, meeting_cadence")
     .eq("id", body.event_id)
     .maybeSingle();
   if (!eventRow) return json({ error: "Event not found" }, 404);
+  const ev = eventRow as EventRow;
 
-  const dateLabel = eventRow.event_date
-    ? new Date(eventRow.event_date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+  const dateLabel = ev.event_date
+    ? new Date(ev.event_date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
     : null;
-  const priceLabel = eventRow.programme_type === "monthly_programme"
-    ? (eventRow.monthly_amount_pence
-        ? `£${(eventRow.monthly_amount_pence / 100).toFixed(2)} per month for ${eventRow.programme_months} months`
-        : null)
-    : (eventRow.price_pence ? `£${(eventRow.price_pence / 100).toFixed(2)}` : null);
 
   const apiKey = Deno.env.get("RESEND_API_KEY");
-  const results: Array<{ email: string; invitation_id?: string; sent: boolean; error?: string }> = [];
+  const results: Array<{ email: string; invitation_id?: string; sent: boolean; complimentary?: boolean; error?: string }> = [];
 
   // Look up parent accounts once so invitations link to existing users.
   let usersByEmail = new Map<string, string>();
@@ -102,9 +134,34 @@ Deno.serve(async (req) => {
     );
   } catch { /* linking is best-effort */ }
 
+  /**
+   * Roster players are matched to a registered child through
+   * player_roster.linked_child_id; eligibility is decided on the child.
+   */
+  async function resolveChildId(inv: z.infer<typeof Invitee>): Promise<string | null> {
+    if (inv.child_id) return inv.child_id;
+    if (!inv.roster_id) return null;
+    const { data } = await admin
+      .from("player_roster").select("linked_child_id").eq("id", inv.roster_id).maybeSingle();
+    return data?.linked_child_id ?? null;
+  }
+
+  async function eligibleForComplimentary(childId: string | null): Promise<boolean> {
+    if (!childId || ev.programme_type !== "programme") return false;
+    const { data } = await admin.rpc("child_has_paid_programme", { p_child_id: childId });
+    return data === true;
+  }
+
   if (body.invitees) {
     for (const inv of body.invitees) {
       const email = inv.parent_email.toLowerCase();
+
+      const childId = await resolveChildId(inv);
+      const autoEligible = await eligibleForComplimentary(childId);
+      const complimentary = inv.complimentary === true || autoEligible;
+      const complimentaryReason = inv.complimentary === true
+        ? "granted by admin"
+        : autoEligible ? "already on a paid programme" : null;
 
       // Re-inviting must reuse the existing invitation (same token). The
       // (event, child, email) unique key can't cover roster players (NULL
@@ -112,8 +169,8 @@ Deno.serve(async (req) => {
       // precedence: roster_id, then child_id, then email + player name.
       let existingQuery = admin
         .from("booking_invitations")
-        .select("id, token, status")
-        .eq("event_id", eventRow.id);
+        .select("id, token, status, complimentary")
+        .eq("event_id", ev.id);
       if (inv.roster_id) existingQuery = existingQuery.eq("roster_id", inv.roster_id);
       else if (inv.child_id) existingQuery = existingQuery.eq("child_id", inv.child_id);
       else existingQuery = existingQuery.eq("parent_email", email).eq("child_name", inv.child_name);
@@ -125,17 +182,26 @@ Deno.serve(async (req) => {
         ({ data: created, error } = await admin
           .from("booking_invitations")
           .insert({
-            event_id: eventRow.id,
-            child_id: inv.child_id ?? null,
+            event_id: ev.id,
+            child_id: childId,
             roster_id: inv.roster_id ?? null,
             child_name: inv.child_name,
             parent_email: email,
             parent_name: inv.parent_name || null,
             parent_user_id: usersByEmail.get(email) ?? null,
             invited_by: adminUserId,
+            complimentary,
+            complimentary_reason: complimentaryReason,
           })
-          .select("id, token, status")
+          .select("id, token, status, complimentary")
           .single());
+      } else if (complimentary && !existing?.complimentary) {
+        // Re-sent after the child qualified (or the admin granted it): upgrade
+        // the standing invitation so the booking page stops asking for money.
+        await admin.from("booking_invitations")
+          .update({ complimentary: true, complimentary_reason: complimentaryReason })
+          .eq("id", created.id);
+        created = { ...created, complimentary: true };
       }
 
       if (error || !created) {
@@ -147,6 +213,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      const isComplimentary = !!created.complimentary;
       let sent = false;
       let sendError: string | undefined;
       if (apiKey) {
@@ -154,18 +221,19 @@ Deno.serve(async (req) => {
           const unsubToken = await unsubscribeTokenFor(admin, email, "invitation");
           await sendEmail({
             to: email,
-            subject: `Invitation: ${eventRow.title} — ${inv.child_name}`,
+            subject: `Invitation: ${ev.title} — ${inv.child_name}`,
             unsubscribe_token: unsubToken ?? undefined,
             html: invitationEmail({
               unsubscribeUrl: unsubscribeUrlFor(unsubToken),
               parentName: inv.parent_name || "",
               childName: inv.child_name,
-              eventTitle: eventRow.title,
-              dateLabel, location: eventRow.location, priceLabel,
+              event: ev,
+              dateLabel,
+              complimentary: isComplimentary,
               bookUrl: `${SITE_URL}/book/${created.token}`,
               reminder: false,
             }),
-            idempotency_key: `invite-${created.id}`,
+            idempotency_key: `invite-${created.id}${isComplimentary ? "-comp" : ""}`,
           }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
           sent = true;
         } catch (e) {
@@ -180,15 +248,15 @@ Deno.serve(async (req) => {
           .update({ sent_at: new Date().toISOString() })
           .eq("id", created.id);
       }
-      results.push({ email, invitation_id: created.id, sent, error: sendError });
+      results.push({ email, invitation_id: created.id, sent, complimentary: isComplimentary, error: sendError });
     }
   }
 
   if (body.remind_invitation_ids) {
     const { data: invitations } = await admin
       .from("booking_invitations")
-      .select("id, token, child_name, parent_email, parent_name, status")
-      .eq("event_id", eventRow.id)
+      .select("id, token, child_name, parent_email, parent_name, status, complimentary")
+      .eq("event_id", ev.id)
       .in("id", body.remind_invitation_ids);
 
     for (const inv of invitations ?? []) {
@@ -204,14 +272,15 @@ Deno.serve(async (req) => {
         const unsubToken = await unsubscribeTokenFor(admin, inv.parent_email, "invitation");
         await sendEmail({
           to: inv.parent_email,
-          subject: `Reminder: ${eventRow.title} — ${inv.child_name}`,
+          subject: `Reminder: ${ev.title} — ${inv.child_name}`,
           unsubscribe_token: unsubToken ?? undefined,
           html: invitationEmail({
             unsubscribeUrl: unsubscribeUrlFor(unsubToken),
             parentName: inv.parent_name || "",
             childName: inv.child_name || "your child",
-            eventTitle: eventRow.title,
-            dateLabel, location: eventRow.location, priceLabel,
+            event: ev,
+            dateLabel,
+            complimentary: !!inv.complimentary,
             bookUrl: `${SITE_URL}/book/${inv.token}`,
             reminder: true,
           }),
@@ -219,7 +288,7 @@ Deno.serve(async (req) => {
         await admin.from("booking_invitations")
           .update({ reminded_at: new Date().toISOString() })
           .eq("id", inv.id);
-        results.push({ email: inv.parent_email, invitation_id: inv.id, sent: true });
+        results.push({ email: inv.parent_email, invitation_id: inv.id, sent: true, complimentary: !!inv.complimentary });
       } catch (e) {
         results.push({ email: inv.parent_email, invitation_id: inv.id, sent: false, error: e instanceof Error ? e.message : String(e) });
       }
