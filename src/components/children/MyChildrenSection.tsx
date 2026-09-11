@@ -2,12 +2,11 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Plus, User, ChevronRight, Sparkles, Pencil, Star, Zap, Trophy, CreditCard, RefreshCw, ExternalLink, BarChart3 } from "lucide-react";
+import { Plus, User, Sparkles, Pencil, Star, Zap, Trophy, CreditCard, RefreshCw, ExternalLink, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, EmptyState, SkeletonCards } from "@/components/app";
 import AddChildForm from "./AddChildForm";
 import EditChildForm from "./EditChildForm";
-import PlayerReportView from "./PlayerReportView";
 import ChildReportsView from "./ChildReportsView";
 import { useToast } from "@/hooks/use-toast";
 import { SignedImage } from "@/components/SignedImage";
@@ -27,35 +26,16 @@ type Child = {
   btm_number?: string | null;
 };
 
-type Report = {
-  id: string;
-  report_title: string;
-  report_date: string;
-  programme: string | null;
-  national_coach: string | null;
-  individual_coach: string | null;
-  region: string | null;
-  county: string | null;
-  talent_characteristics: any[];
-  programme_review: any[];
-  coach_comments: string | null;
-  weekly_schedule: string | null;
-  competitive_schedule: string | null;
-  report_pdf_url: string | null;
-};
-
 const MyChildrenSection = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [selectedChild, setSelectedChild] = useState<Child | null>(null);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [reportsLoading, setReportsLoading] = useState(false);
-  // Coach session reports drill-down (the LTA nine-area reports), separate
-  // from the performance plan. Deep-linkable as /parent-hub?tab=children&reports=<childId>
-  // so a booking's "See session reports" link lands here.
+  // Performance & Reports drill-down: coach session reports and uploaded
+  // performance plans in one view. Deep-linkable as
+  // /parent-hub?tab=children&reports=<childId> so a booking's
+  // "See session reports" link lands here.
   const [reportsChild, setReportsChild] = useState<Child | null>(null);
 
   const [editingChild, setEditingChild] = useState<Child | null>(null);
@@ -223,56 +203,21 @@ const MyChildrenSection = () => {
     }
   };
 
-  const handleSelectChild = async (child: Child) => {
-    setSelectedChild(child);
-    setReportsLoading(true);
-    const { data } = await supabase
-      .from("player_reports")
-      .select("*")
-      .eq("child_id", child.id)
-      .order("report_date", { ascending: false });
-    setReports((data as Report[]) || []);
-    setReportsLoading(false);
-  };
-
-  const handleDeleteChild = async (childId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to remove this child?")) return;
+  // The confirm lives in EditChildForm's "Remove" row, the only caller, so the
+  // parent is not asked twice.
+  const handleDeleteChild = async (childId: string) => {
     const { error } = await supabase.from("children").delete().eq("id", childId);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Removed", description: "Child removed successfully." });
+      setEditingChild(null);
       fetchChildren();
     }
   };
 
   if (reportsChild) {
     return <ChildReportsView childId={reportsChild.id} childName={reportsChild.name} onBack={closeReports} />;
-  }
-
-  if (selectedChild) {
-    if (reportsLoading) {
-      return <SkeletonCards count={2} className="md:grid-cols-1 lg:grid-cols-1" />;
-    }
-    return (
-      <PlayerReportView
-        child={selectedChild}
-        reports={reports}
-        onBack={() => setSelectedChild(null)}
-        onReportsChanged={() => handleSelectChild(selectedChild)}
-        onDeleteChild={async (childId) => {
-          const { error } = await supabase.from("children").delete().eq("id", childId);
-          if (error) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
-          } else {
-            toast({ title: "Removed", description: "Child removed successfully." });
-            setSelectedChild(null);
-            fetchChildren();
-          }
-        }}
-      />
-    );
   }
 
   const ageGroupOf = (dob: string | null): string | null => {
@@ -326,6 +271,7 @@ const MyChildrenSection = () => {
             child={editingChild}
             onSaved={() => { setEditingChild(null); fetchChildren(); }}
             onCancel={() => setEditingChild(null)}
+            onDelete={handleDeleteChild}
           />
         </div>
       )}
@@ -361,7 +307,7 @@ const MyChildrenSection = () => {
               >
                 <div className="p-4 md:p-5">
                   <div className="flex items-start gap-4">
-                    <button type="button" onClick={() => handleSelectChild(child)} className="press shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border" aria-label={`Open ${child.name}'s performance plan`}>
+                    <button type="button" onClick={() => setReportsChild(child)} className="press shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border" aria-label={`Open ${child.name}'s performance & reports`}>
                       <div className="h-20 w-20 md:h-24 md:w-24">
                         <SignedImage bucket="child-photos" value={child.photo_url} alt={child.name} className="h-full w-full object-cover" />
                       </div>
@@ -446,11 +392,8 @@ const MyChildrenSection = () => {
                 </div>
 
                 <div className="flex items-center gap-2 border-t border-border px-4 py-3 md:px-5">
-                  <Button onClick={() => handleSelectChild(child)} className="flex-1">
-                    Performance plan <ChevronRight size={16} />
-                  </Button>
-                  <Button variant="outline" aria-label={`${child.name}'s session reports`} onClick={(e) => { e.stopPropagation(); setReportsChild(child); }}>
-                    <BarChart3 size={16} /> Reports
+                  <Button aria-label={`${child.name}'s performance & reports`} onClick={(e) => { e.stopPropagation(); setReportsChild(child); }} className="flex-1">
+                    <BarChart3 size={16} /> Performance & Reports
                   </Button>
                   <Button variant="outline" size="icon" aria-label={`Edit ${child.name}`} onClick={(e) => { e.stopPropagation(); setEditingChild(child); }}>
                     <Pencil size={16} />

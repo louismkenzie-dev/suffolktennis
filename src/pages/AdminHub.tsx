@@ -143,7 +143,7 @@ const SECTION_VIEWS: Record<SectionId, ViewOption[]> = {
     { id: "admins", label: "Admins" },
   ],
   coaching: [
-    { id: "reports", label: "Reports" },
+    { id: "reports", label: "Performance & Reports" },
     { id: "goals", label: "Goals" },
   ],
   website: [

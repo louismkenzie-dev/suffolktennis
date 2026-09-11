@@ -1,22 +1,29 @@
 /**
- * Parent-facing session performance reports for one child, inside the Parent
- * Hub. The building blocks (radar, trend grid, per-area rows, loader) are
- * exported so the standalone /report/:id page shows exactly the same thing.
+ * Performance & Reports for one child, inside the Parent Hub: a coach's
+ * session reports and the LTA camp reports a parent uploads, charted as one
+ * history because they rate the same nine areas (see progress.ts). The
+ * building blocks (radar, trend grid, per-area rows, loader) are exported so
+ * the standalone /report/:id page shows exactly the same thing.
  *
  * Only reports the coach finished (complete = true, all nine areas rated)
  * count. Legacy four-star rows have empty `ratings` and never appear here.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, ChevronLeft, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronDown, ChevronUp, ExternalLink, Upload } from "lucide-react";
 import {
   Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { formatTimeRange } from "@/lib/timeFormat";
 import { LTA_AREAS, LTA_LEVELS, isComplete, levelLabel, trendSentence, type Ratings } from "@/lib/lta";
-import { EmptyState, ListGroup, ListRow, PageHeader, Section, SkeletonBlock, StatusBadge, Surface } from "@/components/app";
+import { EmptyState, InlineNote, ListGroup, ListRow, PageHeader, Section, SkeletonBlock, StatusBadge, Surface } from "@/components/app";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { loadProgress, type ProgressData, type ProgressEntry, type ProgressKind } from "./progress";
+import GoalsTournamentSection from "./GoalsTournamentSection";
+import PlanDetail from "./PlanDetail";
+import PlanUploadSheet from "./PlanUploadSheet";
 
 // session_reports / session_attendance are not in the generated types yet.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,6 +68,13 @@ export type AttendanceEntry = {
 };
 
 export type ChildReportsData = { reports: SessionReport[]; attendance: AttendanceEntry[] };
+
+/**
+ * The least the charts and area rows need. A SessionReport and a
+ * ProgressEntry both satisfy it, so /report/:id and the merged view share
+ * one set of pieces.
+ */
+export type RatedEntry = { ratings: Ratings; area_notes?: Record<string, string>; date: string };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -210,14 +224,22 @@ export function LevelPill({ value, className }: { value: number | undefined; cla
   return <StatusBadge tone={level?.tone ?? "neutral"} dot={false} className={className}>{level?.label ?? "Not rated"}</StatusBadge>;
 }
 
-/** Coach · date · time line under a report title, with the "Updated" badge when edited after sending. */
-export function ReportMeta({ report, className }: { report: SessionReport; className?: string }) {
-  const time = report.session?.start_time ? formatTimeRange(report.session.start_time, report.session.end_time) : null;
+/** "Session report" / "Performance plan" — the one visual cue that tells the two kinds apart. */
+export function KindBadge({ kind, className }: { kind: ProgressKind; className?: string }) {
+  return kind === "plan"
+    ? <StatusBadge tone="brand" dot={false} className={className}>Performance plan</StatusBadge>
+    : <StatusBadge tone="neutral" dot={false} className={className}>Session report</StatusBadge>;
+}
+
+/** Date · time · coach line under an entry, with the "Updated" badge when a session report was edited after sending. */
+export function EntryMeta({ entry, className }: { entry: ProgressEntry; className?: string }) {
+  const session = entry.session;
+  const time = session?.session?.start_time ? formatTimeRange(session.session.start_time, session.session.end_time) : null;
   return (
     <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground", className)}>
-      <span>{[longDate(report.date), time].filter(Boolean).join(" · ")}</span>
-      {report.coach_name && <span>· Coach {report.coach_name}</span>}
-      {isUpdated(report) && <StatusBadge tone="info" dot={false}>Updated</StatusBadge>}
+      <span>{[longDate(entry.date), time].filter(Boolean).join(" · ")}</span>
+      {entry.coach_name && <span>· Coach {entry.coach_name}</span>}
+      {session && isUpdated(session) && <StatusBadge tone="info" dot={false}>Updated</StatusBadge>}
     </div>
   );
 }
@@ -298,8 +320,8 @@ const TrendTip = ({ active, payload }: TipProps) => {
   );
 };
 
-/** One small line per area across every report (oldest → newest), inverted so up = better. */
-export function TrendGrid({ reports, className }: { reports: SessionReport[]; className?: string }) {
+/** One small line per area across every rated entry (oldest → newest), inverted so up = better. */
+export function TrendGrid({ reports, className }: { reports: RatedEntry[]; className?: string }) {
   return (
     <div className={cn("grid gap-3 sm:grid-cols-2 lg:grid-cols-3", className)}>
       {LTA_AREAS.map((a) => {
@@ -340,7 +362,7 @@ export function TrendGrid({ reports, className }: { reports: SessionReport[]; cl
 }
 
 /** Per-area rows: name, level pill, the coach's note, and the change since last time. */
-export function AreaRows({ report, previous }: { report: SessionReport; previous: SessionReport | null }) {
+export function AreaRows({ report, previous }: { report: RatedEntry; previous: RatedEntry | null }) {
   return (
     <ListGroup>
       {LTA_AREAS.map((a) => {
@@ -415,27 +437,58 @@ export function AttendanceList({ entries }: { entries: AttendanceEntry[] }) {
 /* The hub view                                                       */
 /* ---------------------------------------------------------------- */
 
+type ProgressData = { entries: ProgressEntry[]; attendance: AttendanceEntry[] };
+
+/** "9 areas rated", "7 of 9 areas rated", "PDF only" or "No ratings yet". */
+function ratedLabel(e: ProgressEntry): string {
+  const n = LTA_AREAS.filter((a) => [1, 2, 3, 4].includes(e.ratings[a.name])).length;
+  if (n === LTA_AREAS.length) return "9 areas rated";
+  if (n > 0) return `${n} of 9 areas rated`;
+  return e.plan?.report_pdf_url ? "PDF only" : "No ratings yet";
+}
+
 export default function ChildReportsView({ childId, childName, onBack }: { childId: string; childName: string; onBack: () => void }) {
   const navigate = useNavigate();
-  const [data, setData] = useState<ChildReportsData | null>(null);
+  const [data, setData] = useState<ProgressData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  // Bumped after an upload or a parse so the effect refetches; the data is
+  // kept on screen meanwhile rather than dropping back to the skeleton.
+  const [version, setVersion] = useState(0);
+  const reload = () => setVersion((v) => v + 1);
+
+  useEffect(() => { setData(null); setExpandedId(null); }, [childId]);
 
   useEffect(() => {
     let cancelled = false;
-    setData(null);
     setError(null);
-    loadChildReports(childId)
+    loadProgress(childId)
       .then((d) => { if (!cancelled) setData(d); })
       .catch((e) => { if (!cancelled) setError(e?.message || "Could not load reports"); });
     return () => { cancelled = true; };
-  }, [childId]);
+  }, [childId, version]);
 
-  const reports = useMemo(() => data?.reports ?? [], [data]);
-  const newestFirst = useMemo(() => [...reports].reverse(), [reports]);
-  const latest = reports[reports.length - 1] ?? null;
-  const previous = reports.length >= 2 ? reports[reports.length - 2] : null;
+  const entries = useMemo(() => data?.entries ?? [], [data]);
+  // Charts and "previous" comparisons are drawn from rated entries only; a
+  // PDF-only plan is listed but has nothing to plot.
+  const rated = useMemo(() => entries.filter((e) => e.rated), [entries]);
+  const newestFirst = useMemo(() => [...entries].reverse(), [entries]);
+  const latest = rated[rated.length - 1] ?? null;
+  const previous = rated.length >= 2 ? rated[rated.length - 2] : null;
+  const newest = entries[entries.length - 1] ?? null;
   const name = firstName(childName);
+
+  const showInList = (id: string) => {
+    setExpandedId(id);
+    document.getElementById(`entry-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const uploadButton = (
+    <Button variant="outline" onClick={() => setUploadOpen(true)}>
+      <Upload /> Upload a performance plan
+    </Button>
+  );
 
   return (
     <div>
@@ -443,13 +496,14 @@ export default function ChildReportsView({ childId, childName, onBack }: { child
         <ChevronLeft className="h-5 w-5" /> My children
       </button>
       <PageHeader
-        eyebrow="Session reports"
+        eyebrow="Performance & Reports"
         title={childName}
         description={
           !data ? undefined
-            : reports.length === 0 ? `Coaches write up ${name}'s sessions here.`
-              : `${reports.length} ${reports.length === 1 ? "report" : "reports"} · latest ${shortDate(latest!.date)}`
+            : entries.length === 0 ? `${name}'s session reports and performance plans live here.`
+              : `${entries.length} ${entries.length === 1 ? "entry" : "entries"} · latest ${shortDate(newest!.date)}`
         }
+        actions={uploadButton}
       />
 
       {error ? (
@@ -466,72 +520,95 @@ export default function ChildReportsView({ childId, childName, onBack }: { child
             <>
               <Section
                 title="Latest report"
-                description={<ReportMeta report={latest} className="text-xs" />}
+                description={<EntryMeta entry={latest} className="text-xs" />}
                 action={
-                  <button type="button" onClick={() => navigate(`/report/${latest.id}`)} className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-primary">
-                    Open <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
+                  latest.kind === "session" ? (
+                    <button type="button" onClick={() => navigate(`/report/${latest.session!.id}`)} className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-primary">
+                      Open <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => showInList(latest.id)} className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-primary">
+                      Details <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  )
                 }
               >
                 <Surface className="px-2 pb-3 pt-2 sm:px-4">
-                  {latest.event?.title && <p className="px-2 pt-1 text-[13px] font-medium text-foreground sm:px-0">{latest.event.title}</p>}
+                  <div className="flex flex-wrap items-center gap-2 px-2 pt-1 sm:px-0">
+                    <KindBadge kind={latest.kind} />
+                    <p className="min-w-0 truncate text-[13px] font-medium text-foreground">{latest.title}</p>
+                  </div>
                   <RatingsRadar latest={latest.ratings} previous={previous?.ratings ?? null} latestDate={latest.date} previousDate={previous?.date} />
                 </Surface>
               </Section>
 
-              <Section title="Progress over time" description={reports.length < 2 ? "Trend lines appear once there are two or more reports." : "Up is better. Latest level shown on each area."}>
-                <TrendGrid reports={reports} />
-              </Section>
-
-              <Section title="All reports" count={reports.length}>
-                <ListGroup>
-                  {newestFirst.map((r, i) => {
-                    const idx = reports.length - 1 - i;
-                    const prev = idx > 0 ? reports[idx - 1] : null;
-                    const open = expandedId === r.id;
-                    return (
-                      <div key={r.id}>
-                        <ListRow
-                          onClick={() => setExpandedId(open ? null : r.id)}
-                          title={longDate(r.date)}
-                          subtitle={[r.coach_name ? `Coach ${r.coach_name}` : null, r.event?.title].filter(Boolean).join(" · ")}
-                          detail="9 areas rated"
-                          trailing={
-                            <span className="flex items-center gap-2">
-                              {isUpdated(r) && <StatusBadge tone="info" dot={false}>Updated</StatusBadge>}
-                              {open ? <ChevronUp className="h-4 w-4 text-muted-foreground/60" /> : <ChevronDown className="h-4 w-4 text-muted-foreground/60" />}
-                            </span>
-                          }
-                          ariaLabel={`${open ? "Collapse" : "Expand"} report from ${longDate(r.date)}`}
-                        />
-                        {open && (
-                          <div className="space-y-3 border-t border-border bg-muted/40 px-3 py-3 sm:px-4">
-                            <AreaRows report={r} previous={prev} />
-                            <CoachComment comment={r.comment} />
-                            <button type="button" onClick={() => navigate(`/report/${r.id}`)} className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-primary">
-                              Open full report <ExternalLink className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </ListGroup>
+              <Section title="Progress over time" description={rated.length < 2 ? "Trend lines appear once two or more entries are rated." : "Up is better. Latest level shown on each area."}>
+                <TrendGrid reports={rated} />
               </Section>
             </>
-          ) : (
+          ) : entries.length === 0 ? (
             <EmptyState
               icon={BarChart3}
-              title="No session reports yet"
-              description={`When a coach writes up one of ${name}'s sessions it will appear here, with a chart of the nine LTA areas.`}
+              title="Nothing here yet"
+              description={`When a Suffolk Tennis coach writes up one of ${name}'s sessions, or you upload an LTA camp report, it appears here with a chart of the nine areas.`}
+              action={uploadButton}
             />
+          ) : null}
+
+          <GoalsTournamentSection childId={childId} childName={childName} sideBySide />
+
+          {entries.length > 0 && (
+            <Section title="Everything" count={entries.length}>
+              <ListGroup>
+                {newestFirst.map((e) => {
+                  const ri = rated.indexOf(e);
+                  const prev = ri > 0 ? rated[ri - 1] : null;
+                  const open = expandedId === e.id;
+                  const updated = e.session ? isUpdated(e.session) : false;
+                  return (
+                    <div key={e.id} id={`entry-${e.id}`} className="scroll-mt-4">
+                      <ListRow
+                        onClick={() => setExpandedId(open ? null : e.id)}
+                        title={longDate(e.date)}
+                        subtitle={e.title}
+                        detail={[e.coach_name ? `Coach ${e.coach_name}` : null, ratedLabel(e)].filter(Boolean).join(" · ")}
+                        trailing={
+                          <span className="flex items-center gap-2">
+                            {updated && <StatusBadge tone="info" dot={false}>Updated</StatusBadge>}
+                            <KindBadge kind={e.kind} />
+                            {open ? <ChevronUp className="h-4 w-4 text-muted-foreground/60" /> : <ChevronDown className="h-4 w-4 text-muted-foreground/60" />}
+                          </span>
+                        }
+                        ariaLabel={`${open ? "Collapse" : "Expand"} ${e.kind === "plan" ? "performance plan" : "session report"} from ${longDate(e.date)}`}
+                      />
+                      {open && (
+                        <div className="space-y-3 border-t border-border bg-muted/40 px-3 py-3 sm:px-4">
+                          {Object.keys(e.ratings).length > 0 && <AreaRows report={e} previous={e.rated ? prev : null} />}
+                          <CoachComment comment={e.comment} />
+                          {e.kind === "session" && e.session && (
+                            <button type="button" onClick={() => navigate(`/report/${e.session!.id}`)} className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-primary">
+                              Open full report <ExternalLink className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {e.kind === "plan" && e.plan && <PlanDetail plan={e.plan} rated={e.rated} onChanged={reload} />}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </ListGroup>
+            </Section>
           )}
+
+          {data.warnings.map((w) => <InlineNote key={w} tone="warning">{w}</InlineNote>)}
 
           <Section title="Attendance" description="What the coach recorded at each session.">
             <AttendanceList entries={data.attendance} />
           </Section>
         </div>
       )}
+
+      <PlanUploadSheet open={uploadOpen} onOpenChange={setUploadOpen} childId={childId} onDone={reload} />
     </div>
   );
 }

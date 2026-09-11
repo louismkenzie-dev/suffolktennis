@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { X, Upload, Star, Zap, Trophy, ExternalLink, Hand, CreditCard, RefreshCw } from "lucide-react";
+import { X, Upload, Star, Zap, Trophy, ExternalLink, Hand, CreditCard, RefreshCw, Trash2 } from "lucide-react";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 import Combobox from "./Combobox";
 import HealthNeedsFields from "./HealthNeedsFields";
@@ -33,9 +33,12 @@ type EditChildFormProps = {
   child: Child;
   onSaved: () => void;
   onCancel: () => void;
+  // Optional because the form is also mounted where removal is not offered;
+  // the caller owns the delete and the toast, this row only confirms.
+  onDelete?: (childId: string) => void;
 };
 
-const EditChildForm = ({ child, onSaved, onCancel }: EditChildFormProps) => {
+const EditChildForm = ({ child, onSaved, onCancel, onDelete }: EditChildFormProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [name, setName] = useState(child.name);
@@ -559,6 +562,26 @@ const EditChildForm = ({ child, onSaved, onCancel }: EditChildFormProps) => {
           </button>
         </div>
       </form>
+
+      {onDelete && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/20 p-4">
+          <div className="min-w-0">
+            <h4 className="font-display text-sm font-bold text-foreground">Remove {child.name}</h4>
+            <p className="mt-0.5 text-xs text-muted-foreground">This will permanently delete this child's profile, goals, schedule, and all reports.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm(`Are you sure you want to permanently remove ${child.name}? This cannot be undone.`)) {
+                onDelete(child.id);
+              }
+            }}
+            className="flex shrink-0 items-center gap-2 rounded-xl border border-destructive/30 px-4 py-2 font-display text-sm font-bold text-destructive transition-all hover:bg-destructive/10"
+          >
+            <Trash2 size={14} /> Remove child
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 };
