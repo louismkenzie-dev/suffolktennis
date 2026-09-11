@@ -16,8 +16,7 @@ import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Avatar, ListGroup, ListRow } from "./primitives";
-import mark from "@/assets/suffolk-tennis-logo-v7.png";
-import wordmark from "@/assets/suffolk-tennis-logo-landscape-v2.png";
+import { BrandLockup, BrandMark } from "@/components/app/BrandLogo";
 
 export type NavItem = {
   id: string;
@@ -135,11 +134,11 @@ export function AppShell({
             </button>
           ) : (
             <Link to="/" className="flex shrink-0 items-center md:hidden" aria-label="Suffolk Tennis home">
-              <img src={mark} alt="" className="h-8 w-8 rounded-lg object-cover" />
+              <BrandMark />
             </Link>
           )}
           <Link to="/" className="hidden shrink-0 items-center md:flex" aria-label="Suffolk Tennis home">
-            <img src={wordmark} alt="Suffolk Tennis" className="h-8 w-auto" />
+            <BrandLockup />
           </Link>
 
           <div className="min-w-0 flex-1 md:hidden">
@@ -329,12 +328,19 @@ export function FlowShell({ back, title, right, children, maxWidth = "max-w-2xl"
               <ChevronLeft className="h-5 w-5" /> {back.label}
             </Link>
           ) : (
-            <Link to="/" aria-label="Suffolk Tennis home" className="flex items-center"><img src={mark} alt="" className="h-8 w-8 rounded-lg object-cover" /></Link>
+            <Link to="/" aria-label="Suffolk Tennis home" className="flex shrink-0 items-center">
+              <BrandMark className="md:hidden" />
+              <BrandLockup className="hidden md:block" />
+            </Link>
           )}
           {title && <span className="min-w-0 flex-1 truncate font-display text-[17px] font-semibold">{title}</span>}
           {!title && <span className="flex-1" />}
           {right}
-          {back && <Link to="/" aria-label="Suffolk Tennis home" className="flex items-center"><img src={mark} alt="" className="h-8 w-8 rounded-lg object-cover" /></Link>}
+          {back && (
+            <Link to="/" aria-label="Suffolk Tennis home" className="flex shrink-0 items-center">
+              <BrandMark />
+            </Link>
+          )}
         </div>
       </header>
       <main className={cn("mx-auto w-full px-4 py-5 pb-12 md:px-6 md:py-8", maxWidth, className)}>{children}</main>
