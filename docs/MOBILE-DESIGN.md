@@ -37,3 +37,31 @@ a sheet).
 - Motion is 150–250ms and honours `prefers-reduced-motion`.
 - Loading = skeletons that match the content; empty = `EmptyState` with a
   sentence about what will appear there.
+
+## Admin navigation (regrouped 11 Sep 2026)
+
+Thirteen top-level tabs wrapped to two lines on a laptop, so the Admin Hub
+now has five sections grouped by the job in hand, plus the Scanner link:
+
+| Section  | Pages (second-level strip)                                    |
+| -------- | ------------------------------------------------------------- |
+| Bookings | programmes, events, invitations, payments                     |
+| People   | Children · Parents · Player database · Coaches · Admins       |
+| Progress | Reports · Goals                                               |
+| Website  | Events page · News · Player Watch · Venues                    |
+| Email    | campaigns                                                     |
+
+The second level renders through AppShell's `subheader` slot: a
+`SegmentedControl` on desktop (one group, one selected — the Apple/Airbnb
+pattern) and a scrolling `Chip` row on phones. It is sticky with the header,
+so the strip stays in reach while a long list scrolls. People carries one
+search box: in that strip from md up, and at the top of the page body on
+phones so the sticky header never passes ~110px. The query follows the admin
+across its five pages, so "Hatch" typed under Children still filters Parents
+and the player database when they switch.
+
+The section is labelled Progress, not Coaching: the view switcher already has
+a Coach pill and the staff list lives under People > Coaches, so three
+Coach-ish words in one header would send an admin to the wrong place. Each section remembers its last page, and the URL
+is `/admin?tab=<section>&view=<page>`; the old `?tab=families` style links
+still resolve (see `LEGACY_TABS` in `src/pages/AdminHub.tsx`).

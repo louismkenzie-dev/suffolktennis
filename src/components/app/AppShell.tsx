@@ -193,7 +193,11 @@ export function AppShell({
             </div>
           </nav>
         )}
-        {subheader && <div className={cn("mx-auto px-4 pb-3 md:px-6", maxWidth)}>{subheader}</div>}
+        {subheader && (
+          <div className="md:border-t md:border-border">
+            <div className={cn("mx-auto px-4 pb-3 pt-2.5 md:px-6 md:py-3", maxWidth)}>{subheader}</div>
+          </div>
+        )}
       </header>
 
       {/* ---------------- Page ---------------- */}

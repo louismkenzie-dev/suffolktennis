@@ -64,7 +64,11 @@ const blankForm = () => ({
   contact_email: "", mobile: "", lta_number: "", tags: "",
 });
 
-const PeoplePanel = () => {
+const PeoplePanel = ({ search: searchProp, onSearchChange }: {
+  /** When provided, the section's search box drives this page and the local one is hidden. */
+  search?: string;
+  onSearchChange?: (v: string) => void;
+} = {}) => {
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -72,7 +76,9 @@ const PeoplePanel = () => {
   const [loading, setLoading] = useState(true);
 
   // Filters
-  const [search, setSearch] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const search = searchProp ?? localSearch;
+  const setSearch = onSearchChange ?? setLocalSearch;
   const [ageFilter, setAgeFilter] = useState("all");
   const [genderFilter, setGenderFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
@@ -141,6 +147,13 @@ const PeoplePanel = () => {
   const childById = useMemo(() => new Map(children.map((c) => [c.id, c])), [children]);
   const linkedChildIds = useMemo(() => new Set(roster.map((r) => r.linked_child_id).filter(Boolean) as string[]), [roster]);
   const unlinkedChildren = useMemo(() => children.filter((c) => !linkedChildIds.has(c.id)), [children, linkedChildIds]);
+  // The search box (the section's on this page) filters this list too, so it
+  // is never a visible box that does nothing.
+  const unlinkedShown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return unlinkedChildren;
+    return unlinkedChildren.filter((c) => `${c.name} ${c.parent_name ?? ""} ${c.parent_email ?? ""}`.toLowerCase().includes(q));
+  }, [unlinkedChildren, search]);
 
   const groupsOf = useCallback((email: string | null) => {
     const e = norm(email);
@@ -343,7 +356,7 @@ const PeoplePanel = () => {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="People"
+        title="Player database"
         hideTitleOnPhone
         description={loading ? "Loading the county database…" : `${roster.length} players on the county database · ${children.length} registered by parents · ${unlinkedChildren.length} not yet linked`}
         className="mb-0"
@@ -356,6 +369,8 @@ const PeoplePanel = () => {
       />
 
       <SegmentedControl
+        ariaLabel="Player database view"
+        size="sm"
         value={tab}
         onChange={(v) => setTab(v as typeof tab)}
         options={[
@@ -368,8 +383,8 @@ const PeoplePanel = () => {
       {/* ---------------- Players ---------------- */}
       {tab === "players" && (
         <div className="space-y-3">
-          <div className="flex gap-2">
-            <SearchField value={search} onChange={setSearch} placeholder="Search name, parent, email or LTA number" className="flex-1" />
+          <div className={searchProp === undefined ? "flex gap-2" : "flex gap-2 md:hidden"}>
+            {searchProp === undefined && <SearchField value={search} onChange={setSearch} placeholder="Search name, parent, email or LTA number" className="flex-1" />}
             <FilterButton className="md:hidden" activeCount={activeFilters} onClick={() => setFiltersOpen(true)} />
           </div>
           <ChipRow>
@@ -507,11 +522,16 @@ const PeoplePanel = () => {
             Children their parents have registered on the site who aren't matched to a row on the county database.
             Add them to the database (they'll be linked automatically) or link them to an existing player.
           </p>
-          {unlinkedChildren.length === 0 ? (
-            <EmptyState icon={Link2} title="Everyone is linked" description="Every registered child is on the database." compact />
+          {unlinkedShown.length === 0 ? (
+            <EmptyState
+              icon={Link2}
+              title={search.trim() ? "No children match" : "Everyone is linked"}
+              description={search.trim() ? "Try another name, parent or email." : "Every registered child is on the database."}
+              compact
+            />
           ) : (
             <ListGroup>
-              {unlinkedChildren.map((c) => (
+              {unlinkedShown.map((c) => (
                 <div key={c.id} className="bg-card px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">

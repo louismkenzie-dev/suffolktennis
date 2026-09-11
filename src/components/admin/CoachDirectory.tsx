@@ -71,12 +71,17 @@ const fmtDate = (d: string | null) =>
 /** True when an accreditation or DBS date has already passed. */
 const isExpired = (d: string | null) => !!d && d < new Date().toISOString().slice(0, 10);
 
-const CoachDirectory = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) => void }) => {
+const CoachDirectory = ({ onEmailCoaches, search: searchProp }: {
+  onEmailCoaches?: (groupId: string) => void;
+  /** When provided, the section's search box drives the list and the local one is hidden. */
+  search?: string;
+}) => {
   const [coaches, setCoaches] = useState<DirectoryCoach[]>([]);
   const [unsubscribed, setUnsubscribed] = useState<Set<string>>(new Set());
   const [groupId, setGroupId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const search = searchProp ?? localSearch;
   const [club, setClub] = useState("all");
   const [status, setStatus] = useState("active");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -262,12 +267,14 @@ const CoachDirectory = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string)
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search name, email, mobile or club"
-              value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
+        <div className={searchProp === undefined ? "grid gap-2 sm:grid-cols-[1fr_auto_auto]" : "grid gap-2 sm:grid-cols-[auto_auto]"}>
+          {searchProp === undefined && (
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input className="pl-9" placeholder="Search name, email, mobile or club"
+                value={search} onChange={(e) => setLocalSearch(e.target.value)} />
+            </div>
+          )}
           <Select value={club} onValueChange={setClub}>
             <SelectTrigger className="sm:w-64"><SelectValue /></SelectTrigger>
             <SelectContent>

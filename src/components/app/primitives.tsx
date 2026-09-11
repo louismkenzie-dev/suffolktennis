@@ -221,16 +221,35 @@ export function Avatar({ name, src, bucket, size = "md", className, square = fal
 /* Controls                                                           */
 /* ---------------------------------------------------------------- */
 
-export function SegmentedControl<T extends string>({ value, onChange, options, className, size = "md" }: {
+export function SegmentedControl<T extends string>({ value, onChange, options, className, size = "md", ariaLabel }: {
   value: T;
   onChange: (v: T) => void;
   options: Array<{ value: T; label: React.ReactNode; count?: number; icon?: LucideIcon }>;
   className?: string;
   size?: "sm" | "md";
+  /** Names the group for screen readers — always pass one when it is navigation. */
+  ariaLabel?: string;
 }) {
+  // The full tabs pattern: only the selected tab is in the tab order and the
+  // arrow keys move the selection, which is what a screen reader expects once
+  // it has announced "tab list".
+  const ref = React.useRef<HTMLDivElement>(null);
+  const select = (index: number) => {
+    const next = (index + options.length) % options.length;
+    onChange(options[next].value);
+    ref.current?.querySelectorAll("button")[next]?.focus();
+  };
+  const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    const key = e.key;
+    if (key !== "ArrowRight" && key !== "ArrowDown" && key !== "ArrowLeft" && key !== "ArrowUp" && key !== "Home" && key !== "End") return;
+    e.preventDefault();
+    if (key === "Home") select(0);
+    else if (key === "End") select(options.length - 1);
+    else select(index + (key === "ArrowRight" || key === "ArrowDown" ? 1 : -1));
+  };
   return (
-    <div role="tablist" className={cn("inline-grid w-full rounded-xl bg-muted p-1", className)} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
-      {options.map((o) => {
+    <div ref={ref} role="tablist" aria-label={ariaLabel} className={cn("inline-grid w-full rounded-xl bg-muted p-1", className)} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map((o, i) => {
         const active = o.value === value;
         return (
           <button
@@ -238,6 +257,8 @@ export function SegmentedControl<T extends string>({ value, onChange, options, c
             role="tab"
             type="button"
             aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            onKeyDown={(e) => onKeyDown(e, i)}
             onClick={() => onChange(o.value)}
             className={cn(
               "flex items-center justify-center gap-1.5 rounded-lg px-2 font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -285,7 +306,9 @@ export function SearchField({ value, onChange, placeholder = "Search", className
           type="button"
           onClick={() => onChange("")}
           aria-label="Clear search"
-          className="hit-area absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-foreground"
+          // Not `hit-area`: its position:relative would override `absolute` and
+          // drop the button below the field. A 32px button is the touch target.
+          className="absolute right-0.5 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground md:right-1.5 md:h-8 md:w-8"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -294,19 +317,22 @@ export function SearchField({ value, onChange, placeholder = "Search", className
   );
 }
 
-export function Chip({ active, children, onClick, count, className, icon: Icon }: {
+export function Chip({ active, children, onClick, count, className, icon: Icon, current }: {
   active?: boolean;
   children: React.ReactNode;
   onClick?: () => void;
   count?: number;
   className?: string;
   icon?: LucideIcon;
+  /** Navigation, not a filter: announce the open page instead of a pressed toggle. */
+  current?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
+      aria-pressed={current ? undefined : active}
+      aria-current={current ? "page" : undefined}
       className={cn(
         "press inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-muted",

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2, Upload, X } from "lucide-react";
 import CoachDirectory from "./CoachDirectory";
-import { FormListLayout, Section, ListGroup, ListRow, Avatar, StatusBadge, EmptyState } from "@/components/app";
+import { FormListLayout, PageHeader, Section, ListGroup, ListRow, Avatar, StatusBadge, EmptyState } from "@/components/app";
 
 export type CoachRow = {
   id: string;
@@ -48,7 +48,11 @@ const uploadFile = async (file: File): Promise<string | null> => {
   return supabase.storage.from("news-media").getPublicUrl(path).data.publicUrl;
 };
 
-const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) => void }) => {
+const CoachesPanel = ({ onEmailCoaches, search }: {
+  onEmailCoaches?: (groupId: string) => void;
+  /** The People section's search box; filters the website coaches and the directory below. */
+  search?: string;
+}) => {
   const [items, setItems] = useState<CoachRow[]>([]);
   const [users, setUsers] = useState<{ user_id: string; first_name: string; last_name: string }[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -120,8 +124,17 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
     if (error) toast.error(error.message); else load();
   };
 
+  const q = (search ?? "").trim().toLowerCase();
+  const shown = q ? items.filter((c) => `${c.name} ${c.role ?? ""} ${c.qualification ?? ""}`.toLowerCase().includes(q)) : items;
+
   return (
     <div className="space-y-8">
+    <PageHeader
+      title="Coaches"
+      hideTitleOnPhone
+      description="The coaching team shown on the public site, and the county coach directory below."
+      className="mb-0"
+    />
     <FormListLayout
       formRef={formRef}
       formTitle={editingId ? "Edit coach" : "Add a coach"}
@@ -249,10 +262,15 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
           <Button className="w-full" onClick={save}>{editingId ? "Save changes" : "Add coach"}</Button>
         </>}
       list={
-        <Section title="Website coaches" count={items.length} description="The coaching team shown on the public site." action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
-          {items.length === 0 ? <EmptyState icon={Plus} title="No coaches yet" compact /> : (
+        <Section title="Website coaches" count={shown.length} description="The coaching team shown on the public site." action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
+          {shown.length === 0 && q ? (
+            // The search also drives the county directory below, which matches
+            // on email, mobile and club — so say so rather than showing a big
+            // "nothing here" panel above a list of results.
+            <p className="px-0.5 text-sm text-muted-foreground">No website coaches match “{q}”.</p>
+          ) : shown.length === 0 ? <EmptyState icon={Plus} title="No coaches yet" compact /> : (
             <ListGroup>
-              {items.map(c => (
+              {shown.map(c => (
                 <ListRow
                   key={c.id}
                   onClick={() => startEdit(c)}
@@ -278,7 +296,7 @@ const CoachesPanel = ({ onEmailCoaches }: { onEmailCoaches?: (groupId: string) =
       }
     />
 
-    <CoachDirectory onEmailCoaches={onEmailCoaches} />
+    <CoachDirectory onEmailCoaches={onEmailCoaches} search={search} />
     </div>
   );
 };

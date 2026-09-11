@@ -18,7 +18,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { ArrowLeft, Award, CalendarDays, Crop, Database, FileText, GraduationCap, ImageIcon, Loader2, Mail, MapPin, Newspaper, Pencil, Phone, Plus, QrCode, Send, Shield, Sparkles, Star, Target, Ticket, Trash2, Upload, UserCog, Users, Video, X } from "lucide-react";
+import { ArrowLeft, Award, CalendarDays, Crop, FileText, Globe, ImageIcon, Loader2, Mail, Newspaper, Pencil, Phone, Plus, QrCode, Send, Shield, Sparkles, Star, Target, Ticket, Trash2, TrendingUp, Upload, UserCog, Users, Video, X } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -26,7 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AppShell, type NavItem, PageHeader, Section, SegmentedControl, SearchField, ListGroup, ListRow, Avatar,
-  StatusBadge, EmptyState, SkeletonRows, KeyValueList, IdentityHeader, FormListLayout,
+  StatusBadge, EmptyState, SkeletonRows, KeyValueList, IdentityHeader, FormListLayout, Chip, ChipRow, useIsPhone,
 } from "@/components/app";
 import VenuesPanel from "@/components/admin/VenuesPanel";
 import CoachesPanel from "@/components/admin/CoachesPanel";
@@ -102,33 +102,153 @@ type NewsRow = {
 
 type AdminRow = { user_id: string; first_name?: string; last_name?: string; email?: string };
 
+/**
+ * Admin navigation: five sections grouped by the job an admin is doing,
+ * plus the scanner. Each section with more than one page gets a second-level
+ * strip (pills) under the header instead of its own top-level tab, so the
+ * desktop nav stays on one line and related things sit together:
+ *
+ *   Bookings   programmes, events, invitations, payments
+ *   People     everyone in the system — children, parents, the player
+ *              database, coaches and admins — with one search box
+ *   Progress   session reports and goals for individual children
+ *   Website    what the public site shows: events, news, players, venues
+ *   Email      campaigns
+ *
+ * "Progress" rather than "Coaching": the view switcher already has a Coach
+ * pill and the staff list lives under People, so three Coach-ish words in
+ * one header would send an admin to the wrong place.
+ */
+// The section ids are URL-visible, so "coaching" stays even though its label
+// reads Progress; renaming it would break bookmarks.
+type SectionId = "bookings" | "people" | "coaching" | "website" | "email";
+type ViewOption = { id: string; label: string };
+
 const ADMIN_NAV: NavItem[] = [
   { id: "bookings", label: "Bookings", icon: Ticket },
-  { id: "people", label: "People", icon: Database },
-  { id: "families", label: "Families", icon: Users },
+  { id: "people", label: "People", icon: Users },
+  { id: "coaching", label: "Progress", icon: TrendingUp },
+  { id: "website", label: "Website", icon: Globe },
   { id: "email", label: "Email", icon: Mail },
-  { id: "reports", label: "Reports", icon: FileText },
-  { id: "goals", label: "Goals", icon: Target },
-  { id: "events", label: "Events", icon: CalendarDays },
-  { id: "news", label: "News", icon: Newspaper },
-  { id: "players", label: "Players", icon: Star },
-  { id: "venues", label: "Venues", icon: MapPin },
-  { id: "coaches", label: "Coaches", icon: GraduationCap },
-  { id: "admins", label: "Admins", icon: UserCog },
   { id: "scan", label: "Scanner", icon: QrCode, to: "/admin/scan" },
 ];
-const ADMIN_TAB_IDS = ADMIN_NAV.filter((n) => !n.to).map((n) => n.id);
+
+const SECTION_VIEWS: Record<SectionId, ViewOption[]> = {
+  bookings: [],
+  people: [
+    { id: "children", label: "Children" },
+    { id: "parents", label: "Parents" },
+    { id: "roster", label: "Player database" },
+    { id: "coaches", label: "Coaches" },
+    { id: "admins", label: "Admins" },
+  ],
+  coaching: [
+    { id: "reports", label: "Reports" },
+    { id: "goals", label: "Goals" },
+  ],
+  website: [
+    { id: "events", label: "Events page" },
+    { id: "news", label: "News" },
+    { id: "featured", label: "Player Watch" },
+    { id: "venues", label: "Venues" },
+  ],
+  email: [],
+};
+const DEFAULT_VIEW: Record<SectionId, string> = {
+  bookings: "", people: "children", coaching: "reports", website: "events", email: "",
+};
+const isSection = (t: string | null): t is SectionId => !!t && t in SECTION_VIEWS;
+
+// Old ?tab= links (bookmarks, the scanner's back link, emails) still land
+// on the right page. `people` is both an old tab (the player database) and a
+// new section id — see readLocation for how that one is resolved.
+const LEGACY_TABS: Record<string, [SectionId, string]> = {
+  families: ["people", "children"], people: ["people", "roster"], coaches: ["people", "coaches"], admins: ["people", "admins"],
+  reports: ["coaching", "reports"], goals: ["coaching", "goals"],
+  events: ["website", "events"], news: ["website", "news"], players: ["website", "featured"], venues: ["website", "venues"],
+};
+
+/** Section and page from the URL: /admin?tab=people&view=parents (or a legacy tab id). */
+function readLocation(): { section: SectionId; view: string } {
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get("tab");
+  const view = params.get("view");
+  if (isSection(tab)) {
+    if (SECTION_VIEWS[tab].some((v) => v.id === view)) return { section: tab, view: view as string };
+    // A section id with no ?view= can only be an old link (the hub always
+    // writes one), so ?tab=people still opens the player database.
+    if (view === null && LEGACY_TABS[tab]) return { section: LEGACY_TABS[tab][0], view: LEGACY_TABS[tab][1] };
+    return { section: tab, view: DEFAULT_VIEW[tab] };
+  }
+  if (tab && LEGACY_TABS[tab]) return { section: LEGACY_TABS[tab][0], view: LEGACY_TABS[tab][1] };
+  return { section: "bookings", view: "" };
+}
+
+const PEOPLE_SEARCH_PLACEHOLDER: Record<string, string> = {
+  children: "Search children by name, parent or BTM number",
+  parents: "Search parents by name, email, phone or child",
+  roster: "Search players, parents, emails or LTA numbers",
+  coaches: "Search coaches by name, email, mobile or club",
+  admins: "Search admins or parents by name",
+};
+
+/**
+ * Second-level navigation for a section: pills on desktop (one group, one
+ * selected), a scrolling chip row on phones. Both are a nav landmark marking
+ * the open page with aria-current, so they never read as filters.
+ *
+ * The People search sits here only from md up. On a phone a second 44px row
+ * would push the sticky header past 160px, so the phone search is rendered at
+ * the top of the page body instead (see AdminHub).
+ */
+function SectionNav({ label, options, value, onChange, search }: {
+  label: string;
+  options: ViewOption[];
+  value: string;
+  onChange: (v: string) => void;
+  search?: { value: string; onChange: (v: string) => void; placeholder: string };
+}) {
+  const isPhone = useIsPhone();
+  return (
+    <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
+      <nav aria-label={label}>
+        {isPhone ? (
+          <ChipRow>
+            {options.map((o) => (
+              <Chip key={o.id} active={o.id === value} current={o.id === value} onClick={() => onChange(o.id)}>{o.label}</Chip>
+            ))}
+          </ChipRow>
+        ) : (
+          <SegmentedControl
+            ariaLabel={label}
+            value={value}
+            onChange={onChange}
+            options={options.map((o) => ({ value: o.id, label: o.label }))}
+            className="md:w-auto"
+          />
+        )}
+      </nav>
+      {search && (
+        <SearchField value={search.value} onChange={search.onChange} placeholder={search.placeholder} className="hidden md:block md:w-80 lg:w-96" />
+      )}
+    </div>
+  );
+}
 
 const AdminHub = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const { isAdmin, loading: adminLoading } = useIsAdmin();
   const navigate = useNavigate();
-  // Deep-linkable: /admin?tab=people. Controlled so the Coaches tab can send
-  // the admin to the composer with an audience already chosen.
-  const [tab, setTab] = useState(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
-    return t && ADMIN_TAB_IDS.includes(t) ? t : "bookings";
+  // Deep-linkable: /admin?tab=people&view=parents. Controlled so the Coaches
+  // page can send the admin to the composer with an audience already chosen.
+  const [section, setSection] = useState<SectionId>(() => readLocation().section);
+  // Each section remembers which of its pages was open.
+  const [views, setViews] = useState<Record<SectionId, string>>(() => {
+    const loc = readLocation();
+    return { ...DEFAULT_VIEW, [loc.section]: loc.view };
   });
+  // One search box for everyone under People; it carries across its pages.
+  const [peopleQuery, setPeopleQuery] = useState("");
   const [emailGroupId, setEmailGroupId] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
 
@@ -142,13 +262,19 @@ const AdminHub = () => {
       .then(({ data }) => { if (data) setProfileName(`${data.first_name ?? ""} ${data.last_name ?? ""}`.trim() || null); });
   }, [user]);
 
+  const view = views[section];
+  const setView = (v: string) => {
+    setViews((s) => ({ ...s, [section]: v }));
+    window.scrollTo({ top: 0 });
+  };
+
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get("tab") !== tab) {
-      url.searchParams.set("tab", tab);
-      window.history.replaceState(null, "", url.toString());
-    }
-  }, [tab]);
+    const before = url.search;
+    url.searchParams.set("tab", section);
+    if (view) url.searchParams.set("view", view); else url.searchParams.delete("view");
+    if (url.search !== before) window.history.replaceState(null, "", url.toString());
+  }, [section, view]);
 
   if (authLoading || adminLoading) {
     return (
@@ -177,32 +303,54 @@ const AdminHub = () => {
     );
   }
 
-  const current = ADMIN_NAV.find((n) => n.id === tab);
+  const current = ADMIN_NAV.find((n) => n.id === section);
+  const viewOptions = SECTION_VIEWS[section];
+  const isPeople = section === "people";
 
   return (
     <AppShell
       role="admin"
       title={current?.label ?? "Admin"}
       nav={ADMIN_NAV}
-      primary={["bookings", "people", "families", "email"]}
-      active={tab}
-      onNavigate={setTab}
+      primary={["bookings", "people", "coaching", "email"]}
+      active={section}
+      onNavigate={(id) => { if (isSection(id)) setSection(id); }}
       userName={profileName}
       userEmail={user?.email}
       onSignOut={async () => { await signOut(); navigate("/"); }}
+      subheader={viewOptions.length > 0 ? (
+        <SectionNav
+          label={`${current?.label ?? "Admin"} pages`}
+          options={viewOptions}
+          value={view}
+          onChange={setView}
+          search={isPeople ? { value: peopleQuery, onChange: setPeopleQuery, placeholder: PEOPLE_SEARCH_PLACEHOLDER[view] ?? "Search" } : undefined}
+        />
+      ) : undefined}
     >
-      {tab === "bookings" && <BookingsPanel />}
-      {tab === "people" && <PeoplePanel />}
-      {tab === "families" && <FamiliesPanel />}
-      {tab === "reports" && <ReportsPanel />}
-      {tab === "goals" && <GoalsPanel />}
-      {tab === "events" && <EventsPanel currentUserId={user!.id} />}
-      {tab === "news" && <NewsPanel />}
-      {tab === "players" && <PlayerWatchPanel />}
-      {tab === "venues" && <VenuesPanel />}
-      {tab === "coaches" && <CoachesPanel onEmailCoaches={(groupId) => { setEmailGroupId(groupId); setTab("email"); }} />}
-      {tab === "email" && <EmailPanel initialGroupId={emailGroupId} />}
-      {tab === "admins" && <AdminsPanel />}
+      {/* The People search lives in the page on phones; see SectionNav. */}
+      {isPeople && (
+        <SearchField
+          value={peopleQuery}
+          onChange={setPeopleQuery}
+          placeholder={PEOPLE_SEARCH_PLACEHOLDER[view] ?? "Search"}
+          className="mb-4 md:hidden"
+        />
+      )}
+      {section === "bookings" && <BookingsPanel />}
+      {isPeople && (view === "children" || view === "parents") && <FamiliesPanel view={view} query={peopleQuery} />}
+      {isPeople && view === "roster" && <PeoplePanel search={peopleQuery} onSearchChange={setPeopleQuery} />}
+      {isPeople && view === "coaches" && (
+        <CoachesPanel search={peopleQuery} onEmailCoaches={(groupId) => { setEmailGroupId(groupId); setSection("email"); }} />
+      )}
+      {isPeople && view === "admins" && <AdminsPanel query={peopleQuery} />}
+      {section === "coaching" && view === "reports" && <ReportsPanel />}
+      {section === "coaching" && view === "goals" && <GoalsPanel />}
+      {section === "website" && view === "events" && <EventsPanel currentUserId={user!.id} />}
+      {section === "website" && view === "news" && <NewsPanel />}
+      {section === "website" && view === "featured" && <PlayerWatchPanel />}
+      {section === "website" && view === "venues" && <VenuesPanel />}
+      {section === "email" && <EmailPanel initialGroupId={emailGroupId} />}
     </AppShell>
   );
 };
@@ -214,12 +362,11 @@ const genderLabel = (g: string | null | undefined) =>
   g === "boy" ? "Boy" : g === "girl" ? "Girl" : g === "male" ? "Boy" : g === "female" ? "Girl" : g ? g[0]!.toUpperCase() + g.slice(1) : null;
 const parentName = (p: Profile | undefined) => (p ? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() : "");
 
-const FamiliesPanel = () => {
+const FamiliesPanel = ({ view, query }: { view: "children" | "parents"; query: string }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [emails, setEmails] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"children" | "parents">("children");
 
   const load = async () => {
     setLoading(true);
@@ -256,24 +403,19 @@ const FamiliesPanel = () => {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Families"
+        title={view === "children" ? "Children" : "Parents"}
         hideTitleOnPhone
-        description={loading ? "Loading the registered families…" : `${children.length} children · ${profiles.length} parents registered on the site`}
+        description={loading
+          ? "Loading the registered families…"
+          : view === "children"
+            ? `${children.length} children registered by their parents · ${profiles.length} parent accounts`
+            : `${profiles.length} parent accounts · ${children.length} children between them`}
         className="mb-0"
       />
-      <SegmentedControl
-        value={view}
-        onChange={(v) => setView(v as typeof view)}
-        options={[
-          { value: "children", label: "Children", count: children.length },
-          { value: "parents", label: "Parents", count: profiles.length },
-        ]}
-        className="md:max-w-sm"
-      />
       {loading ? <SkeletonRows rows={7} /> : view === "children" ? (
-        <ChildrenTab children={children} profileMap={profileMap} emails={emails} onChanged={load} />
+        <ChildrenTab children={children} profileMap={profileMap} emails={emails} onChanged={load} query={query} />
       ) : (
-        <ParentsTab profiles={profiles} emails={emails} childrenByParent={childrenByParent} onChanged={load} />
+        <ParentsTab profiles={profiles} emails={emails} childrenByParent={childrenByParent} onChanged={load} query={query} />
       )}
     </div>
   );
@@ -281,14 +423,14 @@ const FamiliesPanel = () => {
 
 /* ---------- Children tab ---------- */
 const ChildrenTab = ({
-  children, profileMap, emails, onChanged,
+  children, profileMap, emails, onChanged, query,
 }: {
   children: Child[];
   profileMap: Map<string, Profile>;
   emails: Map<string, string>;
   onChanged: () => void;
+  query: string;
 }) => {
-  const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Child | null>(null);
   const [open, setOpen] = useState<Child | null>(null);
   const [deleting, setDeleting] = useState<Child | null>(null);
@@ -315,7 +457,6 @@ const ChildrenTab = ({
 
   return (
     <>
-      <SearchField value={query} onChange={setQuery} placeholder="Search by child, parent or BTM number" className="md:max-w-md" />
       <p className="px-0.5 text-xs text-muted-foreground tabular">{filtered.length} of {children.length}</p>
 
       {filtered.length === 0 ? (
@@ -594,14 +735,14 @@ const ChildEditDialog = ({ child, onClose, onSaved }: { child: Child | null; onC
 
 /* ---------- Parents tab ---------- */
 const ParentsTab = ({
-  profiles, emails, childrenByParent, onChanged,
+  profiles, emails, childrenByParent, onChanged, query,
 }: {
   profiles: Profile[];
   emails: Map<string, string>;
   childrenByParent: Map<string, Child[]>;
   onChanged: () => void | Promise<void>;
+  query: string;
 }) => {
-  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Profile | null>(null);
   const [editing, setEditing] = useState<Profile | null>(null);
 
@@ -624,7 +765,6 @@ const ParentsTab = ({
 
   return (
     <>
-      <SearchField value={query} onChange={setQuery} placeholder="Search by parent, email, phone or child" className="md:max-w-md" />
       <p className="px-0.5 text-xs text-muted-foreground tabular">{filtered.length} of {profiles.length}</p>
 
       {filtered.length === 0 ? (
@@ -2038,7 +2178,7 @@ const PlayerWatchPanel = () => {
           </Button>
         </>}
       list={
-      <Section title="Featured players" count={items.length} description="The Player Watch cards on the homepage." action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
+      <Section title="Player Watch" count={items.length} description="The cards on the homepage." action={<Button size="sm" className="md:hidden" onClick={() => { startNew(); setFormOpen(true); }}><Plus className="w-4 h-4" />Add</Button>}>
         {items.length === 0 && <EmptyState icon={Star} title="No featured players yet" compact />}
         <div className="space-y-2">
           {items.map(p => (
@@ -2085,7 +2225,7 @@ const PlayerWatchPanel = () => {
 
 /* ---------- Admins ---------- */
 
-const AdminsPanel = () => {
+const AdminsPanel = ({ query }: { query: string }) => {
   const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [pickUser, setPickUser] = useState<string>("");
@@ -2121,7 +2261,12 @@ const AdminsPanel = () => {
   };
 
   const adminIds = new Set(admins.map(a => a.user_id));
+  const q = query.trim().toLowerCase();
+  const fullName = (p: { first_name?: string | null; last_name?: string | null }) => `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim().toLowerCase();
+  // The picker stays complete: filtering it could hide an already-chosen
+  // parent while "Make admin" stayed armed.
   const nonAdmins = profiles.filter(p => !adminIds.has(p.user_id));
+  const shown = admins.filter(a => !q || fullName(a).includes(q));
 
   return (
     <div className="space-y-6 md:max-w-2xl">
@@ -2139,12 +2284,12 @@ const AdminsPanel = () => {
         </div>
       </Section>
 
-      <Section title="Current admins" count={admins.length}>
-        {loading ? <SkeletonRows rows={3} /> : admins.length === 0 ? (
-          <EmptyState icon={UserCog} title="No admins yet" compact />
+      <Section title="Current admins" count={shown.length}>
+        {loading ? <SkeletonRows rows={3} /> : shown.length === 0 ? (
+          <EmptyState icon={UserCog} title={q ? "No admins match" : "No admins yet"} description={q ? "Try another name, or clear the search." : undefined} compact />
         ) : (
           <ListGroup>
-            {admins.map(a => {
+            {shown.map(a => {
               const name = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
               return (
                 <ListRow
