@@ -1424,7 +1424,7 @@ const BookingsPanel = () => {
                     <Input type="number" inputMode="decimal" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
                   </div>
                   <p className="text-xs text-muted-foreground sm:col-span-2">
-                    One payment for the whole programme, however many sessions it has, and however often it meets. If a child is already paying for another programme, their place on this one is included at no extra charge.
+                    One payment for the whole programme, however many sessions it has, and however often it meets. If you invite a child who is already paying for another programme, this place is free for them. That only ever happens through an invitation you send.
                   </p>
                 </>
               ) : (
