@@ -1,6 +1,6 @@
 # Performance & Reports: one section, one button
 
-Status: in build, 11 Sep 2026. Louis: "these 'reports' are the same thing as
+Status: shipped 11 Sep 2026 (commit 3a29942 on main). Louis: "these 'reports' are the same thing as
 performance plan, please make sure these are merged together same logic,
 just viewed in 'Performance and Reports' one section one button".
 

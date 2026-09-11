@@ -1,6 +1,6 @@
 # Suffolk sessions fill the LTA timetable automatically
 
-Status: in build, 11 Sep 2026.
+Status: shipped 11 Sep 2026 (commit 4a5d43a on main; review fixes below).
 
 ## The problem
 
