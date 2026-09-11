@@ -12,11 +12,12 @@ import CoachesSection from "@/components/CoachesSection";
 
 import PlayerWatchSection from "@/components/PlayerWatchSection";
 import FacilitiesSection from "@/components/FacilitiesSection";
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
 
 // The interactive map (MapLibre ~1MB) sits below the fold — loading it lazily
 // keeps the homepage's first paint light, especially on mobile.
-const SuffolkMapSection = lazy(() => import("@/components/SuffolkMapSection"));
+const SuffolkMapSection = lazyWithRetry(() => import("@/components/SuffolkMapSection"));
 import ContactSection from "@/components/ContactSection";
 import SponsorsSection from "@/components/SponsorsSection";
 import Footer from "@/components/Footer";
