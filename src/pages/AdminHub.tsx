@@ -263,7 +263,7 @@ const FamiliesPanel = () => {
       />
       <SegmentedControl
         value={view}
-        onChange={setView}
+        onChange={(v) => setView(v as typeof view)}
         options={[
           { value: "children", label: "Children", count: children.length },
           { value: "parents", label: "Parents", count: profiles.length },

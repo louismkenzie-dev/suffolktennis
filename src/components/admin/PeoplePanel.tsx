@@ -357,7 +357,7 @@ const PeoplePanel = () => {
 
       <SegmentedControl
         value={tab}
-        onChange={setTab}
+        onChange={(v) => setTab(v as typeof tab)}
         options={[
           { value: "players", label: "Players", count: roster.length },
           { value: "unlinked", label: "Not on database", count: unlinkedChildren.length },

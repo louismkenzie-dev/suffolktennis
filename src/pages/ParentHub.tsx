@@ -404,7 +404,7 @@ const ParentHub = () => {
             actions={
               <SegmentedControl
                 value={eventsFilter}
-                onChange={setEventsFilter}
+                onChange={(v) => setEventsFilter(v as typeof eventsFilter)}
                 options={[{ value: "upcoming", label: "Upcoming" }, { value: "past", label: "Past" }]}
                 className="w-full md:w-56"
               />

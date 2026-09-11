@@ -42,6 +42,7 @@ const BookingReturn = lazy(() => import("./pages/BookingReturn"));
 const TicketPage = lazy(() => import("./pages/TicketPage"));
 const AdminScan = lazy(() => import("./pages/AdminScan"));
 const CoachHub = lazy(() => import("./pages/CoachHub"));
+const ReportPage = lazy(() => import("./pages/ReportPage"));
 const MiniMasters = lazy(() => import("./pages/MiniMasters"));
 const TennisGP = lazy(() => import("./pages/TennisGP"));
 
@@ -70,6 +71,11 @@ const App = () => (
             <Route path="/admin" element={<AdminHub />} />
             <Route path="/admin/scan" element={<AdminScan />} />
             <Route path="/coach" element={<CoachHub />} />
+            <Route path="/coach/venue/:venue" element={<CoachHub />} />
+            <Route path="/coach/programme/:eventId" element={<CoachHub />} />
+            <Route path="/coach/register/:sessionId" element={<CoachHub />} />
+            <Route path="/coach/register/event/:eventId" element={<CoachHub />} />
+            <Route path="/report/:reportId" element={<ReportPage />} />
             <Route path="/book/:token" element={<BookingPage />} />
             <Route path="/booking/return" element={<BookingReturn />} />
             <Route path="/ticket/:qrToken" element={<TicketPage />} />

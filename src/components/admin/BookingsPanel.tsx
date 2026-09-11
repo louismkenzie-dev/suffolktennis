@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket } from "lucide-react";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
-  SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone,
+  SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone, Avatar,
 } from "@/components/app";
 type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
@@ -40,6 +40,8 @@ type Booking = {
   status: string; amount_pence: number; session_slot: string | null; paid_at: string | null;
   membership_id: string | null;
 };
+/** An account holding the coach role — what the Coaches checklist offers. */
+type Coach = { user_id: string; name: string };
 type Player = {
   key: string;                 // unique across both sources
   roster_id?: string;          // player_roster row
@@ -113,6 +115,9 @@ const BookingsPanel = () => {
   const [changing, setChanging] = useState(false);
   const [pastDue, setPastDue] = useState<Array<{ id: string; child_name: string; parent_email: string; event_id: string }>>([]);
   const [loading, setLoading] = useState(true);
+  // Coach accounts (loaded once) and, per event, the user ids assigned to it.
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [eventCoaches, setEventCoaches] = useState<Record<string, string[]>>({});
 
   // Invite dialog state
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -139,6 +144,8 @@ const BookingsPanel = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
   const [savingEvent, setSavingEvent] = useState(false);
+  // Coaches ticked in the form; synced to event_coaches on save.
+  const [formCoaches, setFormCoaches] = useState<Set<string>>(new Set());
   // New programme: sessions are generated inside the form and saved with it.
   const [pStart, setPStart] = useState("");
   const [pTime, setPTime] = useState("");
@@ -177,10 +184,52 @@ const BookingsPanel = () => {
     setStats(s);
     const { data: pd } = await db.from("memberships").select("id, child_name, parent_email, event_id").eq("status", "past_due");
     setPastDue(pd ?? []);
+    const { data: ec } = await db.from("event_coaches").select("event_id, user_id");
+    const byEvent: Record<string, string[]> = {};
+    for (const row of ec ?? []) (byEvent[row.event_id] ??= []).push(row.user_id);
+    setEventCoaches(byEvent);
     setLoading(false);
   }, []);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  // Coach accounts: every user_roles row with the coach role, named from
+  // profiles (joined client-side — user_roles has no FK to profiles). Admins
+  // who also hold the coach role appear too, which is what Ollie wants.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: roles } = await db.from("user_roles").select("user_id").eq("role", "coach");
+      const ids: string[] = Array.from(new Set<string>(((roles ?? []) as Array<{ user_id: string }>).map((r) => r.user_id)));
+      if (ids.length === 0) { if (!cancelled) setCoaches([]); return; }
+      const { data: profiles } = await db.from("profiles").select("user_id, first_name, last_name").in("user_id", ids);
+      const names = new Map<string, string>(((profiles ?? []) as Array<{ user_id: string; first_name: string | null; last_name: string | null }>)
+        .map((p) => [p.user_id, `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim()]));
+      const list: Coach[] = ids
+        .map((id) => ({ user_id: id, name: names.get(id) || id.slice(0, 8) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (!cancelled) setCoaches(list);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  /** Make event_coaches match the ticked set: remove the unticked, add the missing. */
+  const syncEventCoaches = async (eventId: string, ticked: Set<string>): Promise<string | null> => {
+    const { data: current, error: readErr } = await db.from("event_coaches").select("user_id").eq("event_id", eventId);
+    if (readErr) return readErr.message;
+    const existing = new Set<string>(((current ?? []) as Array<{ user_id: string }>).map((r) => r.user_id));
+    const remove = [...existing].filter((id) => !ticked.has(id));
+    const add = [...ticked].filter((id) => !existing.has(id)).map((user_id) => ({ event_id: eventId, user_id }));
+    if (remove.length > 0) {
+      const { error } = await db.from("event_coaches").delete().eq("event_id", eventId).in("user_id", remove);
+      if (error) return error.message;
+    }
+    if (add.length > 0) {
+      const { error } = await db.from("event_coaches").upsert(add, { onConflict: "event_id,user_id" });
+      if (error) return error.message;
+    }
+    return null;
+  };
 
   const openEvent = async (ev: EventRow) => {
     setSelected(ev);
@@ -341,11 +390,17 @@ const BookingsPanel = () => {
       const { error: sErr } = await db.from("event_sessions").insert(rows);
       if (sErr) toast.warning(`Programme created, but the sessions could not be saved: ${sErr.message}`);
     }
+    const eventId: string | null = form.id ?? saved?.id ?? null;
+    if (eventId) {
+      const cErr = await syncEventCoaches(eventId, formCoaches);
+      if (cErr) toast.warning(`Saved, but the coaches could not be updated: ${cErr}`);
+    }
     setSavingEvent(false);
     toast.success(form.id ? (isProgrammeForm ? "Programme updated" : "Event updated") : newProgramme ? `Programme created with ${draft.length} session${draft.length === 1 ? "" : "s"}` : "Event created");
     setFormOpen(false);
     setForm({ ...emptyForm });
     setDraft([]);
+    setFormCoaches(new Set());
     loadEvents();
   };
 
@@ -497,6 +552,7 @@ const BookingsPanel = () => {
   const startNew = (type: "programme" | "event") => {
     setForm({ ...emptyForm, programme_type: type, price: type === "programme" ? "250" : "", meeting_cadence: "weekly" });
     setPStart(""); setPTime(""); setPEnd(""); setPCount("12"); setDraft([]);
+    setFormCoaches(new Set());
     setFormOpen(true);
   };
 
@@ -515,6 +571,9 @@ const BookingsPanel = () => {
       meeting_cadence: ev.meeting_cadence ?? "weekly",
       sign_up_enabled: ev.sign_up_enabled,
     });
+    // loadEvents holds every assignment and re-runs after each save, so the
+    // cached map is the live one; no async refresh that could overwrite ticks.
+    setFormCoaches(new Set(eventCoaches[ev.id] ?? []));
     setFormOpen(true);
   };
 
@@ -627,6 +686,12 @@ const BookingsPanel = () => {
     return `${st.invited} invited · ${ev.capacity ? `${st.paid}/${ev.capacity} places` : `${st.paid} booked`}`;
   };
   const fmtDate = (d: string) => new Date(d.length === 10 ? d + "T12:00:00" : d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const coachName = (id: string) => coaches.find((c) => c.user_id === id)?.name ?? id.slice(0, 8);
+  const coachesOf = (ev: EventRow): string[] => eventCoaches[ev.id] ?? [];
+  const coachCountLine = (ev: EventRow) => {
+    const n = coachesOf(ev).length;
+    return n === 0 ? null : `${n} coach${n === 1 ? "" : "es"}`;
+  };
 
   if (loading) {
     return (
@@ -722,7 +787,7 @@ const BookingsPanel = () => {
                         : ev.visibility === "private" ? <StatusBadge tone="neutral" dot={false}><Lock className="w-3 h-3" />Private</StatusBadge> : <StatusBadge tone="info" dot={false}><Globe className="w-3 h-3" />Public</StatusBadge>}
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">{priceLine(ev)}</p>
-                    <p className="text-sm text-muted-foreground">{placesLine(ev)}</p>
+                    <p className="text-sm text-muted-foreground">{placesLine(ev)}{coachCountLine(ev) ? ` · ${coachCountLine(ev)}` : ""}</p>
                   </button>
                 ))}
               </div>
@@ -752,6 +817,27 @@ const BookingsPanel = () => {
                   {selected.location ? ` · ${selected.location}` : ""}
                   {selected.event_date && !isProgramme ? ` · ${fmtDate(selected.event_date)}` : ""}
                 </p>
+                {/* Assigned coaches — tapping opens the form, where they are ticked. */}
+                <button
+                  type="button"
+                  onClick={() => editEvent(selected)}
+                  aria-label="Edit coaches"
+                  className="hit-area mt-2 -ml-1 inline-flex min-h-9 max-w-full items-center gap-2 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {coachesOf(selected).length === 0 ? (
+                    <span>No coaches assigned</span>
+                  ) : (
+                    <>
+                      <span className="flex -space-x-1.5">
+                        {coachesOf(selected).map((id) => (
+                          <Avatar key={id} name={coachName(id)} size="xs" className="ring-2 ring-card" />
+                        ))}
+                      </span>
+                      <span className="truncate text-foreground">{coachesOf(selected).map((id) => coachName(id).split(/\s+/)[0]).join(", ")}</span>
+                    </>
+                  )}
+                  <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
+                </button>
                 {s0 && (
                   <div className="mt-3 grid grid-cols-3 gap-2 md:max-w-sm">
                     {[{ n: s0.invited, l: "Invited" }, { n: s0.booked, l: "Booked" }, { n: s0.paid, l: selected.capacity ? `Paid / ${selected.capacity}` : "Paid" }].map((x) => (
@@ -1236,6 +1322,32 @@ const BookingsPanel = () => {
               <div className={form.programme_type === "programme" ? "sm:col-span-2" : ""}>
                 <Label>Venue</Label>
                 <VenueSelect value={form.location} onChange={(v) => setForm({ ...form, location: v })} placeholder={form.programme_type === "programme" ? "Where every session is held" : "Choose a venue"} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Coaches</Label>
+                {coaches.length === 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">No coach accounts yet — give someone the coach role and they will appear here.</p>
+                ) : (
+                  <div className="mt-1.5 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+                    {coaches.map((c) => {
+                      const ticked = formCoaches.has(c.user_id);
+                      return (
+                        <label key={c.user_id} className={`flex min-h-11 cursor-pointer items-center gap-3 px-3 text-sm ${ticked ? "bg-primary/[0.06]" : ""}`}>
+                          <Checkbox
+                            aria-label={`Assign ${c.name}`}
+                            checked={ticked}
+                            onCheckedChange={(v) => {
+                              const next = new Set(formCoaches);
+                              if (v === true) next.add(c.user_id); else next.delete(c.user_id);
+                              setFormCoaches(next);
+                            }}
+                          />
+                          <span className="min-w-0 truncate">{c.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div>
                 <Label>Visibility</Label>

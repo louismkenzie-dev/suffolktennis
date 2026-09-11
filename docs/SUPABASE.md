@@ -482,3 +482,72 @@ gender, and a CSV re-import button accepts future RCP exports (upsert on LTA
 number). `booking_invitations.roster_id` anchors re-invite dedupe for roster
 players. Parents see their invitations, bookings and tickets in the Parent
 Hub's "Bookings & Invitations" tab.
+
+## Registers and session reports (added 11 Sep 2026)
+
+Contract: `docs/REGISTERS-SPEC.md`. Migration
+`20260911100000_registers_and_session_reports.sql` (already applied) adds
+`event_coaches`, `session_attendance`, the nine-area columns on
+`session_reports` (`ratings`, `area_notes`, `complete`, `sent_at`) and the
+end stamps `event_sessions.ended_at/ended_by`, `events.register_closed_at`.
+
+**`coach-session`** (verify_jwt true; coach or admin) gains the actions
+`venues`, `programmes`, `sessions`, `register`, `attendance`, `save_report`
+and `end_session`, alongside the older `events`/`roster`/`mark`/
+`notify_report`. Every action is scoped: admins see everything, coaches only
+events they are assigned to in `event_coaches` (403 otherwise). Attendance
+and report writes go through the service role here because both tables use
+partial unique indexes (`session_id` null vs not) that a PostgREST upsert
+can't target — the shared `upsertAttendance` in `_shared/reportEmails.ts`
+does find-then-update/insert with a 23505 retry. `end_session` marks the
+listed bookings absent (source `auto`, only where nothing is recorded),
+stamps the end, then calls `sendDueForSession`.
+
+**`scan-ticket`** now also writes `session_attendance` (`arrived`, source
+`scan`) on the admitted path only; a `duplicate` result never touches it. It
+is scoped like `coach-session` (coaches only for their `event_coaches`
+assignments; admins anything), checks the `session_id` belongs to the
+ticket's event, and answers every outcome with a 200 `{ok, result, message,
+player}` (`unknown`, `forbidden`, `wrong_event`, `rejected_*`, `duplicate`,
+`admitted`) because supabase-js swallows non-2xx bodies.
+
+**`_shared/reportEmails.ts`** — `sendReportReadyEmail(admin, reportId)`
+("View report" → `/report/:id`, idempotency `report-sent-<id>`) and
+`sendAbsenceEmail(admin, attendanceId)` (idempotency `absence-<id>`). Both
+claim before sending (`update … where <stamp> is null … select`), return
+`already_sent` if nothing was claimed, and clear the stamp if Resend fails.
+`sendDueForSession(admin, {event_id, session_id|null})` sends every complete
+unsent report (any coach) and every un-notified absence for one session,
+spacing sends 600 ms apart to stay under Resend's 2 req/s limit.
+
+**`session-reports-dispatch`** (verify_jwt false; guard token
+`sr_9b2e7c1d4f8a3e6b0c5d7f2a9e1b4c8d` in the JSON body). Every 10 minutes it
+starts from what is still pending — complete reports with `sent_at` null and
+absent rows with `absence_notified_at` null — groups them by session, and
+sends for every session whose end (`end_time`, else `start_time` + 2h, else
+12:00 + 2h, Europe/London) passed at least 2 hours ago; session-less events
+count from `register_closed_at`, else `event_date` + 2h. Being driven by the
+pending rows rather than the calendar, a report written a week after its
+session still goes out on the next run. Capped at 80 emails per run
+(`truncated: true` when it stops early). Returns `{checked, sessions_due,
+events_due, reports_sent, absence_emails, truncated, errors}`.
+
+Cron job (added 11 Sep 2026 as jobid 2, mirrors `register-alerts`):
+
+```sql
+select cron.schedule(
+  'session-reports-dispatch',
+  '*/10 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/session-reports-dispatch',
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := '{"guard":"sr_9b2e7c1d4f8a3e6b0c5d7f2a9e1b4c8d"}'::jsonb
+  );
+  $$
+);
+```
+
+Deployed 11 Sep 2026: `coach-session` v13 and `scan-ticket` v15 (verify_jwt
+true), `session-reports-dispatch` v1 (verify_jwt false). `RESEND_API_KEY` and
+`SITE_URL` are the only secrets involved and already exist.

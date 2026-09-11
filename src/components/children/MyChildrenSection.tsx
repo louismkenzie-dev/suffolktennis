@@ -2,12 +2,13 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Plus, User, ChevronRight, Sparkles, Pencil, Star, Zap, Trophy, CreditCard, RefreshCw, ExternalLink } from "lucide-react";
+import { Plus, User, ChevronRight, Sparkles, Pencil, Star, Zap, Trophy, CreditCard, RefreshCw, ExternalLink, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, EmptyState, SkeletonCards } from "@/components/app";
 import AddChildForm from "./AddChildForm";
 import EditChildForm from "./EditChildForm";
 import PlayerReportView from "./PlayerReportView";
+import ChildReportsView from "./ChildReportsView";
 import { useToast } from "@/hooks/use-toast";
 import { SignedImage } from "@/components/SignedImage";
 import { getPlayerFlag } from "./playerCountries";
@@ -52,6 +53,10 @@ const MyChildrenSection = () => {
   const [selectedChild, setSelectedChild] = useState<Child | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
+  // Coach session reports drill-down (the LTA nine-area reports), separate
+  // from the performance plan. Deep-linkable as /parent-hub?tab=children&reports=<childId>
+  // so a booking's "See session reports" link lands here.
+  const [reportsChild, setReportsChild] = useState<Child | null>(null);
 
   const [editingChild, setEditingChild] = useState<Child | null>(null);
   const [seeding, setSeeding] = useState(false);
@@ -196,7 +201,27 @@ const MyChildrenSection = () => {
 
   useEffect(() => {
     fetchChildren();
-  }, [user]);
+    // user?.id, not user: the object is replaced on every token refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (loading || reportsChild) return;
+    const wanted = new URLSearchParams(window.location.search).get("reports");
+    const match = wanted ? children.find((c) => c.id === wanted) : null;
+    if (match) setReportsChild(match);
+    // Only on first load of the list — a later change of children should not re-open the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  const closeReports = () => {
+    setReportsChild(null);
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("reports")) {
+      url.searchParams.delete("reports");
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
 
   const handleSelectChild = async (child: Child) => {
     setSelectedChild(child);
@@ -221,6 +246,10 @@ const MyChildrenSection = () => {
       fetchChildren();
     }
   };
+
+  if (reportsChild) {
+    return <ChildReportsView childId={reportsChild.id} childName={reportsChild.name} onBack={closeReports} />;
+  }
 
   if (selectedChild) {
     if (reportsLoading) {
@@ -419,6 +448,9 @@ const MyChildrenSection = () => {
                 <div className="flex items-center gap-2 border-t border-border px-4 py-3 md:px-5">
                   <Button onClick={() => handleSelectChild(child)} className="flex-1">
                     Performance plan <ChevronRight size={16} />
+                  </Button>
+                  <Button variant="outline" aria-label={`${child.name}'s session reports`} onClick={(e) => { e.stopPropagation(); setReportsChild(child); }}>
+                    <BarChart3 size={16} /> Reports
                   </Button>
                   <Button variant="outline" size="icon" aria-label={`Edit ${child.name}`} onClick={(e) => { e.stopPropagation(); setEditingChild(child); }}>
                     <Pencil size={16} />

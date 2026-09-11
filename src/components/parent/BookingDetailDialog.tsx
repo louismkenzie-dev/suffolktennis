@@ -7,8 +7,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { findVenueByLocation, googleMapsUrl } from "@/lib/venues";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { MapPin, Ticket, ExternalLink, Star, ClipboardList } from "lucide-react";
-import { KeyValueList, ListGroup, StatusBadge, bookingStatus } from "@/components/app";
+import { MapPin, Ticket, ExternalLink, ClipboardList, ChevronRight } from "lucide-react";
+import { KeyValueList, ListGroup, ListRow, StatusBadge, bookingStatus } from "@/components/app";
+import { isComplete, type Ratings } from "@/lib/lta";
 
 const db = supabase as any;
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
@@ -26,14 +27,9 @@ export type MembershipDetail = {
 } | null;
 
 type Session = { id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null };
-type CoachReport = {
-  id: string; session_id: string | null; coach_name: string | null;
-  stats: Record<string, number>; comment: string | null; created_at: string;
-};
-
-const RATING_LABELS: Record<string, string> = {
-  technique: "Technique", attitude: "Attitude & effort", movement: "Movement", matchplay: "Match play",
-};
+// Only finished nine-area reports count; legacy four-star rows (empty
+// `ratings`) are hidden from parents everywhere.
+type CoachReport = { id: string; child_id: string | null; complete: boolean; sent_at: string | null; ratings: Ratings | null; created_at: string };
 
 const gbp = (p: number) => `£${(p / 100).toFixed(p % 100 === 0 ? 0 : 2)}`;
 const shortDate = (iso: string) => new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
@@ -82,19 +78,27 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
 
   useEffect(() => {
     if (!open || !event) { setSessions([]); setReports([]); return; }
+    // Guard against a slow query for one booking landing in a dialog opened for another.
+    let cancelled = false;
     db.from("event_sessions")
       .select("id, session_date, start_time, end_time, venue, cancelled_at, moved_from_date")
       .eq("event_id", event.id)
       .order("session_date")
-      .then(({ data }: { data: Session[] | null }) => setSessions(data ?? []));
+      .then(({ data }: { data: Session[] | null }) => { if (!cancelled) setSessions(data ?? []); });
     if (booking) {
-      // Coach session feedback — RLS limits this to the parent's own bookings.
+      // Coach session reports — RLS limits this to the parent's own bookings;
+      // only reports that have been sent to the parent count.
       db.from("session_reports")
-        .select("id, session_id, coach_name, stats, comment, created_at")
+        .select("id, child_id, complete, sent_at, ratings, created_at")
         .eq("booking_id", booking.id)
+        .eq("complete", true)
+        .not("sent_at", "is", null)
         .order("created_at", { ascending: false })
-        .then(({ data }: { data: CoachReport[] | null }) => setReports(data ?? []));
+        .then(({ data }: { data: CoachReport[] | null }) => {
+          if (!cancelled) setReports((data ?? []).filter((r) => r.complete && r.sent_at && isComplete(r.ratings)));
+        });
     }
+    return () => { cancelled = true; };
   }, [open, event?.id, booking?.id]);
 
   if (!booking) return null;
@@ -158,36 +162,23 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
 
         {reports.length > 0 && (
           <div>
-            <Label>Coach feedback</Label>
+            <Label>Session reports</Label>
             <ListGroup>
-              {reports.map((r) => {
-                const session = sessions.find((s) => s.id === r.session_id);
-                const rated = Object.entries(r.stats ?? {}).filter(([, v]) => (v ?? 0) > 0);
-                return (
-                  <div key={r.id} className="space-y-2 bg-card px-4 py-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ClipboardList className="h-3.5 w-3.5 text-primary" />
-                      {session ? shortDate(session.session_date) : shortDate(r.created_at)}
-                      {r.coach_name ? ` · ${r.coach_name}` : ""}
-                    </div>
-                    {rated.length > 0 && (
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                        {rated.map(([key, value]) => (
-                          <div key={key} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="text-muted-foreground">{RATING_LABELS[key] ?? key}</span>
-                            <span className="flex" aria-label={`${value} of 5`}>
-                              {[1, 2, 3, 4, 5].map((n) => (
-                                <Star key={n} className={`h-3.5 w-3.5 ${value >= n ? "fill-primary text-primary" : "text-muted-foreground/30"}`} />
-                              ))}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {r.comment && <p className="text-sm leading-relaxed whitespace-pre-line">{r.comment}</p>}
-                  </div>
-                );
-              })}
+              <ListRow
+                size="sm"
+                leading={<ClipboardList className="h-5 w-5 text-primary" strokeWidth={1.8} />}
+                title="See session reports"
+                subtitle={`${reports.length} ${reports.length === 1 ? "report" : "reports"} from the coach`}
+                trailing={<ChevronRight className="h-4 w-4 text-muted-foreground/60" aria-hidden />}
+                onClick={() => {
+                  onOpenChange(false);
+                  // The child's Reports view in the hub, or the report itself if the
+                  // child record has gone. The hub only reads ?tab on mount and this
+                  // dialog lives inside it, so switching tabs needs a full load.
+                  const childId = reports.find((r) => r.child_id)?.child_id;
+                  window.location.assign(childId ? `/parent-hub?tab=children&reports=${childId}` : `/report/${reports[0].id}`);
+                }}
+              />
             </ListGroup>
           </div>
         )}

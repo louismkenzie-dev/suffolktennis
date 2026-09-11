@@ -5,8 +5,14 @@
 //  - for programme bookings, the membership must not be past_due — a failed
 //    monthly payment stops admission until it is resolved (Ollie chases).
 //  - the ticket must not be void, and not already scanned for this session.
+//  - a coach may only scan tickets for programmes they are assigned to
+//    (event_coaches); admins may scan anything.
+// Every outcome is a 200 with { ok, result, message, player } — supabase-js
+// swallows non-2xx bodies, so the scanner UIs would otherwise show a bogus
+// "check your connection" for a ticket that simply isn't recognised.
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireRole, CORS, json } from "../_shared/adminAuth.ts";
+import { upsertAttendance } from "../_shared/reportEmails.ts";
 
 const Body = z.object({
   qr_token: z.string().trim().min(8).max(128),
@@ -33,16 +39,31 @@ Deno.serve(async (req) => {
   // Accept a full ticket URL pasted/scanned as well as the bare token.
   const token = body.qr_token.includes("/") ? body.qr_token.split("/").pop()! : body.qr_token;
 
+  const noPlayer = { child_name: null, parent_name: null, session_slot: null, has_medical_notes: false, event_title: null };
+
   const { data: ticket } = await admin
     .from("tickets")
     .select("id, status, event_id, booking_id")
     .eq("qr_token", token)
     .maybeSingle();
-  if (!ticket) return json({ ok: false, result: "unknown", message: "Ticket not recognised" }, 404);
+  if (!ticket) return json({ ok: false, result: "unknown", message: "Ticket not recognised", player: noPlayer });
+
+  // Scope: coaches only see (and mark) the programmes they are assigned to.
+  const { data: roleRows } = await admin.from("user_roles").select("role").eq("user_id", adminUserId);
+  const isAdmin = (roleRows ?? []).some((r) => r.role === "admin");
+  if (!isAdmin) {
+    const { data: assignment } = await admin
+      .from("event_coaches").select("event_id")
+      .eq("event_id", ticket.event_id).eq("user_id", adminUserId)
+      .maybeSingle();
+    if (!assignment) {
+      return json({ ok: false, result: "forbidden", message: "This ticket is for a programme you are not assigned to", player: noPlayer });
+    }
+  }
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, status, child_name, parent_name, parent_email, session_slot, medical_notes, membership_id")
+    .select("id, status, child_id, child_name, parent_name, parent_email, session_slot, medical_notes, membership_id")
     .eq("id", ticket.booking_id)
     .maybeSingle();
   const { data: eventRow } = await admin
@@ -55,6 +76,17 @@ Deno.serve(async (req) => {
     has_medical_notes: !!booking?.medical_notes,
     event_title: eventRow?.title ?? null,
   };
+
+  // The session being scanned for must be one of this ticket's event's — a
+  // child from programme A scanned on programme B's register is a mistake,
+  // not an admission, and must not leave an orphaned attendance row.
+  if (body.session_id) {
+    const { data: session } = await admin
+      .from("event_sessions").select("event_id").eq("id", body.session_id).maybeSingle();
+    if (!session || session.event_id !== ticket.event_id) {
+      return json({ ok: false, result: "wrong_event", message: "This ticket is for a different programme", player });
+    }
+  }
 
   async function record(result: string) {
     await admin.from("ticket_scans").insert({
@@ -111,5 +143,22 @@ Deno.serve(async (req) => {
   }
 
   await record("admitted");
+
+  // The register's attendance row: arrived, timestamped now, source scan.
+  // Only the admitted path writes it — a duplicate scan above returns before
+  // this so it can't overwrite the original arrival time. Failure here must
+  // not undo the admission (the scan is already logged), so it's reported
+  // rather than thrown.
+  const { error: attendanceError } = await upsertAttendance(admin, {
+    booking_id: booking.id,
+    event_id: ticket.event_id,
+    session_id: body.session_id ?? null,
+    child_id: booking.child_id ?? null,
+    status: "arrived",
+    source: "scan",
+    marked_by: adminUserId,
+  });
+  if (attendanceError) console.error("scan-ticket: attendance write failed", attendanceError);
+
   return json({ ok: true, result: "admitted", message: "Admitted — welcome!", player });
 });
