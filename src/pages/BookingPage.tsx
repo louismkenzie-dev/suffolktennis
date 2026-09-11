@@ -10,13 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, Clock, ChevronDown, type LucideIcon } from "lucide-react";
+import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, ChevronDown, type LucideIcon } from "lucide-react";
 import { formatTimeRange } from "@/lib/timeFormat";
 import { FlowShell, Field, StatusBadge, SkeletonBlock } from "@/components/app";
 
 type InvitationPayload = {
-  /** Pre-launch wall — "coming_soon" until Suffolk Tennis opens bookings. */
-  bookings_status?: "coming_soon" | "open";
   invitation: {
     id: string; status: string; child_name: string | null; parent_name: string | null; parent_email: string;
     /** No charge — a child already paying for a programme, or an admin-granted free place. */
@@ -409,18 +407,6 @@ const BookingPage = () => {
             <Notice icon={Ticket} title="This place is already booked" tone="success">
               <p>Your entry ticket was emailed to you — it is also in your Parent Hub.</p>
               <Button asChild variant="outline"><Link to="/parent-hub?tab=bookings">Go to my bookings</Link></Button>
-            </Notice>
-          ) : data.bookings_status !== "open" ? (
-            /* Pre-launch wall: bookings (and payment) are not open yet. */
-            <Notice icon={Clock} title="Booking opens soon">
-              <p>
-                We're putting the finishing touches to the new Suffolk Tennis booking system. Your place is noted against this
-                invitation — you'll be able to confirm and pay for it here shortly, and we'll email you the moment booking opens.
-              </p>
-              <p className="text-xs">
-                Keep this link — it stays valid. Questions in the meantime:{" "}
-                <a href="mailto:enquiries@suffolktennis.online" className="font-medium text-primary">enquiries@suffolktennis.online</a>
-              </p>
             </Notice>
           ) : setup && elementsOptions && stripePromise ? (
             <Elements stripe={stripePromise} options={elementsOptions}>
