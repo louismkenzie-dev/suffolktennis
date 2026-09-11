@@ -67,7 +67,7 @@ const ReportPage = () => {
       ) : (
         <div className="space-y-8">
           <PageHeader
-            eyebrow="Session report"
+            eyebrow="Suffolk Tennis · Session report"
             title={report.event?.title ?? "Session"}
             description={
               <>

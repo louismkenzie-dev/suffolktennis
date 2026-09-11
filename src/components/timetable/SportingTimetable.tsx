@@ -9,6 +9,11 @@ import {
   Calendar as CalIcon, Target, Dumbbell, Trophy, Activity, BarChart3, Swords
 } from "lucide-react";
 
+// timetable_sessions is a SECURITY DEFINER function and is not in the
+// generated types.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = supabase as any;
+
 type Child = {
   id: string;
   name: string;
@@ -32,6 +37,26 @@ type ScheduleEntry = {
   recurrence_rule: string | null;
   recurrence_end_date: string | null;
   recurrence_group_id: string | null;
+  // Set only on rows derived from a Suffolk booking. There is no
+  // sporting_schedule row behind them, so nothing can be edited or deleted;
+  // they change when the club changes the session.
+  auto?: boolean;
+  attendance_status?: string | null;
+};
+
+/** One row of the timetable_sessions RPC. */
+type AutoSessionRow = {
+  source_id: string;
+  child_id: string;
+  title: string;
+  category: string;
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number;
+  location: string | null;
+  attendance_status: string | null;
+  is_tournament: boolean;
 };
 
 // ── Categories aligned to LTA Pathway ──────────────────────────
@@ -136,7 +161,11 @@ function getMonthDates(year: number, month: number) {
 }
 
 function toDateStr(d: Date) {
-  return d.toISOString().split("T")[0];
+  // Local date parts, not toISOString(): in BST the UTC day is a day behind
+  // for anything before 01:00, which pushed every entry one column right and
+  // dropped Sunday's sessions out of the week altogether.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // ── Activity Form ───────────────────────────────────────────────
@@ -429,7 +458,7 @@ const HourBar = ({ label, hours, target, color, unit = "h" }: { label: string; h
       <div className="flex justify-between items-center text-xs">
         <span className="font-medium text-foreground">{label}</span>
         <span className={met ? "text-emerald-400 font-bold" : "text-muted-foreground"}>
-          {hours.toFixed(1)}{unit} / {target}{unit} {met ? "✓" : ""}
+          {hours.toFixed(1)}{unit} / {Number(target.toFixed(1))}{unit} {met ? "✓" : ""}
         </span>
       </div>
       <div className="h-2.5 bg-muted rounded-full overflow-hidden">
@@ -451,14 +480,34 @@ const SubRow = ({ label, hours, target, color }: { label: string; hours: number;
     <div className="flex items-center justify-between text-[11px] px-1">
       <span className="text-muted-foreground">{label}</span>
       <span className={met ? "text-emerald-400 font-bold" : "text-muted-foreground font-medium"}>
-        {hours.toFixed(1)}h / {target}h
+        {hours.toFixed(1)}h / {Number(target.toFixed(1))}h
       </span>
     </div>
   );
 };
 
+// ── Club session badge ──────────────────────────────────────────
+// Two jobs: tell the parent these hours are already counted so they do not
+// type a duplicate by hand, and explain why the row has no edit controls.
+const ClubBadge = ({ absent }: { absent: boolean }) => (
+  <span
+    title={absent
+      ? "Suffolk Tennis session — marked absent on the register, so it is not counted"
+      : "Added automatically from your Suffolk Tennis booking"}
+    className={`inline-flex items-center rounded-full px-1.5 py-px text-[9px] font-display font-bold uppercase tracking-wide ${
+      absent ? "bg-muted text-muted-foreground" : "bg-lta-cyan/15 text-lta-cyan"
+    }`}
+  >
+    {absent ? "Absent" : "Suffolk Tennis"}
+  </span>
+);
+
 // ── Helper: calculate breakdown from entries ────────────────────
-function calcBreakdown(entries: ScheduleEntry[]) {
+function calcBreakdown(allEntries: ScheduleEntry[]) {
+  // A child marked absent on the register did not do those hours. Only auto
+  // entries carry a status, so hand-typed ones are never filtered out here.
+  const entries = allEntries.filter(e => e.attendance_status !== "absent");
+
   const individual = entries.filter(e => ["individual_lesson", "coaching"].includes(e.category)).reduce((s, e) => s + e.duration_minutes, 0) / 60;
   const squad = entries.filter(e => ["squad_training", "tennis_training"].includes(e.category)).reduce((s, e) => s + e.duration_minutes, 0) / 60;
   const freePlay = entries.filter(e => e.category === "free_play").reduce((s, e) => s + e.duration_minutes, 0) / 60;
@@ -476,7 +525,7 @@ function calcBreakdown(entries: ScheduleEntry[]) {
   const matches = entries.filter(e => ["official_match", "tennis_match"].includes(e.category)).length;
   const tournaments = entries.filter(e => e.is_tournament || e.category === "tournament").length;
 
-  return { individual, squad, freePlay, totalTennis, sc, otherSport, totalAthletic, scSessions, otherSessions, totalAthleticSessions, matches, tournaments };
+  return { individual, squad, freePlay, totalTennis, sc, otherSport, totalAthletic, scSessions, otherSessions, totalAthleticSessions, matches, tournaments, sessions: entries.length, absent: allEntries.length - entries.length };
 }
 
 // ── Main Component ──────────────────────────────────────────────
@@ -513,14 +562,60 @@ const SportingTimetable = () => {
     start.setMonth(start.getMonth() - 3);
     const end = new Date();
     end.setMonth(end.getMonth() + 12);
-    const { data } = await supabase
-      .from("sporting_schedule")
-      .select("*")
-      .eq("parent_user_id", user.id)
-      .gte("event_date", toDateStr(start))
-      .lte("event_date", toDateStr(end))
-      .order("event_date", { ascending: true });
-    setEntries((data as ScheduleEntry[]) || []);
+    const from = toDateStr(start);
+    const to = toDateStr(end);
+
+    // Both reads are in flight together so the spinner clears once rather
+    // than flashing between the two. Promise.resolve wraps the RPC because a
+    // database without the function yet must not take the whole page down —
+    // the hand-typed timetable is still worth showing.
+    const [manual, auto] = await Promise.all([
+      supabase
+        .from("sporting_schedule")
+        .select("*")
+        .eq("parent_user_id", user.id)
+        .gte("event_date", from)
+        .lte("event_date", to)
+        .order("event_date", { ascending: true }),
+      Promise.resolve(db.rpc("timetable_sessions", { p_from: from, p_to: to }))
+        .then((r: { data: AutoSessionRow[] | null; error: unknown }) => r)
+        .catch(() => ({ data: null, error: true })),
+    ]);
+
+    const manualEntries = (manual.data as ScheduleEntry[]) || [];
+
+    // Suffolk sessions are derived, never copied: a cancelled session simply
+    // stops coming back on the next load. source_id is already prefixed
+    // 'auto:', so it cannot collide with a sporting_schedule uuid.
+    const autoEntries: ScheduleEntry[] = auto.error
+      ? []
+      : (auto.data || []).map((r: AutoSessionRow) => ({
+          id: r.source_id,
+          child_id: r.child_id,
+          parent_user_id: user.id,
+          title: r.title,
+          category: r.category,
+          event_date: r.event_date,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          duration_minutes: r.duration_minutes,
+          location: r.location,
+          notes: null,
+          is_tournament: r.is_tournament,
+          recurrence_rule: null,
+          recurrence_end_date: null,
+          recurrence_group_id: null,
+          auto: true,
+          attendance_status: r.attendance_status,
+        }));
+
+    setEntries(
+      [...manualEntries, ...autoEntries].sort((a, b) =>
+        a.event_date === b.event_date
+          ? (a.start_time || "").localeCompare(b.start_time || "")
+          : a.event_date.localeCompare(b.event_date)
+      )
+    );
     setLoading(false);
   };
 
@@ -535,13 +630,11 @@ const SportingTimetable = () => {
     [entries, selectedChildId]
   );
 
-  const weekEntries = useMemo(() =>
-    filteredEntries.filter(e => {
-      const d = new Date(e.event_date);
-      return d >= weekDates[0] && d <= weekDates[6];
-    }),
-    [filteredEntries, weekDates]
-  );
+  const weekEntries = useMemo(() => {
+    const from = toDateStr(weekDates[0]);
+    const to = toDateStr(weekDates[6]);
+    return filteredEntries.filter(e => e.event_date >= from && e.event_date <= to);
+  }, [filteredEntries, weekDates]);
 
   const weekBreakdown = useMemo(() => calcBreakdown(weekEntries), [weekEntries]);
 
@@ -565,18 +658,34 @@ const SportingTimetable = () => {
 
   const ageGroup = useMemo(() => {
     if (selectedChildId !== "all") return getChildAgeGroup(selectedChildId);
-    if (children.length === 0) return "10U";
-    return getChildAgeGroup(children[0].id);
+    if (children.length <= 1) return getChildAgeGroup(children[0]?.id ?? "");
+    return "All children";
   }, [selectedChildId, children]);
-  const target = LTA_TARGETS[ageGroup] || LTA_TARGETS["10U"];
+
+  const target = useMemo(() => {
+    const forChild = (id: string) => LTA_TARGETS[getChildAgeGroup(id)] || LTA_TARGETS["10U"];
+    if (ageGroup !== "All children") return LTA_TARGETS[ageGroup] || LTA_TARGETS["10U"];
+    // Every child's hours are in the total, so every child's target is in the
+    // bar. Scoring a family against one child's age group read as "target met"
+    // when neither child had met their own.
+    return children.reduce((sum, c) => {
+      const t = forChild(c.id);
+      return {
+        tennis: sum.tennis + t.tennis, individual: sum.individual + t.individual,
+        squad: sum.squad + t.squad, freePlay: sum.freePlay + t.freePlay,
+        athletic: sum.athletic + t.athletic, sc_sessions: sum.sc_sessions + t.sc_sessions,
+        other_sessions: sum.other_sessions + t.other_sessions,
+        matches_yearly: sum.matches_yearly + t.matches_yearly,
+      };
+    }, { tennis: 0, individual: 0, squad: 0, freePlay: 0, athletic: 0, sc_sessions: 0, other_sessions: 0, matches_yearly: 0 });
+  }, [ageGroup, children]);
 
   // Monthly
   const monthEntries = useMemo(() => {
     const { start, end } = getMonthDates(monthYear.year, monthYear.month);
-    return filteredEntries.filter(e => {
-      const d = new Date(e.event_date);
-      return d >= start && d <= end;
-    });
+    const from = toDateStr(start);
+    const to = toDateStr(end);
+    return filteredEntries.filter(e => e.event_date >= from && e.event_date <= to);
   }, [filteredEntries, monthYear]);
 
   const monthBreakdown = useMemo(() => calcBreakdown(monthEntries), [monthEntries]);
@@ -584,14 +693,14 @@ const SportingTimetable = () => {
   // Yearly matches
   const currentYear = new Date().getFullYear();
   const yearEntries = useMemo(() =>
-    filteredEntries.filter(e => new Date(e.event_date).getFullYear() === currentYear),
+    filteredEntries.filter(e => e.event_date.slice(0, 4) === String(currentYear)),
     [filteredEntries, currentYear]
   );
   const yearBreakdown = useMemo(() => calcBreakdown(yearEntries), [yearEntries]);
 
   const yearTournaments = useMemo(() =>
-    filteredEntries.filter(e => e.is_tournament || e.category === "tournament"),
-    [filteredEntries]
+    yearEntries.filter(e => (e.is_tournament || e.category === "tournament") && e.attendance_status !== "absent"),
+    [yearEntries]
   );
 
   const handleDelete = async (id: string) => {
@@ -622,9 +731,10 @@ const SportingTimetable = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="font-display text-2xl font-bold text-foreground">Sporting Timetable</h2>
+          <h2 className="font-display text-2xl font-bold text-foreground">Suffolk Tennis Sporting Timetable</h2>
           <p className="text-muted-foreground font-body text-sm mt-1">
-            Track training, matches & athletic development against LTA pathway targets.
+            Sessions booked with Suffolk Tennis fill in automatically. Add anything else your child does,
+            and track it all against the LTA pathway targets.
           </p>
         </div>
         <button
@@ -724,7 +834,7 @@ const SportingTimetable = () => {
               <div className="bg-card border border-border rounded-2xl p-5 space-y-5">
                 <div className="flex items-center gap-2">
                   <BarChart3 size={16} className="text-lta-cyan" />
-                  <h4 className="font-display font-bold text-foreground text-sm">Weekly Hours vs LTA Target ({ageGroup})</h4>
+                  <h4 className="font-display font-bold text-foreground text-sm">Suffolk Tennis weekly hours vs LTA target ({ageGroup})</h4>
                 </div>
 
                 {/* Tennis Hours */}
@@ -786,8 +896,8 @@ const SportingTimetable = () => {
                     <p className="text-[10px] text-muted-foreground">Matches YTD</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-display font-black text-foreground">{weekEntries.length}</p>
-                    <p className="text-[10px] text-muted-foreground">Sessions</p>
+                    <p className="text-2xl font-display font-black text-foreground">{weekBreakdown.sessions}</p>
+                    <p className="text-[10px] text-muted-foreground">Sessions{weekBreakdown.absent > 0 ? ` · ${weekBreakdown.absent} missed` : ""}</p>
                   </div>
                 </div>
               </div>
@@ -810,6 +920,35 @@ const SportingTimetable = () => {
                       <div className="p-1.5 space-y-1">
                         {dayEntries.map(entry => {
                           const cfg = getCategoryConfig(entry.category);
+
+                          // Club sessions get their own branch rather than a
+                          // hidden pencil: with no onClick and no buttons in
+                          // the tree there is nothing to click by accident.
+                          if (entry.auto) {
+                            const absent = entry.attendance_status === "absent";
+                            return (
+                              <div
+                                key={entry.id}
+                                data-auto="1"
+                                title={absent
+                                  ? `${entry.title} — Suffolk Tennis session, marked absent so it is not counted`
+                                  : `${entry.title} — added automatically from your Suffolk Tennis booking`}
+                                className={`${cfg.light} rounded-lg p-1.5 relative cursor-default ${absent ? "opacity-50" : ""}`}
+                              >
+                                <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${absent ? "bg-muted-foreground/50" : "bg-lta-cyan"}`} />
+                                <p className={`text-[7px] font-bold uppercase tracking-wide ${absent ? "text-muted-foreground" : "text-lta-cyan"}`}>Suffolk</p>
+                                <p className={`text-[9px] font-bold ${cfg.textColor} leading-tight line-clamp-2 pr-2`}>{entry.title}</p>
+                                <p className="text-[8px] text-muted-foreground">{entry.duration_minutes}min</p>
+                                {entry.start_time && (
+                                  <p className="text-[8px] text-muted-foreground">{entry.start_time.slice(0, 5)}</p>
+                                )}
+                                {absent && (
+                                  <p className="text-[7px] font-bold uppercase tracking-wide text-muted-foreground">Absent</p>
+                                )}
+                              </div>
+                            );
+                          }
+
                           return (
                             <div key={entry.id} className={`${cfg.light} rounded-lg p-1.5 group relative cursor-pointer`} onClick={() => setEditingEntry(entry)}>
                               <div className="absolute -top-1 -right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
@@ -863,7 +1002,7 @@ const SportingTimetable = () => {
               {/* Monthly targets */}
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h4 className="font-display font-bold text-foreground text-sm flex items-center gap-2">
-                  <BarChart3 size={16} className="text-lta-cyan" /> Monthly Summary ({ageGroup})
+                  <BarChart3 size={16} className="text-lta-cyan" /> Suffolk Tennis monthly summary ({ageGroup})
                 </h4>
                 <div className="space-y-2">
                   <h5 className="text-xs font-display font-bold text-foreground uppercase tracking-wider">Tennis Hours</h5>
@@ -882,7 +1021,7 @@ const SportingTimetable = () => {
                   <div><p className="text-2xl font-display font-black text-lta-cyan">{monthBreakdown.totalTennis.toFixed(1)}</p><p className="text-[10px] text-muted-foreground">Tennis hrs</p></div>
                   <div><p className="text-2xl font-display font-black text-violet-400">{monthBreakdown.totalAthletic.toFixed(1)}</p><p className="text-[10px] text-muted-foreground">Athletic hrs</p></div>
                   <div><p className="text-2xl font-display font-black text-emerald-400">{monthBreakdown.matches}</p><p className="text-[10px] text-muted-foreground">Matches</p></div>
-                  <div><p className="text-2xl font-display font-black text-foreground">{monthEntries.length}</p><p className="text-[10px] text-muted-foreground">Total sessions</p></div>
+                  <div><p className="text-2xl font-display font-black text-foreground">{monthBreakdown.sessions}</p><p className="text-[10px] text-muted-foreground">Total sessions{monthBreakdown.absent > 0 ? ` · ${monthBreakdown.absent} missed` : ""}</p></div>
                 </div>
               </div>
 
@@ -949,14 +1088,18 @@ const SportingTimetable = () => {
                     {monthEntries.map(entry => {
                       const cfg = getCategoryConfig(entry.category);
                       const childName = children.find(c => c.id === entry.child_id)?.name;
+                      const absent = entry.attendance_status === "absent";
                       return (
-                        <div key={entry.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
+                        <div key={entry.id} className={`p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group ${absent ? "opacity-60" : ""}`}>
                           <div className="flex items-center gap-3">
                             <div className={`w-8 h-8 rounded-lg ${cfg.light} flex items-center justify-center`}>
                               <cfg.icon size={14} className={cfg.textColor} />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-foreground">{entry.title}</p>
+                              <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                                {entry.title}
+                                {entry.auto && <ClubBadge absent={absent} />}
+                              </p>
                               <p className="text-xs text-muted-foreground">
                                 {new Date(entry.event_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
                                 {entry.start_time && ` · ${entry.start_time.slice(0, 5)}`}
@@ -967,12 +1110,18 @@ const SportingTimetable = () => {
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-muted-foreground">{entry.duration_minutes}min</span>
                             {entry.recurrence_rule && <Repeat size={11} className="text-muted-foreground/40" />}
-                            <button onClick={() => setEditingEntry(entry)} className="p-1 rounded text-muted-foreground/20 hover:text-lta-cyan opacity-0 group-hover:opacity-100 transition-all">
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => handleDelete(entry.id)} className="p-1 rounded text-muted-foreground/20 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all">
-                              <Trash2 size={13} />
-                            </button>
+                            {/* The club owns this row, so the controls are not
+                                rendered at all rather than merely disabled. */}
+                            {!entry.auto && (
+                              <>
+                                <button onClick={() => setEditingEntry(entry)} className="p-1 rounded text-muted-foreground/20 hover:text-lta-cyan opacity-0 group-hover:opacity-100 transition-all">
+                                  <Pencil size={13} />
+                                </button>
+                                <button onClick={() => handleDelete(entry.id)} className="p-1 rounded text-muted-foreground/20 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all">
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -1040,7 +1189,10 @@ const SportingTimetable = () => {
                                       <cfg.icon size={18} className={cfg.textColor} />
                                     </div>
                                     <div>
-                                      <p className="text-sm font-bold text-foreground">{t.title}</p>
+                                      <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                        {t.title}
+                                        {t.auto && <ClubBadge absent={t.attendance_status === "absent"} />}
+                                      </p>
                                       <p className="text-xs text-muted-foreground">
                                         {new Date(t.event_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
                                         {t.location && ` · ${t.location}`}
@@ -1048,14 +1200,16 @@ const SportingTimetable = () => {
                                       </p>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-1">
-                                    <button onClick={() => setEditingEntry(t)} className="p-1 rounded text-muted-foreground/20 hover:text-lta-cyan opacity-0 group-hover:opacity-100 transition-all">
-                                      <Pencil size={13} />
-                                    </button>
-                                    <button onClick={() => handleDelete(t.id)} className="p-1 rounded text-muted-foreground/20 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all">
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </div>
+                                  {!t.auto && (
+                                    <div className="flex items-center gap-1">
+                                      <button onClick={() => setEditingEntry(t)} className="p-1 rounded text-muted-foreground/20 hover:text-lta-cyan opacity-0 group-hover:opacity-100 transition-all">
+                                        <Pencil size={13} />
+                                      </button>
+                                      <button onClick={() => handleDelete(t.id)} className="p-1 rounded text-muted-foreground/20 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all">
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -1080,7 +1234,7 @@ const SportingTimetable = () => {
                           {new Date(currentYear, mi).toLocaleDateString("en-GB", { month: "short" })}
                         </p>
                         <p className="text-lg font-display font-black text-lta-cyan">{mb.totalTennis.toFixed(0)}<span className="text-[9px] text-muted-foreground font-normal">h</span></p>
-                        <p className="text-[9px] text-muted-foreground">{mEntries.length} sessions</p>
+                        <p className="text-[9px] text-muted-foreground">{mb.sessions} sessions</p>
                         {mb.matches > 0 && (
                           <p className="text-[9px] font-bold text-emerald-400 mt-1">{mb.matches} match{mb.matches !== 1 ? "es" : ""}</p>
                         )}

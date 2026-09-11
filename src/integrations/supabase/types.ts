@@ -615,6 +615,7 @@ export type Database = {
           session_slots: Json
           sign_up_deadline: string | null
           sign_up_enabled: boolean
+          timetable_category: string | null
           title: string
           updated_at: string
           visibility: string
@@ -639,6 +640,7 @@ export type Database = {
           session_slots?: Json
           sign_up_deadline?: string | null
           sign_up_enabled?: boolean
+          timetable_category?: string | null
           title: string
           updated_at?: string
           visibility?: string
@@ -663,6 +665,7 @@ export type Database = {
           session_slots?: Json
           sign_up_deadline?: string | null
           sign_up_enabled?: boolean
+          timetable_category?: string | null
           title?: string
           updated_at?: string
           visibility?: string

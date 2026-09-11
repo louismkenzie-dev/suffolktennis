@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Avatar, ListGroup, ListRow } from "./primitives";
-import { BrandLockup, BrandMark } from "@/components/app/BrandLogo";
+import { BrandLockup } from "@/components/app/BrandLogo";
 
 export type NavItem = {
   id: string;
@@ -134,7 +134,11 @@ export function AppShell({
             </button>
           ) : (
             <Link to="/" className="flex shrink-0 items-center md:hidden" aria-label="Suffolk Tennis home">
-              <BrandMark />
+              {/* The mark on its own is the LTA tangram, so a parent's phone
+                  header said LTA and never said us. The lockup is 127px at the
+                  36px its "PARTNERSHIP" line needs, which still leaves room
+                  for the section title and the account button at 360px. */}
+              <BrandLockup />
             </Link>
           )}
           <Link to="/" className="hidden shrink-0 items-center md:flex" aria-label="Suffolk Tennis home">
@@ -310,7 +314,7 @@ export function AppShell({
 }
 
 /** Minimal shell for standalone flows (booking, ticket, scanner): a top bar
- *  with the mark and a back link, no navigation. */
+ *  with the Suffolk Tennis lockup and a back link, no navigation. */
 export function FlowShell({ back, title, right, children, maxWidth = "max-w-2xl", className }: {
   back?: { label: string; to: string };
   title?: string;
@@ -328,17 +332,16 @@ export function FlowShell({ back, title, right, children, maxWidth = "max-w-2xl"
               <ChevronLeft className="h-5 w-5" /> {back.label}
             </Link>
           ) : (
-            <Link to="/" aria-label="Suffolk Tennis home" className="flex shrink-0 items-center">
-              <BrandMark className="md:hidden" />
-              <BrandLockup className="hidden md:block" />
+<Link to="/" aria-label="Suffolk Tennis home" className="flex shrink-0 items-center">
+              <BrandLockup />
             </Link>
           )}
           {title && <span className="min-w-0 flex-1 truncate font-display text-[17px] font-semibold">{title}</span>}
           {!title && <span className="flex-1" />}
           {right}
-          {back && (
+{back && (
             <Link to="/" aria-label="Suffolk Tennis home" className="flex shrink-0 items-center">
-              <BrandMark />
+              <BrandLockup />
             </Link>
           )}
         </div>

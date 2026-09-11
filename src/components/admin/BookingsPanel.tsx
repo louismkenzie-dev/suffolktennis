@@ -30,6 +30,7 @@ type EventRow = {
   location: string | null; capacity: number | null; visibility: string;
   programme_type: string; price_pence: number | null; is_free: boolean;
   meeting_cadence: string | null; sign_up_enabled: boolean; cancelled_at?: string | null;
+  timetable_category?: string | null;
 };
 type Invitation = {
   id: string; child_name: string | null; parent_email: string; parent_name: string | null;
@@ -94,7 +95,7 @@ const emptyForm = {
   id: null as string | null,
   title: "", description: "", event_date: "", location: "", capacity: "",
   visibility: "private", programme_type: "event", price: "", is_free: false,
-  meeting_cadence: "weekly", sign_up_enabled: false,
+  meeting_cadence: "weekly", sign_up_enabled: false, timetable_category: "squad_training",
 };
 
 const BookingsPanel = () => {
@@ -374,6 +375,9 @@ const BookingsPanel = () => {
       is_free: !isProgrammeForm && form.is_free,
       meeting_cadence: isProgrammeForm ? form.meeting_cadence : null,
       sign_up_enabled: form.sign_up_enabled,
+      // Squad training is what a programme is unless told otherwise, so the
+      // default is stored as null and the RPC falls back to it.
+      timetable_category: form.timetable_category === "squad_training" ? null : form.timetable_category,
     };
     const { data: saved, error } = form.id
       ? await db.from("events").update(payload).eq("id", form.id).select("id").single()
@@ -570,6 +574,7 @@ const BookingsPanel = () => {
       is_free: !!ev.is_free,
       meeting_cadence: ev.meeting_cadence ?? "weekly",
       sign_up_enabled: ev.sign_up_enabled,
+      timetable_category: ev.timetable_category ?? "squad_training",
     });
     // loadEvents holds every assignment and re-runs after each save, so the
     // cached map is the live one; no async refresh that could overwrite ticks.
@@ -1371,6 +1376,22 @@ const BookingsPanel = () => {
                     <SelectItem value="programme">Programme — a season squad</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Counts on the Suffolk Tennis timetable as</Label>
+                <Select value={form.timetable_category} onValueChange={(v) => setForm({ ...form, timetable_category: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="squad_training">Squad Training</SelectItem>
+                    <SelectItem value="individual_lesson">Individual Lesson</SelectItem>
+                    <SelectItem value="free_play">Free Play / Practice Match</SelectItem>
+                    <SelectItem value="tennis_sc">Tennis Specific (S&amp;C)</SelectItem>
+                    <SelectItem value="other_sport">Other Sport</SelectItem>
+                    <SelectItem value="official_match">Official Match</SelectItem>
+                    <SelectItem value="tournament">Tournament</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">Every session here counts as this on the parent's Suffolk Tennis timetable, and against their LTA target.</p>
               </div>
               {form.programme_type === "programme" ? (
                 <>
