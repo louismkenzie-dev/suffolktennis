@@ -1,23 +1,62 @@
 // Staff-only (admin or coach): validate a QR ticket at the venue and record
 // arrival.
-// The QR encodes the ticket's qr_token. Validity is decided AT SCAN TIME:
+//
+// The code itself now says which session it is for (session_tickets), so the
+// scanner asks the coach nothing — see docs/SESSION-TICKETS-SPEC.md. A
+// legacy season ticket already in a parent's inbox still scans: its session
+// is worked out from the clock, and only if that fails does the caller's open
+// register act as a hint. `session_id` in the body is that hint and nothing
+// more.
+//
+// Validity is decided AT SCAN TIME:
 //  - booking must be paid (a later refund/cancellation invalidates the ticket)
 //  - for programme bookings, the membership must not be past_due — a failed
 //    monthly payment stops admission until it is resolved (Ollie chases).
-//  - the ticket must not be void, and not already scanned for this session.
+//  - the ticket must not be void, and not already scanned for the session it
+//    resolved to.
 //  - a coach may only scan tickets for programmes they are assigned to
 //    (event_coaches); admins may scan anything.
-// Every outcome is a 200 with { ok, result, message, player } — supabase-js
-// swallows non-2xx bodies, so the scanner UIs would otherwise show a bogus
-// "check your connection" for a ticket that simply isn't recognised.
+// Every outcome is a 200 with the body below — supabase-js swallows non-2xx
+// bodies, so the scanner UIs would otherwise show a bogus "check your
+// connection" for a ticket that simply isn't recognised.
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireRole, CORS, json } from "../_shared/adminAuth.ts";
 import { upsertAttendance } from "../_shared/reportEmails.ts";
+import { normaliseToken, resolveScanTarget } from "../_shared/sessionTickets.ts";
 
 const Body = z.object({
   qr_token: z.string().trim().min(8).max(128),
   session_id: z.string().uuid().optional(),
 });
+
+// Scans for a session-less event are one per day, not one ever: a summer
+// camp booking covers several days on the same ticket.
+const ONE_OFF_DUPLICATE_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * LTA year group from the age on 1 January of the current year — the same
+ * rule the register shows (coach-session), so a coach sees the same chip in
+ * both places.
+ */
+function ageGroup(dob: string | null | undefined): string | null {
+  if (!dob) return null;
+  const birth = new Date(`${dob.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const year = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric" }).format(new Date()),
+  );
+  const bornNewYearsDay = birth.getUTCMonth() === 0 && birth.getUTCDate() === 1;
+  const age = year - birth.getUTCFullYear() - (bornNewYearsDay ? 0 : 1);
+  if (age <= 7) return "8U";
+  if (age === 8) return "9U";
+  if (age === 9) return "10U";
+  if (age === 10) return "11U";
+  if (age === 11) return "12U";
+  if (age <= 13) return "14U";
+  if (age <= 15) return "16U";
+  if (age <= 17) return "18U";
+  return "Senior";
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -36,17 +75,19 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  // Accept a full ticket URL pasted/scanned as well as the bare token.
-  const token = body.qr_token.includes("/") ? body.qr_token.split("/").pop()! : body.qr_token;
+  const token = normaliseToken(body.qr_token);
+  const noPlayer = {
+    child_name: null, parent_name: null, session_slot: null, has_medical_notes: false,
+    event_title: null, age_group: null, medical_notes: null,
+  };
+  const bare = (result: string, message: string) =>
+    json({
+      ok: false, result, message, player: noPlayer,
+      session: null, event: null, booking_id: null, resolved_from: null,
+    });
 
-  const noPlayer = { child_name: null, parent_name: null, session_slot: null, has_medical_notes: false, event_title: null };
-
-  const { data: ticket } = await admin
-    .from("tickets")
-    .select("id, status, event_id, booking_id")
-    .eq("qr_token", token)
-    .maybeSingle();
-  if (!ticket) return json({ ok: false, result: "unknown", message: "Ticket not recognised", player: noPlayer });
+  const target = await resolveScanTarget(admin, { token, hintSessionId: body.session_id ?? null });
+  if (target.outcome === "unknown") return bare("unknown", "Ticket not recognised");
 
   // Scope: coaches only see (and mark) the programmes they are assigned to.
   const { data: roleRows } = await admin.from("user_roles").select("role").eq("user_id", adminUserId);
@@ -54,56 +95,108 @@ Deno.serve(async (req) => {
   if (!isAdmin) {
     const { data: assignment } = await admin
       .from("event_coaches").select("event_id")
-      .eq("event_id", ticket.event_id).eq("user_id", adminUserId)
+      .eq("event_id", target.event_id!).eq("user_id", adminUserId)
       .maybeSingle();
     if (!assignment) {
-      return json({ ok: false, result: "forbidden", message: "This ticket is for a programme you are not assigned to", player: noPlayer });
+      return bare("forbidden", "This ticket is for a programme you are not assigned to");
     }
   }
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, status, child_id, child_name, parent_name, parent_email, session_slot, medical_notes, membership_id")
-    .eq("id", ticket.booking_id)
+    .select("id, status, child_id, child_name, child_dob, parent_name, session_slot, medical_notes, membership_id")
+    .eq("id", target.booking_id!)
     .maybeSingle();
   const { data: eventRow } = await admin
-    .from("events").select("title").eq("id", ticket.event_id).maybeSingle();
+    .from("events").select("id, title").eq("id", target.event_id!).maybeSingle();
+  type ChildRow = {
+    date_of_birth: string | null;
+    medical_needs: string | null;
+    medical_conditions: string[] | null;
+    medical_details: string | null;
+  };
+  let child: ChildRow | null = null;
+  if (booking?.child_id) {
+    const { data } = await admin
+      .from("children")
+      .select("date_of_birth, medical_needs, medical_conditions, medical_details")
+      .eq("id", booking.child_id).maybeSingle();
+    child = (data as ChildRow | null) ?? null;
+  }
+
+  // Medical detail comes from the booking form first, then the child's
+  // profile — the same order the register uses.
+  const medicalNotes = (() => {
+    const fromBooking = (booking?.medical_notes ?? "").trim();
+    if (fromBooking) return fromBooking;
+    const parts = [
+      (child?.medical_conditions ?? []).join(", "),
+      child?.medical_details ?? "",
+      child?.medical_needs ?? "",
+    ].map((s: string) => s.trim()).filter(Boolean);
+    return parts.length > 0 ? parts.join(" — ") : null;
+  })();
 
   const player = {
     child_name: booking?.child_name ?? null,
     parent_name: booking?.parent_name ?? null,
     session_slot: booking?.session_slot ?? null,
-    has_medical_notes: !!booking?.medical_notes,
+    has_medical_notes: !!medicalNotes,
     event_title: eventRow?.title ?? null,
+    age_group: ageGroup(child?.date_of_birth ?? booking?.child_dob),
+    medical_notes: medicalNotes,
   };
-
-  // The session being scanned for must be one of this ticket's event's — a
-  // child from programme A scanned on programme B's register is a mistake,
-  // not an admission, and must not leave an orphaned attendance row.
-  if (body.session_id) {
-    const { data: session } = await admin
-      .from("event_sessions").select("event_id").eq("id", body.session_id).maybeSingle();
-    if (!session || session.event_id !== ticket.event_id) {
-      return json({ ok: false, result: "wrong_event", message: "This ticket is for a different programme", player });
+  const session = target.session
+    ? {
+      id: target.session.id,
+      session_date: target.session.session_date,
+      start_time: target.session.start_time,
+      end_time: target.session.end_time,
+      venue: target.session.venue,
     }
-  }
+    : null;
+  const event = eventRow ? { id: eventRow.id, title: eventRow.title } : null;
 
-  async function record(result: string) {
+  const respond = (result: string, message: string) =>
+    json({
+      ok: result === "admitted",
+      result,
+      message,
+      player,
+      session,
+      event,
+      booking_id: target.booking_id,
+      resolved_from: target.resolved_from,
+    });
+
+  // ticket_scans hangs off the season ticket and its `result` is
+  // CHECK-constrained, so only the four original outcomes are ever logged.
+  async function record(result: "admitted" | "duplicate" | "rejected_void" | "rejected_unpaid") {
+    if (!target.legacy_ticket_id) return;
     await admin.from("ticket_scans").insert({
-      ticket_id: ticket!.id,
-      session_id: body.session_id ?? null,
+      ticket_id: target.legacy_ticket_id,
+      session_id: target.session?.id ?? null,
       result,
       scanned_by: adminUserId,
     });
   }
 
-  if (ticket.status === "void") {
+  if (target.status === "void") {
     await record("rejected_void");
-    return json({ ok: false, result: "rejected_void", message: "Ticket has been cancelled", player });
+    return respond("rejected_void", "Ticket has been cancelled");
   }
   if (!booking || booking.status !== "paid") {
     await record("rejected_unpaid");
-    return json({ ok: false, result: "rejected_unpaid", message: "Booking is not paid", player });
+    return respond("rejected_unpaid", "Booking is not paid");
+  }
+
+  // Only once the ticket and the booking are known good: a cancelled or
+  // refunded child must be turned away, not told to be marked in by hand.
+  if (target.outcome === "no_session") {
+    return respond("no_session", "Season ticket — no session of this programme is running now");
+  }
+  if (target.outcome === "wrong_session") {
+    return respond("wrong_session", "This code is for a different session");
   }
 
   // Programme bookings: a past-due membership blocks entry.
@@ -115,31 +208,45 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (membership && (membership.status === "past_due" || membership.status === "cancelled" || membership.status === "incomplete")) {
       await record("rejected_unpaid");
-      return json({
-        ok: false,
-        result: "rejected_unpaid",
-        message: membership.status === "past_due"
+      return respond(
+        "rejected_unpaid",
+        membership.status === "past_due"
           ? "Monthly payment failed — please ask the parent to update their card"
           : "Membership is not active",
-        player,
-      });
+      );
     }
   }
 
-  // Duplicate scan for the same session (or same day for one-offs).
-  let dupQuery = admin
-    .from("ticket_scans")
-    .select("id", { count: "exact", head: true })
-    .eq("ticket_id", ticket.id)
-    .eq("result", "admitted");
-  dupQuery = body.session_id
-    ? dupQuery.eq("session_id", body.session_id)
-    : dupQuery.gte("scanned_at", new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString());
-  const { count: priorScans } = await dupQuery;
+  // Duplicate scan for the session the code resolved to (or the same day for
+  // one-offs). A booking with no season ticket row has no scan history to
+  // read, so its arrival row stands in.
+  let alreadyIn = false;
+  if (target.legacy_ticket_id) {
+    let dupQuery = admin
+      .from("ticket_scans")
+      .select("id", { count: "exact", head: true })
+      .eq("ticket_id", target.legacy_ticket_id)
+      .eq("result", "admitted");
+    dupQuery = target.session
+      ? dupQuery.eq("session_id", target.session.id)
+      : dupQuery.gte("scanned_at", new Date(Date.now() - ONE_OFF_DUPLICATE_WINDOW_MS).toISOString());
+    const { count } = await dupQuery;
+    alreadyIn = (count ?? 0) > 0;
+  } else {
+    let attQuery = admin
+      .from("session_attendance")
+      .select("id", { count: "exact", head: true })
+      .eq("booking_id", booking.id)
+      .eq("status", "arrived")
+      .eq("source", "scan");
+    attQuery = target.session ? attQuery.eq("session_id", target.session.id) : attQuery.is("session_id", null);
+    const { count } = await attQuery;
+    alreadyIn = (count ?? 0) > 0;
+  }
 
-  if ((priorScans ?? 0) > 0) {
+  if (alreadyIn) {
     await record("duplicate");
-    return json({ ok: false, result: "duplicate", message: "Already scanned in", player });
+    return respond("duplicate", "Already scanned in");
   }
 
   await record("admitted");
@@ -151,8 +258,8 @@ Deno.serve(async (req) => {
   // rather than thrown.
   const { error: attendanceError } = await upsertAttendance(admin, {
     booking_id: booking.id,
-    event_id: ticket.event_id,
-    session_id: body.session_id ?? null,
+    event_id: target.event_id!,
+    session_id: target.session?.id ?? null,
     child_id: booking.child_id ?? null,
     status: "arrived",
     source: "scan",
@@ -160,5 +267,5 @@ Deno.serve(async (req) => {
   });
   if (attendanceError) console.error("scan-ticket: attendance write failed", attendanceError);
 
-  return json({ ok: true, result: "admitted", message: "Admitted — welcome!", player });
+  return respond("admitted", "Admitted — welcome!");
 });

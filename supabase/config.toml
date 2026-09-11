@@ -17,3 +17,13 @@ project_id = "twtmkvorzpvwnznqzcrw"
     verify_jwt = true
   [functions.submit-rising-stars-signup]
     verify_jwt = false
+
+# Called by pg_cron with a guard token in the body, never with a user JWT.
+[functions.session-reminders]
+verify_jwt = false
+
+[functions.register-alerts]
+verify_jwt = false
+
+[functions.session-reports-dispatch]
+verify_jwt = false

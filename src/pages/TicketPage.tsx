@@ -9,9 +9,15 @@ import { FlowShell, KeyValueList, StatusBadge, SkeletonBlock, EmptyState } from 
 type TicketData = {
   booking: { status: string; child_name: string; parent_name: string; session_slot: string | null };
   event: { title: string; location: string | null; event_date: string | null; cancelled_at?: string | null } | null;
+  /** Set when the token is a per-session code; null for a season ticket. */
+  session: { id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null } | null;
   upcoming_sessions: Array<{ session_date: string; start_time: string | null; end_time: string | null; venue: string | null; moved_from_date?: string | null }>;
-  ticket: { qr_token: string; status: string } | null;
+  ticket: { qr_token: string; status: string; scope?: "session" | "season" } | null;
 };
+
+/** session_date is a bare London date — midday keeps BST from rolling it back. */
+const longDate = (ymd: string) =>
+  new Date(`${ymd}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
 /** "Add to calendar" for one session — Google and Outlook web links. */
 const CalLinks = ({ title, date, start, end, location, details }: {
@@ -20,8 +26,8 @@ const CalLinks = ({ title, date, start, end, location, details }: {
   const c = calendarLinks({ title, date, start, end, location, details });
   return (
     <span className="flex shrink-0 items-center gap-1 text-xs">
-      <a href={c.google} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center rounded-md px-1.5 font-medium text-primary hover:bg-primary/10">Google</a>
-      <a href={c.outlook} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center rounded-md px-1.5 font-medium text-primary hover:bg-primary/10">Outlook</a>
+      <a href={c.google} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-md px-2.5 font-medium text-primary hover:bg-primary/10 md:min-h-9">Google</a>
+      <a href={c.outlook} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-md px-2.5 font-medium text-primary hover:bg-primary/10 md:min-h-9">Outlook</a>
     </span>
   );
 };
@@ -33,16 +39,29 @@ const TicketPage = () => {
 
   useEffect(() => {
     if (!qrToken) return;
+    // The route reuses this component for every token, so a second ticket
+    // must clear the first — otherwise a stale error pins the page, or the
+    // previous session's QR code stays on screen and scannable.
+    let cancelled = false;
+    setData(null);
+    setError(null);
     supabase.functions
       .invoke("get-booking-status", { body: { qr_token: qrToken } })
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (error || data?.error) setError(data?.error || "Ticket not found");
         else setData(data as TicketData);
       })
-      .catch(() => setError("Could not load the ticket"));
+      .catch(() => { if (!cancelled) setError("Could not load the ticket"); });
+    return () => { cancelled = true; };
   }, [qrToken]);
 
   const valid = !!data?.ticket && data.booking.status === "paid" && data.ticket.status === "active";
+  // A per-session code is a ticket for one date: the header carries that
+  // session and the programme's other dates are somebody else's ticket.
+  const session = data?.ticket?.scope === "session" ? data.session : null;
+  const sessionTime = session ? formatTimeRange(session.start_time, session.end_time) : "";
+  const sessionVenue = session ? session.venue ?? data?.event?.location ?? null : null;
 
   return (
     <FlowShell maxWidth="max-w-md" back={{ label: "My bookings", to: "/parent-hub?tab=bookings" }}>
@@ -57,7 +76,18 @@ const TicketPage = () => {
             <div className="bg-suffolk-navy px-5 pb-5 pt-5 text-primary-foreground">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-lta-cyan">Suffolk Tennis · Entry ticket</p>
               <h1 className="mt-1 font-display text-xl font-semibold leading-tight md:text-2xl">{data.event?.title}</h1>
-              {data.event?.location && <p className="mt-0.5 text-sm text-primary-foreground/70">{data.event.location}</p>}
+              {session ? (
+                <>
+                  <p className="mt-1.5 text-sm font-medium">{longDate(session.session_date)}</p>
+                  {(sessionTime || sessionVenue) && (
+                    <p className="mt-0.5 text-sm text-primary-foreground/70">
+                      {[sessionTime, sessionVenue].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
+                </>
+              ) : (
+                data.event?.location && <p className="mt-0.5 text-sm text-primary-foreground/70">{data.event.location}</p>
+              )}
             </div>
             <div className="relative flex flex-col items-center bg-white px-6 pb-6 pt-7">
               {/* perforation */}
@@ -66,7 +96,9 @@ const TicketPage = () => {
               {valid ? (
                 <>
                   <QRCodeSVG value={data.ticket!.qr_token} size={224} level="M" includeMargin={false} />
-                  <p className="mt-4 text-center text-xs text-muted-foreground">Show this code to be scanned on arrival</p>
+                  <p className="mt-4 text-center text-xs text-muted-foreground">
+                    {session ? "Entry code for this session" : "Show this code to be scanned on arrival"}
+                  </p>
                 </>
               ) : (
                 <div className="py-8 text-center">
@@ -96,15 +128,15 @@ const TicketPage = () => {
           <KeyValueList items={[
             { label: "Booked by", value: data.booking.parent_name },
             { label: "Session", value: data.booking.session_slot, hidden: !data.booking.session_slot },
-            { label: "Date", value: data.event?.event_date ? new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : null, hidden: !data.event?.event_date || data.upcoming_sessions.length > 0 },
+            { label: "Date", value: data.event?.event_date ? new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : null, hidden: !data.event?.event_date || data.upcoming_sessions.length > 0 || !!session },
           ]} />
 
-          {data.upcoming_sessions.length > 0 && (
+          {!session && data.upcoming_sessions.length > 0 && (
             <div>
               <p className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Upcoming sessions</p>
               <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-                {data.upcoming_sessions.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                {data.upcoming_sessions.map((s) => (
+                  <div key={`${s.session_date}-${s.start_time ?? ""}`} className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <div className="min-w-0 text-sm">
                       <p className="font-medium">
                         {new Date(s.session_date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
@@ -114,7 +146,7 @@ const TicketPage = () => {
                       {s.venue && <p className="truncate text-xs text-muted-foreground">{s.venue}</p>}
                     </div>
                     <span className="flex items-center gap-1 text-muted-foreground">
-                      <CalendarPlus className="h-4 w-4" aria-hidden />
+                      <CalendarPlus className="h-4 w-4 shrink-0" aria-hidden />
                       <CalLinks
                         title={data.event?.title ?? "Suffolk Tennis"}
                         date={s.session_date} start={s.start_time} end={s.end_time}

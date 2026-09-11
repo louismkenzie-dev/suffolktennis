@@ -237,10 +237,12 @@ export function RegisterPage({ sessionId, eventId: eventIdProp }: {
         </button>
       )}
 
+      {/* The code carries the session; ours goes down only as the fallback hint. */}
       <ScanSheet
         open={scanOpen}
         onOpenChange={setScanOpen}
         sessionId={sessionId}
+        eventId={eventId}
         label={`${title}${when ? ` · ${when}` : ""}`}
         onScanned={() => void load(true)}
       />

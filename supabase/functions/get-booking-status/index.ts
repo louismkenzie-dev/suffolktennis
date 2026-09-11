@@ -4,9 +4,15 @@
 // payer's email). Falls back to confirming with Stripe directly when the
 // webhook hasn't landed yet, so the return page never shows a false
 // "pending" to someone who has just paid.
+//
+// A qr_token is matched against session_tickets first and the old
+// one-per-booking tickets second, so the per-session codes the reminders send
+// and every season ticket already in a parent's inbox both open a ticket page
+// (docs/SESSION-TICKETS-SPEC.md).
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, CORS, json } from "../_shared/adminAuth.ts";
 import { createStripeClient, connectRequestOptions, type StripeEnv } from "../_shared/stripe.ts";
+import { SESSION_COLUMNS, type SessionRow } from "../_shared/sessionTickets.ts";
 
 const Body = z.object({
   session_id: z.string().trim().min(8).max(255).optional(),
@@ -32,12 +38,29 @@ Deno.serve(async (req) => {
 
   const admin = serviceClient();
 
+  // A booking id travels in query strings and emails; the QR token and the
+  // Stripe session id do not. Only the latter two prove the caller is the
+  // payer, and only they unlock the entry credential below.
+  const provedOwnership = !!body.qr_token || !!body.session_id;
+
   let bookingId: string | null = body.booking_id ?? null;
+  // Set when the token is a per-session code: the page then shows that one
+  // session rather than the programme's next few.
+  let sessionTicket: { qr_token: string; status: string; session_id: string | null } | null = null;
   if (body.qr_token) {
-    const { data: ticket } = await admin
-      .from("tickets").select("booking_id").eq("qr_token", body.qr_token).maybeSingle();
-    if (!ticket) return json({ error: "Ticket not found" }, 404);
-    bookingId = ticket.booking_id;
+    const { data: perSession } = await admin
+      .from("session_tickets")
+      .select("booking_id, qr_token, status, session_id")
+      .eq("qr_token", body.qr_token).maybeSingle();
+    if (perSession) {
+      sessionTicket = { qr_token: perSession.qr_token, status: perSession.status, session_id: perSession.session_id };
+      bookingId = perSession.booking_id;
+    } else {
+      const { data: ticket } = await admin
+        .from("tickets").select("booking_id").eq("qr_token", body.qr_token).maybeSingle();
+      if (!ticket) return json({ error: "Ticket not found" }, 404);
+      bookingId = ticket.booking_id;
+    }
   }
 
   const bookingColumns =
@@ -96,14 +119,33 @@ Deno.serve(async (req) => {
     .select("qr_token, status, issued_at")
     .eq("booking_id", booking.id).maybeSingle();
 
-  const { data: sessions } = await admin
-    .from("event_sessions")
-    .select("session_date, start_time, end_time, venue, moved_from_date")
-    .eq("event_id", booking.event_id)
-    .is("cancelled_at", null)
-    .gte("session_date", new Date().toISOString().slice(0, 10))
-    .order("session_date")
-    .limit(6);
+  let session: SessionRow | null = null;
+  if (sessionTicket?.session_id) {
+    const { data } = await admin
+      .from("event_sessions").select(SESSION_COLUMNS).eq("id", sessionTicket.session_id).maybeSingle();
+    session = (data as SessionRow | null) ?? null;
+  }
+
+  // A session ticket is about one session, so the programme's diary is not
+  // part of that page.
+  let sessions: Array<Record<string, unknown>> = [];
+  if (!sessionTicket) {
+    const { data } = await admin
+      .from("event_sessions")
+      .select("session_date, start_time, end_time, venue, moved_from_date")
+      .eq("event_id", booking.event_id)
+      .is("cancelled_at", null)
+      .gte("session_date", new Date().toISOString().slice(0, 10))
+      .order("session_date")
+      .limit(6);
+    sessions = data ?? [];
+  }
+
+  const scoped = sessionTicket
+    ? { qr_token: sessionTicket.qr_token, status: sessionTicket.status, scope: "session" as const }
+    : ticketRow
+    ? { qr_token: ticketRow.qr_token, status: ticketRow.status, scope: "season" as const }
+    : null;
 
   return json({
     booking: {
@@ -115,9 +157,18 @@ Deno.serve(async (req) => {
       paid_at: booking.paid_at,
     },
     event: eventRow,
-    upcoming_sessions: sessions ?? [],
-    ticket: ticketRow && booking.status === "paid"
-      ? { qr_token: ticketRow.qr_token, status: ticketRow.status }
+    session: session
+      ? {
+        id: session.id,
+        session_date: session.session_date,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        venue: session.venue,
+      }
       : null,
+    upcoming_sessions: sessions ?? [],
+    // Withheld on the booking_id path: that id is not a secret, and the
+    // token it would hand over is what scan-ticket accepts as admission.
+    ticket: booking.status === "paid" && provedOwnership ? scoped : null,
   });
 });

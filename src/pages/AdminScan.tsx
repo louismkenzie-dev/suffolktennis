@@ -3,121 +3,110 @@ import { Link, useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, Camera } from "lucide-react";
-import { FlowShell, EmptyState, SkeletonBlock } from "@/components/app";
-
-type ScanResult = {
-  ok: boolean;
-  result: string;
-  message: string;
-  player: {
-    child_name: string | null;
-    parent_name: string | null;
-    session_slot: string | null;
-    has_medical_notes: boolean;
-    event_title: string | null;
-  };
-};
-
-type SessionOption = { id: string; label: string };
+import { AlertTriangle, Loader2, Camera } from "lucide-react";
+import { FlowShell, EmptyState, InlineNote, SkeletonBlock } from "@/components/app";
+import { ScanResultPanel, scanError, scanTicket, type ScanTicketResult } from "@/components/coach/ScanSheet";
 
 const AdminScan = () => {
   const { user, loading: authLoading } = useAuth();
   const { isAdmin, canScan, loading: adminLoading } = useIsAdmin();
   const navigate = useNavigate();
 
-  const [sessions, setSessions] = useState<SessionOption[]>([]);
-  const [sessionId, setSessionId] = useState<string>("none");
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ScanResult | null>(null);
+  const [result, setResult] = useState<ScanTicketResult | null>(null);
   const [manual, setManual] = useState("");
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  // Set when the camera is stopped, so a start() still in flight releases the
+  // stream instead of leaving it live with no handle to stop it.
+  const closedRef = useRef(false);
   const lastToken = useRef<{ token: string; at: number }>({ token: "", at: 0 });
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
 
-  useEffect(() => {
-    // Today's sessions (and any one-off events today would just scan without a session).
-    const today = new Date().toISOString().slice(0, 10);
-    (supabase as any)
-      .from("event_sessions")
-      .select("id, session_date, start_time, events(title)")
-      .gte("session_date", today)
-      .order("session_date")
-      .limit(20)
-      .then(({ data }: any) => {
-        if (data) {
-          setSessions(
-            data.map((s: any) => ({
-              id: s.id,
-              label: `${s.events?.title ?? "Session"} · ${new Date(s.session_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}${s.start_time ? ` ${s.start_time.slice(0, 5)}` : ""}`,
-            })),
-          );
-        }
-      });
-  }, []);
+  /** Manual entry: check the code, then clear the box for the next child. */
+  const check = async () => {
+    const token = manual.trim();
+    if (!token || busy) return;
+    await submitToken(token);
+    setManual("");
+  };
 
-  const submitToken = async (token: string) => {
-    // Debounce the same code being decoded repeatedly by the camera.
+  /**
+   * `fromCamera` scans are debounced because the decoder fires many times a
+   * second on one code; a tap on Check is a deliberate act and always runs.
+   */
+  const submitToken = async (token: string, fromCamera = false) => {
     const now = Date.now();
-    if (lastToken.current.token === token && now - lastToken.current.at < 5000) return;
-    lastToken.current = { token, at: now };
+    if (fromCamera) {
+      if (lastToken.current.token === token && now - lastToken.current.at < 5000) return;
+      lastToken.current = { token, at: now };
+    }
 
+    // The last child's verdict must not sit under the next child's spinner.
+    setResult(null);
     setBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("scan-ticket", {
-        body: { qr_token: token, ...(sessionId !== "none" && { session_id: sessionId }) },
-      });
-      if (error && !data) throw new Error("Scan failed — check your connection");
-      setResult(data as ScanResult);
-      if (navigator.vibrate) navigator.vibrate(data?.ok ? 100 : [80, 60, 80]);
-    } catch (e) {
-      setResult({
-        ok: false, result: "error",
-        message: e instanceof Error ? e.message : "Scan failed",
-        player: { child_name: null, parent_name: null, session_slot: null, has_medical_notes: false, event_title: null },
-      });
+      // No session is sent: the code names its own, and this scanner is not
+      // standing on any one register.
+      const r = await scanTicket(token);
+      setResult(r);
+      if (navigator.vibrate) navigator.vibrate(r.ok ? 100 : [80, 60, 80]);
     } finally {
       setBusy(false);
     }
   };
 
-  const startScanner = async () => {
-    setResult(null);
-    setScanning(true);
-    try {
-      const scanner = new Html5Qrcode("qr-reader");
-      scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 8, qrbox: { width: 240, height: 240 } },
-        (decoded) => submitToken(decoded.trim()),
-        () => { /* per-frame decode misses are normal */ },
-      );
-    } catch {
-      setScanning(false);
-      setResult({
-        ok: false, result: "error",
-        message: "Camera unavailable — check permissions, or type the ticket code below.",
-        player: { child_name: null, parent_name: null, session_slot: null, has_medical_notes: false, event_title: null },
-      });
-    }
+  // html5-qrcode throws synchronously from stop() until start() has fully
+  // settled, so every release goes through here — including the unmount one,
+  // where an escaping throw would take the whole app to the error boundary.
+  const release = async (scanner: Html5Qrcode | null) => {
+    try { await scanner?.stop(); scanner?.clear(); } catch { /* never reached SCANNING */ }
   };
 
   const stopScanner = async () => {
+    closedRef.current = true;
     setScanning(false);
-    try { await scannerRef.current?.stop(); scannerRef.current?.clear(); } catch { /* already stopped */ }
+    const scanner = scannerRef.current;
     scannerRef.current = null;
+    await release(scanner);
   };
 
-  useEffect(() => () => { scannerRef.current?.stop().catch(() => {}); }, []);
+  const startScanner = async () => {
+    setResult(null);
+    setScanning(true);
+    closedRef.current = false;
+    lastToken.current = { token: "", at: 0 };
+    const scanner = new Html5Qrcode("qr-reader");
+    scannerRef.current = scanner;
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 8, qrbox: { width: 240, height: 240 } },
+        (decoded) => submitToken(decoded.trim(), true),
+        () => { /* per-frame decode misses are normal */ },
+      );
+      // Stopped while the camera was still starting: the stream is live now,
+      // so release it rather than leave it running with nothing holding it.
+      if (closedRef.current || scannerRef.current !== scanner) await release(scanner);
+    } catch {
+      if (scannerRef.current === scanner) scannerRef.current = null;
+      if (closedRef.current) return;
+      setScanning(false);
+      setResult(scanError("Camera unavailable — check permissions, or type the ticket code below."));
+    }
+  };
+
+  useEffect(() => () => {
+    closedRef.current = true;
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    void release(scanner);
+  }, []);
 
   if (authLoading || adminLoading) {
     return (
@@ -140,42 +129,14 @@ const AdminScan = () => {
   return (
     <FlowShell maxWidth="max-w-md" title="Ticket scanner" back={{ label: isAdmin ? "Admin" : "Register", to: isAdmin ? "/admin?tab=bookings" : "/coach" }}>
       <div className="space-y-4">
-        <Select value={sessionId} onValueChange={setSessionId}>
-          <SelectTrigger aria-label="Session"><SelectValue placeholder="Session (optional)" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No specific session (one-off event)</SelectItem>
-            {sessions.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-
-        {/* Result banner — big and glanceable for door duty */}
-        {result && (
-          <div
-            role="status"
-            aria-live="assertive"
-            className={`rounded-2xl border p-5 text-center ${
-              result.ok ? "border-emerald-200 bg-emerald-50"
-              : result.result === "duplicate" ? "border-amber-200 bg-amber-50"
-              : "border-red-200 bg-red-50"
-            }`}
-          >
-            {result.ok
-              ? <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-600" strokeWidth={1.8} />
-              : result.result === "duplicate"
-                ? <AlertTriangle className="mx-auto h-14 w-14 text-amber-600" strokeWidth={1.8} />
-                : <XCircle className="mx-auto h-14 w-14 text-red-600" strokeWidth={1.8} />}
-            <div className="mt-2 font-display text-2xl font-semibold leading-tight">{result.player.child_name ?? "Unknown ticket"}</div>
-            <div className="mt-1 text-sm text-foreground/80">{result.message}</div>
-            {result.player.event_title && <div className="mt-1 text-xs text-muted-foreground">{result.player.event_title}{result.player.session_slot ? ` · ${result.player.session_slot}` : ""}</div>}
-            {result.player.has_medical_notes && (
-              <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
-                <AlertTriangle className="h-3.5 w-3.5" /> Has medical notes — see admin
-              </div>
-            )}
-          </div>
-        )}
-
         <div id="qr-reader" className={`overflow-hidden rounded-2xl bg-black ${scanning ? "" : "hidden"}`} />
+
+        {/* Mounted always, so the first scan is announced rather than inserted. */}
+        <div role="status" aria-live="polite" aria-atomic="true">
+          {result
+            ? <ScanResultPanel result={result} />
+            : <InlineNote tone="neutral">Each code names its own session, so there is nothing to choose — scan and the child is marked in on the right register.</InlineNote>}
+        </div>
 
         {busy && <div className="flex justify-center py-2"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
 
@@ -190,8 +151,8 @@ const AdminScan = () => {
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="mb-2 text-xs font-medium text-muted-foreground">No camera? Enter the ticket code</p>
           <div className="flex gap-2">
-            <Input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="e.g. 3f9a…" inputMode="text" autoCapitalize="none" autoCorrect="off" onKeyDown={(e) => { if (e.key === "Enter" && manual.trim()) submitToken(manual.trim()); }} />
-            <Button onClick={() => manual.trim() && submitToken(manual.trim())} disabled={busy || !manual.trim()}>Check</Button>
+            <Input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="e.g. 3f9a…" inputMode="text" autoCapitalize="none" autoCorrect="off" onKeyDown={(e) => { if (e.key === "Enter" && !busy && manual.trim()) { void check(); } }} />
+            <Button onClick={() => { void check(); }} disabled={busy || !manual.trim()}>Check</Button>
           </div>
         </div>
       </div>

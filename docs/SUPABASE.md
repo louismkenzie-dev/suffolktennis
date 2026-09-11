@@ -561,3 +561,108 @@ select cron.schedule(
 Deployed 11 Sep 2026: `coach-session` v13 and `scan-ticket` v15 (verify_jwt
 true), `session-reports-dispatch` v1 (verify_jwt false). `RESEND_API_KEY` and
 `SITE_URL` are the only secrets involved and already exist.
+
+## Per-session QR tickets (added 11 Sep 2026)
+
+Contract: `docs/SESSION-TICKETS-SPEC.md`. Migration
+`20260911140000_session_tickets.sql` (already applied) adds
+`session_tickets(id, booking_id, event_id, session_id|null, child_id,
+qr_token, status, reminder_12h_sent_at, reminder_1h_sent_at, created_at)` —
+one entry code per child per session, `session_id` null for a one-off event
+with no session rows. Uniqueness is two PARTIAL indexes (per
+`(booking_id, session_id)`, and per `booking_id` where `session_id is null`),
+so a PostgREST `.upsert()` cannot target them: `ensureSessionTicket` in
+`_shared/sessionTickets.ts` does find-then-insert with a 23505 retry, the
+same shape as `upsertAttendance`. RLS: staff read all, a parent reads their
+own bookings' tickets, admins manage. Rows are minted **lazily** by
+`session-reminders` about 12 hours before the session, so a 30-week programme
+does not sit on thousands of unused codes. `public.tickets` (the old
+one-per-booking season ticket) is untouched and every code already emailed
+keeps working.
+
+**`_shared/sessionTickets.ts`** — `ensureSessionTicket(admin, {booking,
+event_id, session_id})`, `resolveScanTarget(admin, {token, hintSessionId})`,
+and the Europe/London wall-clock helpers (`londonInstant`, `sessionStart`,
+`sessionEnd`, `minutesUntil`, `londonDateOf`, `londonTimeLabel`,
+`timeRangeLabel`), because every "which session is running" and "how long
+until it starts" decision is a wall-clock one and Deno runs in UTC.
+
+**Resolution order** (`resolveScanTarget`, and the same first-then-second
+order in `get-booking-status`):
+
+1. `session_tickets.qr_token` → booking **and** session, authoritative;
+   `resolved_from: "qr"`.
+2. `tickets.qr_token` (legacy season ticket) → booking and event, then the
+   session from the clock: the event's uncancelled session whose window
+   `[start − 2h, end + 2h]` spans now, nearest start first
+   (`resolved_from: "clock"`). An event with **no session rows at all** is a
+   one-off day — a null session is the right answer, not an error. If the
+   event has sessions but none is running, the caller's open register is used
+   as a hint when it belongs to that event (`resolved_from: "hint"`),
+   otherwise `result: "no_session"`.
+3. No match in either table → `result: "unknown"`.
+
+**`scan-ticket`** no longer needs a session from the client: `session_id` in
+the body is only the hint for step 2. Scope, the void / unpaid / past-due
+gates, the duplicate check (now against the **resolved** session, and never
+overwriting the original arrival time) and the `session_attendance` upsert on
+admission are unchanged. Every outcome is still a 200, now with
+`{ok, result, message, player: {…, age_group, medical_notes}, session, event,
+booking_id, resolved_from}`; `age_group` uses the same LTA year-group rule as
+the register (age on 1 January) and `medical_notes` the same
+booking-then-child-profile order. `ticket_scans.result` is CHECK-constrained
+to `admitted|rejected_unpaid|rejected_void|duplicate`, so `no_session`,
+`wrong_event`, `forbidden` and `unknown` are returned but never logged there;
+the audit row hangs off the booking's season ticket (`ticket_scans.ticket_id`
+is NOT NULL against `public.tickets`), and a booking that somehow has none
+falls back to its attendance row for the duplicate test.
+
+**`get-booking-status`** matches `session_tickets` first, then `tickets`. A
+session token returns `session: {id, session_date, start_time, end_time,
+venue}`, `ticket.scope: "session"` and an empty `upcoming_sessions` (the page
+is about one session); a season token or a checkout return is unchanged apart
+from the added `ticket.scope: "season"` and `session: null`.
+
+**`session-reminders`** (verify_jwt false; guard token
+`st_7c4e9a1f6b2d8e3a5c0f9b4d7e1a6c2f` in the JSON body). Every 10 minutes it
+finds uncancelled sessions starting within the next 12h45m (London) plus
+one-off events with no session rows whose `event_date` falls in the same
+window, ensures a `session_tickets` row for every **paid** booking on them,
+then emails the parent: the 12-hour reminder when the session starts in
+60–765 minutes and `reminder_12h_sent_at` is null, the 1-hour reminder when
+it starts in 0–75 minutes and `reminder_1h_sent_at` is null (the 1-hour one
+wins the overlap, so a late-minted ticket never sends both at once). Claim
+before send — the column is stamped first and only where still null, cleared
+if Resend throws — so overlapping runs can't double-send. Sessions with no
+`start_time` are skipped: there is no hour to remind against and guessing one
+would put a wrong time in the subject. Capped at 80 emails per run
+(`truncated: true` when it stops early). Returns `{sessions_due,
+tickets_created, reminders_12h, reminders_1h, truncated, errors}`.
+
+Subjects: `{Child}'s tennis session tomorrow` (or `… today` when the session
+is on the same London date as the send) and `{Child}'s session starts at
+{1.30pm}`. The body names the event, date, time range and venue, then a
+**Show entry QR code** button → `${SITE_URL}/ticket/${qr_token}`. The QR
+image is deliberately **not** in the email: Gmail strips data-URI images and
+blocks remote ones, so the button opens the ticket page, which draws the code
+locally. Idempotency keys `reminder-12h-<ticket id>` /
+`reminder-1h-<ticket id>`; unsubscribe source `reminder`.
+
+Cron job (mirrors `register-alerts` and `session-reports-dispatch`):
+
+```sql
+select cron.schedule(
+  'session-reminders',
+  '*/10 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/session-reminders',
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := '{"guard":"st_7c4e9a1f6b2d8e3a5c0f9b4d7e1a6c2f"}'::jsonb
+  );
+  $$
+);
+```
+
+`RESEND_API_KEY` and `SITE_URL` are the only secrets involved and already
+exist.
