@@ -1409,7 +1409,7 @@ const BookingsPanel = () => {
               {form.programme_type === "programme" ? (
                 <>
                   <div>
-                    <Label>Sessions</Label>
+                    <Label>How often it meets</Label>
                     <Select value={form.meeting_cadence} onValueChange={(v) => setForm({ ...form, meeting_cadence: v })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1424,7 +1424,7 @@ const BookingsPanel = () => {
                     <Input type="number" inputMode="decimal" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
                   </div>
                   <p className="text-xs text-muted-foreground sm:col-span-2">
-                    One payment covers every session. A child already paying for a programme is invited to any other programme at no extra charge.
+                    One payment for the whole programme, however many sessions it has, and however often it meets. If a child is already paying for another programme, their place on this one is included at no extra charge.
                   </p>
                 </>
               ) : (
@@ -1510,7 +1510,9 @@ const BookingsPanel = () => {
         <DialogContent className="md:max-w-md">
           <DialogHeader>
             <DialogTitle>Add sessions</DialogTitle>
-            <DialogDescription>{selected?.title}</DialogDescription>
+            <DialogDescription>
+              {selected?.title}. Each run adds to the sessions already listed, so a programme that changes venue or time part-way through is two runs: add the first block, then Add sessions again for the next.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <SegmentedControl
