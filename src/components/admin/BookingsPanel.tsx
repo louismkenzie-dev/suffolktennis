@@ -30,7 +30,7 @@ type EventRow = {
   location: string | null; capacity: number | null; visibility: string;
   programme_type: string; price_pence: number | null; is_free: boolean;
   meeting_cadence: string | null; sign_up_enabled: boolean; cancelled_at?: string | null;
-  timetable_category?: string | null;
+  timetable_category?: string | null; sign_up_deadline?: string | null;
 };
 type Invitation = {
   id: string; child_name: string | null; parent_email: string; parent_name: string | null;
@@ -96,7 +96,13 @@ const emptyForm = {
   title: "", description: "", event_date: "", location: "", capacity: "",
   visibility: "private", programme_type: "event", price: "", is_free: false,
   meeting_cadence: "weekly", sign_up_enabled: false, timetable_category: "squad_training",
+  // A bare London date; stored as the end of that day so "accept by 30 Sep"
+  // still holds at 11pm on the 30th.
+  reply_by: "",
 };
+
+const londonYmd = (iso: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 
 const BookingsPanel = () => {
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -378,6 +384,7 @@ const BookingsPanel = () => {
       // Squad training is what a programme is unless told otherwise, so the
       // default is stored as null and the RPC falls back to it.
       timetable_category: form.timetable_category === "squad_training" ? null : form.timetable_category,
+      sign_up_deadline: form.reply_by ? new Date(`${form.reply_by}T23:59:59`).toISOString() : null,
     };
     const { data: saved, error } = form.id
       ? await db.from("events").update(payload).eq("id", form.id).select("id").single()
@@ -575,6 +582,7 @@ const BookingsPanel = () => {
       meeting_cadence: ev.meeting_cadence ?? "weekly",
       sign_up_enabled: ev.sign_up_enabled,
       timetable_category: ev.timetable_category ?? "squad_training",
+      reply_by: ev.sign_up_deadline ? londonYmd(ev.sign_up_deadline) : "",
     });
     // loadEvents holds every assignment and re-runs after each save, so the
     // cached map is the live one; no async refresh that could overwrite ticks.
@@ -1392,6 +1400,11 @@ const BookingsPanel = () => {
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">Every session here counts as this on the parent's Suffolk Tennis timetable, and against their LTA target.</p>
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Reply-by date</Label>
+                <Input type="date" value={form.reply_by} onChange={(e) => setForm({ ...form, reply_by: e.target.value })} />
+                <p className="mt-1 text-xs text-muted-foreground">Goes in the invitation email as the date to accept the place by. Leave blank and the email asks parents to confirm as soon as they can.</p>
               </div>
               {form.programme_type === "programme" ? (
                 <>
