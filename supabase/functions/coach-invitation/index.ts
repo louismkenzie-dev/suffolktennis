@@ -94,6 +94,13 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "already_accepted" });
   }
 
+  // Someone who already has coach access — a coach who accepted on another
+  // address, or an admin, who can do everything a coach can — is told so
+  // rather than sent round the switch-account loop. Nothing is granted here.
+  const { data: existingRole } = await admin.from("user_roles").select("role")
+    .eq("user_id", user.id).in("role", ["coach", "admin"]).limit(1).maybeSingle();
+  if (existingRole) return json({ ok: true, already: true, via: user.email });
+
   // THIS is the check that stops a forwarded link handing out the role: the
   // signed-in account must be the address the admin invited. The email is
   // returned so the page can say which account to switch to.

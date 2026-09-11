@@ -113,10 +113,29 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   const results: Array<{ email: string; invitation_id?: string; sent: boolean; error?: string }> = [];
 
+  // Accounts by address, so an invitation to someone who already has coach
+  // access (a coach, or an admin — admins can do everything a coach can) is
+  // refused with a reason rather than emailed a link they cannot use.
+  let usersByEmail = new Map<string, string>();
+  try {
+    const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    usersByEmail = new Map((users?.users ?? []).filter((u) => u.email).map((u) => [u.email!.toLowerCase(), u.id]));
+  } catch { /* lookup is best-effort; the accept step still guards the role */ }
+
   if (body.invitees) {
     for (const inv of body.invitees) {
       const email = inv.email.toLowerCase();
       const name = inv.name?.trim() || null;
+
+      const existingUserId = usersByEmail.get(email);
+      if (existingUserId) {
+        const { data: role } = await admin.from("user_roles").select("role")
+          .eq("user_id", existingUserId).in("role", ["coach", "admin"]).limit(1).maybeSingle();
+        if (role) {
+          results.push({ email, sent: false, error: role.role === "admin" ? "already an admin — admins have coach access" : "already a coach" });
+          continue;
+        }
+      }
 
       // Every row is written lowercased, so an exact match IS the
       // lower(email) match the unique index enforces.

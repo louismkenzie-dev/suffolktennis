@@ -163,7 +163,7 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
     setBusyInvitation(null);
     if (error) { toast.error(error.message); return; }
     if (!data || data.length === 0) { toast.error(`${i.email} has already accepted — use Remove coach access on their row instead`); loadAccounts(); return; }
-    toast.success(`Invitation to ${i.email} revoked`);
+    toast.success(`Invitation to ${i.email} deleted — the link in their email no longer works`);
     loadAccounts();
   };
 
@@ -321,7 +321,7 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onSelect={() => resendInvitation(i)}>Resend</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => revokeInvitation(i)}>Revoke</DropdownMenuItem>
+                      <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => revokeInvitation(i)}>Delete invitation</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </span>
