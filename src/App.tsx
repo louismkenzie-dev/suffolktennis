@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -13,38 +14,42 @@ import NotFound from "./pages/NotFound";
 // Every page except the homepage is code-split: the first paint ships only
 // the shell + homepage, and each section loads on demand (then caches via the
 // service worker). This is what keeps the mobile app feel snappy.
-const VenueDavidLloyd = lazy(() => import("./pages/VenueDavidLloyd"));
-const VenueIpswichSports = lazy(() => import("./pages/VenueIpswichSports"));
-const VenueCulford = lazy(() => import("./pages/VenueCulford"));
-const Venues = lazy(() => import("./pages/Venues"));
-const TourRed = lazy(() => import("./pages/TourRed"));
-const TourOrange = lazy(() => import("./pages/TourOrange"));
-const TourGreen = lazy(() => import("./pages/TourGreen"));
-const TourYellow = lazy(() => import("./pages/TourYellow"));
-const Auth = lazy(() => import("./pages/Auth"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
-const ParentHub = lazy(() => import("./pages/ParentHub"));
-const AdminHub = lazy(() => import("./pages/AdminHub"));
-const ClubEastBergholt = lazy(() => import("./pages/ClubEastBergholt"));
-const ClubNewmarket = lazy(() => import("./pages/ClubNewmarket"));
-const ClubStowmarket = lazy(() => import("./pages/ClubStowmarket"));
-const ClubFelixstowe = lazy(() => import("./pages/ClubFelixstowe"));
-const ClubWoodbridge = lazy(() => import("./pages/ClubWoodbridge"));
-const ClubFramlingham = lazy(() => import("./pages/ClubFramlingham"));
-const Contact = lazy(() => import("./pages/Contact"));
-const Events = lazy(() => import("./pages/Events"));
-const RisingStars = lazy(() => import("./pages/RisingStars"));
-const Programs = lazy(() => import("./pages/Programs"));
-const Unsubscribe = lazy(() => import("./pages/Unsubscribe"));
-const Workshops = lazy(() => import("./pages/Workshops"));
-const BookingPage = lazy(() => import("./pages/BookingPage"));
-const BookingReturn = lazy(() => import("./pages/BookingReturn"));
-const TicketPage = lazy(() => import("./pages/TicketPage"));
-const AdminScan = lazy(() => import("./pages/AdminScan"));
-const CoachHub = lazy(() => import("./pages/CoachHub"));
-const ReportPage = lazy(() => import("./pages/ReportPage"));
-const MiniMasters = lazy(() => import("./pages/MiniMasters"));
-const TennisGP = lazy(() => import("./pages/TennisGP"));
+//
+// lazyWithRetry, not lazy: a deploy renames every chunk, so a tab that was
+// already open asks for one that has gone and the import rejects. That used to
+// surface as the "Something went wrong" boundary; it now reloads itself once.
+const VenueDavidLloyd = lazyWithRetry(() => import("./pages/VenueDavidLloyd"));
+const VenueIpswichSports = lazyWithRetry(() => import("./pages/VenueIpswichSports"));
+const VenueCulford = lazyWithRetry(() => import("./pages/VenueCulford"));
+const Venues = lazyWithRetry(() => import("./pages/Venues"));
+const TourRed = lazyWithRetry(() => import("./pages/TourRed"));
+const TourOrange = lazyWithRetry(() => import("./pages/TourOrange"));
+const TourGreen = lazyWithRetry(() => import("./pages/TourGreen"));
+const TourYellow = lazyWithRetry(() => import("./pages/TourYellow"));
+const Auth = lazyWithRetry(() => import("./pages/Auth"));
+const ResetPassword = lazyWithRetry(() => import("./pages/ResetPassword"));
+const ParentHub = lazyWithRetry(() => import("./pages/ParentHub"));
+const AdminHub = lazyWithRetry(() => import("./pages/AdminHub"));
+const ClubEastBergholt = lazyWithRetry(() => import("./pages/ClubEastBergholt"));
+const ClubNewmarket = lazyWithRetry(() => import("./pages/ClubNewmarket"));
+const ClubStowmarket = lazyWithRetry(() => import("./pages/ClubStowmarket"));
+const ClubFelixstowe = lazyWithRetry(() => import("./pages/ClubFelixstowe"));
+const ClubWoodbridge = lazyWithRetry(() => import("./pages/ClubWoodbridge"));
+const ClubFramlingham = lazyWithRetry(() => import("./pages/ClubFramlingham"));
+const Contact = lazyWithRetry(() => import("./pages/Contact"));
+const Events = lazyWithRetry(() => import("./pages/Events"));
+const RisingStars = lazyWithRetry(() => import("./pages/RisingStars"));
+const Programs = lazyWithRetry(() => import("./pages/Programs"));
+const Unsubscribe = lazyWithRetry(() => import("./pages/Unsubscribe"));
+const Workshops = lazyWithRetry(() => import("./pages/Workshops"));
+const BookingPage = lazyWithRetry(() => import("./pages/BookingPage"));
+const BookingReturn = lazyWithRetry(() => import("./pages/BookingReturn"));
+const TicketPage = lazyWithRetry(() => import("./pages/TicketPage"));
+const AdminScan = lazyWithRetry(() => import("./pages/AdminScan"));
+const CoachHub = lazyWithRetry(() => import("./pages/CoachHub"));
+const ReportPage = lazyWithRetry(() => import("./pages/ReportPage"));
+const MiniMasters = lazyWithRetry(() => import("./pages/MiniMasters"));
+const TennisGP = lazyWithRetry(() => import("./pages/TennisGP"));
 
 const queryClient = new QueryClient();
 

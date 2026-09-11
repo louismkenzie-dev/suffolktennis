@@ -4,6 +4,6 @@
       "source": "/unsubscribe",
       "destination": "https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/email-unsubscribe"
     },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }
