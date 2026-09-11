@@ -27,9 +27,13 @@ export function VenueSelect({ value, onChange, placeholder = "Choose a venue", i
     if (cache) return;
     (supabase as any).from("venues").select("name, venue_type, published, display_order")
       .order("venue_type", { ascending: false }).order("display_order")
-      .then(({ data }: { data: Array<VenueOption & { published: boolean }> | null }) => {
-        cache = (data ?? []).filter((v) => v.published).map(({ name, venue_type }) => ({ name, venue_type }));
-        setVenues(cache);
+      .then(({ data, error }: { data: Array<VenueOption & { published: boolean }> | null; error: unknown }) => {
+        // A failed or empty load must not be remembered for the rest of the
+        // session: it left the picker offering nothing but "Other venue…"
+        // until the page was reloaded, which read as the venues being gone.
+        const list = (data ?? []).filter((v) => v.published).map(({ name, venue_type }) => ({ name, venue_type }));
+        if (!error && list.length > 0) cache = list;
+        setVenues(list);
       });
   }, []);
 
