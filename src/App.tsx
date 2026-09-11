@@ -47,6 +47,7 @@ const BookingReturn = lazyWithRetry(() => import("./pages/BookingReturn"));
 const TicketPage = lazyWithRetry(() => import("./pages/TicketPage"));
 const AdminScan = lazyWithRetry(() => import("./pages/AdminScan"));
 const CoachHub = lazyWithRetry(() => import("./pages/CoachHub"));
+const CoachJoinPage = lazyWithRetry(() => import("./pages/CoachJoinPage"));
 const ReportPage = lazyWithRetry(() => import("./pages/ReportPage"));
 const MiniMasters = lazyWithRetry(() => import("./pages/MiniMasters"));
 const TennisGP = lazyWithRetry(() => import("./pages/TennisGP"));
@@ -80,6 +81,7 @@ const App = () => (
             <Route path="/coach/programme/:eventId" element={<CoachHub />} />
             <Route path="/coach/register/:sessionId" element={<CoachHub />} />
             <Route path="/coach/register/event/:eventId" element={<CoachHub />} />
+            <Route path="/coach/join/:token" element={<CoachJoinPage />} />
             <Route path="/report/:reportId" element={<ReportPage />} />
             <Route path="/book/:token" element={<BookingPage />} />
             <Route path="/booking/return" element={<BookingReturn />} />

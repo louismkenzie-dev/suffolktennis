@@ -27,3 +27,12 @@ verify_jwt = false
 
 [functions.session-reports-dispatch]
 verify_jwt = false
+
+# Admin JWT: the gateway checks the token, requireAdmin checks the role.
+[functions.send-coach-invitations]
+verify_jwt = true
+
+# The join page is visited signed out; the function resolves any bearer itself
+# and the accept step insists on a matching signed-in email.
+[functions.coach-invitation]
+verify_jwt = false

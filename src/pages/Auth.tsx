@@ -12,8 +12,12 @@ import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
 const logo = logoAsset;
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
+  // A coach invitation's "Create free account" lands on the sign-up form
+  // rather than on "Welcome back" with a link to find.
+  const [isLogin, setIsLogin] = useState(() => new URLSearchParams(window.location.search).get("mode") !== "signup");
+  // Invitation links (/coach/join/<token>) pass the invited address along so
+  // the account is created under the email the invitation was sent to.
+  const [email, setEmail] = useState(() => new URLSearchParams(window.location.search).get("email")?.trim() ?? "");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
