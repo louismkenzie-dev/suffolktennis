@@ -303,8 +303,8 @@ off the connected account, so Suffolk Tennis receives the amount paid less
 Stripe's fee less our 2.5%. The rate is pinned by `src/test/platformFee.test.ts`
 so it cannot be changed silently.
 The sandbox/live switch is server-side in `app_settings.payments_mode`
-(currently `sandbox`; flip with
-`update app_settings set value='live' where key='payments_mode';`).
+(currently `live`; flip with
+`update app_settings set value='sandbox' where key='payments_mode';`).
 
 Schema: `20260820120000_booking_system.sql` — event visibility
 (public/private) + pricing, `event_sessions`, tokenized
@@ -385,8 +385,18 @@ webhook settled the booking and issued the ticket; PaymentIntent
 `pi_3UE9qPE7yIm0GTnR0jmJZg2r` on the connected account with a 3p application
 fee (2.5% of £1, rounded up — the smallest possible fee); refunded in full
 with `refund_application_fee: true` (`re_3UE9qPE7yIm0GTnR00cRYkay`). Demo rows
-removed. `payments_mode` is now **live**; `bookings_status` is back to
-`coming_soon` until Ollie opens bookings. A temporary `stripe-bootstrap` edge function (guard-token
+removed. `payments_mode` is now **live**, and bookings are **open site-wide**
+(`20260911120000_open_bookings.sql`): the `bookings_status` pre-launch wall was
+only ever there to keep parents away from a sandbox payment form, so with
+Stripe live it has been removed from `paymentsMode.ts`, `get-invitation`,
+`create-booking-checkout` and the booking page. Nothing reads the
+`bookings_status` key any more. Applied live on 11 Sep: the row reads `open`,
+`get-invitation` (v17) and `create-booking-checkout` (v21) are redeployed
+without the wall, and both were smoke-tested through pg_net — get-invitation
+returns 200 with no `bookings_status` field, create-booking-checkout reaches
+its 401 sign-in gate instead of the old 503. The booking page itself only
+stops showing "Booking opens soon" once the front-end change reaches `main`,
+since Vercel builds production from that branch. A temporary `stripe-bootstrap` edge function (guard-token
 protected form-encoding relay for pg_net → Stripe API calls) is deployed for
 sandbox setup — **delete it once testing is done**.
 
