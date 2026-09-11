@@ -390,7 +390,13 @@ removed. `payments_mode` is now **live**, and bookings are **open site-wide**
 only ever there to keep parents away from a sandbox payment form, so with
 Stripe live it has been removed from `paymentsMode.ts`, `get-invitation`,
 `create-booking-checkout` and the booking page. Nothing reads the
-`bookings_status` key any more. A temporary `stripe-bootstrap` edge function (guard-token
+`bookings_status` key any more. Applied live on 11 Sep: the row reads `open`,
+`get-invitation` (v17) and `create-booking-checkout` (v21) are redeployed
+without the wall, and both were smoke-tested through pg_net — get-invitation
+returns 200 with no `bookings_status` field, create-booking-checkout reaches
+its 401 sign-in gate instead of the old 503. The booking page itself only
+stops showing "Booking opens soon" once the front-end change reaches `main`,
+since Vercel builds production from that branch. A temporary `stripe-bootstrap` edge function (guard-token
 protected form-encoding relay for pg_net → Stripe API calls) is deployed for
 sandbox setup — **delete it once testing is done**.
 
