@@ -499,6 +499,11 @@ const BookingPage = () => {
                 <Checkbox checked={photoConsent} onCheckedChange={(v) => setPhotoConsent(v === true)} className="mt-0.5" />
                 <span>I consent to photos of my child being taken at this event for Suffolk Tennis use.</span>
               </label>
+              {isProgramme && (
+                <p className="text-sm text-muted-foreground">
+                  By {noCharge ? "confirming" : "accepting"} this place you agree to be added to the age-group WhatsApp group and the Suffolk Junior Tennis Hub, which we use for key Suffolk Tennis announcements.
+                </p>
+              )}
               {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
               <Button onClick={handleContinue} disabled={submitting} size="lg" className="w-full">
                 {submitting

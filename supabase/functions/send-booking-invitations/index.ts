@@ -165,6 +165,9 @@ function invitationEmail(opts: {
         ? `To accept, use the button below. You’ll sign in — or create your free Suffolk Tennis account with this email address — confirm ${child}’s details, and the place is yours.`
         : `To accept, use the button below. You’ll sign in — or create your free Suffolk Tennis account with this email address — confirm ${child}’s details, and pay securely by card. The place is confirmed the moment the payment goes through; there is no separate form to fill in.`,
     ) +
+    (isProgramme
+      ? emailParagraph(`By accepting the place, you agree to be added to ${child}’s age-group WhatsApp group and the Suffolk Junior Tennis Hub, which we use for key Suffolk Tennis announcements.`)
+      : "") +
     emailButton(opts.bookUrl, noCharge ? "Confirm the place" : "Accept &amp; pay") +
     (noCharge
       ? ""

@@ -437,7 +437,6 @@ export function AttendanceList({ entries }: { entries: AttendanceEntry[] }) {
 /* The hub view                                                       */
 /* ---------------------------------------------------------------- */
 
-type ProgressData = { entries: ProgressEntry[]; attendance: AttendanceEntry[] };
 
 /** "9 areas rated", "7 of 9 areas rated", "PDF only" or "No ratings yet". */
 function ratedLabel(e: ProgressEntry): string {
