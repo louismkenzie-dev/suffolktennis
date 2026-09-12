@@ -351,7 +351,7 @@ export function drivers({ page, frame, ctx, stage, human, clock }) {
       await until(4, 2.2);
       for (const [area, level] of RATING_PLAN) {
         const radio = F.getByRole("radiogroup", { name: area }).getByRole("radio", { name: level, exact: true });
-        await human.tap(radio, { block: "center", settle: 300 });
+        await human.tap(radio, { block: "center", settle: 200 });
         if (await radio.getAttribute("aria-checked") !== "true") {
           console.log(`[record] rating ${area} did not take on the first tap; retrying`);
           await sleep(150);
