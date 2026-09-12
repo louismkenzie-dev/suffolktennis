@@ -34,7 +34,9 @@ const OUT = path.join(HERE, "out");
 const STAGE_DIR = path.join(HERE, "stage");
 const APP = "http://127.0.0.1:4173";
 const STAGE_PORT = 4174;
-const STAGE = `http://127.0.0.1:${STAGE_PORT}`;
+// Bumped to the first free port from STAGE_PORT upwards by stageServer(), so a
+// stale recorder still holding 4174 cannot fail a fresh run.
+let STAGE = `http://127.0.0.1:${STAGE_PORT}`;
 const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const FPS = 25;
 const SIZES = { wide: { width: 1920, height: 1080 }, tall: { width: 1080, height: 1920 } };
@@ -113,7 +115,7 @@ function ensureHero() {
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".webm": "video/webm", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json" };
 
-export function stageServer() {
+export async function stageServer() {
   const media = {
     "/media/hero.webm": path.join(OUT, "hero.webm"),
     "/media/logo.png": path.join(ROOT, "public", "email", "logo.png"),
@@ -140,10 +142,24 @@ export function stageServer() {
     res.writeHead(200, { "content-type": type, "content-length": size, "accept-ranges": "bytes", "cache-control": "no-cache" });
     createReadStream(file).pipe(res);
   });
-  return new Promise((resolve, reject) => {
-    server.on("error", reject);
-    server.listen(STAGE_PORT, "127.0.0.1", () => resolve(server));
+  const tryPort = (port) => new Promise((resolve, reject) => {
+    const onError = (e) => { server.removeListener("listening", onListen); reject(e); };
+    const onListen = () => { server.removeListener("error", onError); resolve(); };
+    server.once("error", onError);
+    server.once("listening", onListen);
+    server.listen(port, "127.0.0.1");
   });
+  for (let port = STAGE_PORT; port < STAGE_PORT + 20; port++) {
+    try {
+      await tryPort(port);
+      STAGE = `http://127.0.0.1:${port}`;
+      if (port !== STAGE_PORT) console.log(`[record] port ${STAGE_PORT} busy, stage served on ${STAGE}`);
+      return server;
+    } catch (e) {
+      if (e.code !== "EADDRINUSE") throw e;
+    }
+  }
+  throw new Error(`no free port for the stage server between ${STAGE_PORT} and ${STAGE_PORT + 19}`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -268,7 +284,11 @@ export function makeHuman(page, frame, phoneCenter) {
     while (sent < total) {
       const due = Math.min(total, ((Date.now() - t0) / 1000) * pxPerSec);
       const step = Math.floor(due - sent);
-      if (step >= 4) { await page.mouse.wheel(0, sign * step); sent += step; }
+      // Send in >= 4 px steps, but flush whatever is left once the clock has
+      // reached the end: a 1-3 px remainder must not leave this loop spinning
+      // forever (it hung a whole recording in scene 8).
+      if (step >= 4 || (due >= total && step > 0)) { await page.mouse.wheel(0, sign * step); sent += step; }
+      else if (due >= total) break;
       else await sleep(12);
     }
   }
@@ -516,8 +536,15 @@ async function recordLayout(layout, timing, method, format) {
       midTimers.push(new Promise((resolve) => setTimeout(async () => { try { await page.screenshot({ path: file }); stills.push(file); } catch (e) { issues.push(`still ${scene.id}: ${e.message}`); } resolve(); }, Math.max(0, t0 + mid * 1000 - Date.now()))));
     }
     let error = null;
-    try { await (D[scene.id] ?? (async () => {}))(scene); }
+    // Hard deadline per scene: a driver that hangs (a stuck input ack, a
+    // locator that never resolves) fails its own scene at end + 3 s instead of
+    // stalling the whole recording; the clock keeps running for the rest.
+    const deadlineMs = t0 + (end_target + 3) * 1000 - Date.now();
+    let deadlineTimer = null;
+    const deadline = new Promise((_, reject) => { deadlineTimer = setTimeout(() => reject(new Error(`scene ${scene.id} driver did not finish by ${(end_target + 3).toFixed(1)}s (deadline)`)), Math.max(0, deadlineMs)); });
+    try { await Promise.race([(D[scene.id] ?? (async () => {}))(scene), deadline]); }
     catch (e) { error = e instanceof Error ? e.message.split("\n")[0] : String(e); issues.push(`scene ${scene.id}: ${error}`); console.log(`[record] scene ${scene.id} ERROR ${error}`); }
+    finally { clearTimeout(deadlineTimer); }
     const done = clock.now();
     const overrun = done - end_target;
     if (overrun > 0.05) { issues.push(`scene ${scene.id} overran by ${overrun.toFixed(2)}s`); console.log(`[record] scene ${scene.id} overran by ${overrun.toFixed(2)}s`); }
