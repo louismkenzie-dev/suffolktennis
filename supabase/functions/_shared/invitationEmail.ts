@@ -66,6 +66,20 @@ function costLabel(ev: EventRow, complimentary: boolean): string {
   return gbp(ev.price_pence);
 }
 
+/**
+ * Who the letter is addressed to. First name when we have one; a name that
+ * opens with a title ("Mr Sutton", "Dr A Patel") is kept whole; nothing on
+ * file gives "Parent or Guardian" rather than "there".
+ */
+function greetingName(parentName: string): string {
+  const name = (parentName ?? "").trim().replace(/\s+/g, " ");
+  if (!name) return "Parent or Guardian";
+  const [first] = name.split(" ");
+  const title = /^(mr|mrs|ms|miss|mx|dr|prof|rev|sir|lady)\.?$/i.test(first);
+  if (title) return name.includes(" ") ? name : "Parent or Guardian";
+  return first;
+}
+
 /** "A", "A and B", "A, B and C". */
 function nameList(items: string[]): string {
   if (items.length <= 1) return items.join("");
@@ -84,7 +98,7 @@ export function invitationEmail(opts: {
   bookUrl: string; reminder: boolean; unsubscribeUrl?: string;
 }) {
   const { event: ev, shape } = opts;
-  const first = esc((opts.parentName || "there").trim().split(/\s+/)[0]);
+  const first = esc(greetingName(opts.parentName));
   const fullName = esc(opts.childName.trim());
   const child = esc(opts.childName.trim().split(/\s+/)[0] || opts.childName);
   const title = esc(ev.title);
