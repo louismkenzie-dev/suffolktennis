@@ -35,11 +35,12 @@ type EventRow = {
 type Invitation = {
   id: string; child_name: string | null; parent_email: string; parent_name: string | null;
   status: string; sent_at: string | null; reminded_at: string | null;
+  child_id?: string | null; roster_id?: string | null;
 };
 type Booking = {
   id: string; child_name: string; parent_name: string; parent_email: string;
   status: string; amount_pence: number; session_slot: string | null; paid_at: string | null;
-  membership_id: string | null;
+  membership_id: string | null; child_id?: string | null;
 };
 /** An account holding the coach role — what the Coaches checklist offers. */
 type Coach = { user_id: string; name: string };
@@ -143,6 +144,8 @@ const BookingsPanel = () => {
   // Admin override: grant these selected players a free place on this event.
   const [freePlace, setFreePlace] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  // Ollie's check before anything goes out: who is ticked, who will be skipped.
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [editForm, setEditForm] = useState({ first_name: "", last_name: "", gender: "", age_group: "", contact_name: "", contact_email: "", mobile: "" });
   const [savingEdit, setSavingEdit] = useState(false);
@@ -240,9 +243,13 @@ const BookingsPanel = () => {
 
   const openEvent = async (ev: EventRow) => {
     setSelected(ev);
+    // A tick list belongs to one programme. Ollie moved from 9U to 11U and
+    // found the 9U players still selected; never carry a selection across.
+    setChecked(new Set());
+    setFreePlace(new Set());
     const [{ data: invs }, { data: bks }, { data: sess }] = await Promise.all([
-      db.from("booking_invitations").select("id, child_name, parent_email, parent_name, status, sent_at, reminded_at").eq("event_id", ev.id).order("created_at"),
-      db.from("bookings").select("id, child_name, parent_name, parent_email, status, amount_pence, session_slot, paid_at, membership_id").eq("event_id", ev.id).order("created_at", { ascending: false }),
+      db.from("booking_invitations").select("id, child_name, parent_email, parent_name, status, sent_at, reminded_at, child_id, roster_id").eq("event_id", ev.id).order("created_at"),
+      db.from("bookings").select("id, child_name, parent_name, parent_email, status, amount_pence, session_slot, paid_at, membership_id, child_id").eq("event_id", ev.id).order("created_at", { ascending: false }),
       db.from("event_sessions").select("id, session_date, start_time, end_time, venue, cancelled_at, moved_from_date").eq("event_id", ev.id).order("session_date"),
     ]);
     setInvitations(invs ?? []);
@@ -300,6 +307,28 @@ const BookingsPanel = () => {
     setPlayers([...rosterPlayers, ...childPlayers].sort((a, b) => a.name.localeCompare(b.name)));
   };
 
+  /**
+   * Players already on this programme's list, so the picker can say so and
+   * not offer them again. Matched by roster/child id first, then by player
+   * name + parent email for rows created before those ids were stored.
+   */
+  const alreadyOn = useMemo(() => {
+    const m = new Map<string, "invited" | "booked">();
+    if (!selected) return m;
+    const nameEmail = (n: string | null | undefined, e: string | null | undefined) => `${(n ?? "").trim().toLowerCase()}|${(e ?? "").trim().toLowerCase()}`;
+    const liveInv = invitations.filter((i) => i.status !== "revoked" && i.status !== "expired");
+    const liveBk = bookings.filter((b) => b.status === "paid" || b.status === "pending");
+    for (const p of players) {
+      const me = nameEmail(p.name, p.contact_email);
+      const booked = liveBk.some((b) => (p.child_id && b.child_id === p.child_id) || nameEmail(b.child_name, b.parent_email) === me);
+      if (booked) { m.set(p.key, "booked"); continue; }
+      const invited = liveInv.some((i) =>
+        (p.roster_id && i.roster_id === p.roster_id) || (p.child_id && i.child_id === p.child_id) || nameEmail(i.child_name, i.parent_email) === me);
+      if (invited) m.set(p.key, "invited");
+    }
+    return m;
+  }, [selected, invitations, bookings, players]);
+
   const filteredPlayers = useMemo(() => {
     return players.filter((p) => {
       if (playerFilter !== "all" && p.age_group !== playerFilter) return false;
@@ -309,10 +338,15 @@ const BookingsPanel = () => {
     });
   }, [players, playerFilter, genderFilter, playerSearch]);
 
+  /** The tick list as it will be sent: who goes, who has no email and is skipped. */
+  const selection = useMemo(() => {
+    const picked = players.filter((p) => checked.has(p.key) && !alreadyOn.has(p.key));
+    return { sending: picked.filter((p) => !!p.contact_email), skipped: picked.filter((p) => !p.contact_email) };
+  }, [players, checked, alreadyOn]);
+
   const sendInvites = async () => {
     if (!selected) return;
-    const invitees = players
-      .filter((p) => checked.has(p.key) && p.contact_email)
+    const invitees = selection.sending
       .map((p) => ({
         roster_id: p.roster_id,
         child_id: p.child_id,
@@ -334,11 +368,16 @@ const BookingsPanel = () => {
       toast.error(data?.error ?? "Sending failed");
       return;
     }
-    toast.success(`${data.sent}/${data.total} invitation emails sent`);
-    if (data.sent < data.total) {
-      const firstErr = (data.results ?? []).find((r: any) => r.error)?.error;
-      if (firstErr) toast.warning(String(firstErr));
+    toast.success(`${data.sent ?? 0}/${data.total ?? invitees.length} invitation emails sent`);
+    const failed = (data.results ?? []).filter((r: any) => r.error);
+    if (failed.length > 0) {
+      const byEmail = new Map(invitees.map((i) => [i.parent_email, i.child_name]));
+      toast.warning(failed.map((r: any) => `${byEmail.get(r.email) ?? r.email}: ${r.error}`).join(" · "), { duration: 10000 });
     }
+    if (selection.skipped.length > 0) {
+      toast.warning(`No parent email for ${selection.skipped.map((p) => p.name).join(", ")} — add one and invite them on their own.`, { duration: 12000 });
+    }
+    setReviewOpen(false);
     setInviteOpen(false);
     setChecked(new Set());
     openEvent(selected);
@@ -863,7 +902,7 @@ const BookingsPanel = () => {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => { loadPlayers(); setInviteOpen(true); }} disabled={!!selected.cancelled_at}><Send className="w-4 h-4" /> Invite players</Button>
+                <Button size="sm" onClick={() => { loadPlayers(); setChecked(new Set()); setFreePlace(new Set()); setInviteOpen(true); }} disabled={!!selected.cancelled_at}><Send className="w-4 h-4" /> Invite players</Button>
                 <Button variant="outline" size="sm" onClick={() => editEvent(selected)}><Pencil className="w-4 h-4" /> Edit</Button>
                 {!selected.cancelled_at && (
                   <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_event" }); }}>
@@ -1149,10 +1188,11 @@ const BookingsPanel = () => {
                 </span>
                 <button type="button" className="inline-flex min-h-8 items-center font-medium text-primary" onClick={() => {
                   const all = new Set(checked);
-                  const allChecked = filteredPlayers.every((p) => all.has(p.key));
-                  filteredPlayers.forEach((p) => allChecked ? all.delete(p.key) : all.add(p.key));
+                  const eligible = filteredPlayers.filter((p) => !alreadyOn.has(p.key));
+                  const allChecked = eligible.length > 0 && eligible.every((p) => all.has(p.key));
+                  eligible.forEach((p) => allChecked ? all.delete(p.key) : all.add(p.key));
                   setChecked(all);
-                }}>{filteredPlayers.length > 0 && filteredPlayers.every((p) => checked.has(p.key)) ? "Unselect all shown" : "Select all shown"}</button>
+                }}>{filteredPlayers.length > 0 && filteredPlayers.filter((p) => !alreadyOn.has(p.key)).every((p) => checked.has(p.key)) ? "Unselect all shown" : "Select all shown"}</button>
               </div>
             </div>
 
@@ -1165,10 +1205,11 @@ const BookingsPanel = () => {
                   <div className="divide-y divide-border md:hidden">
                     {filteredPlayers.map((p) => {
                       const included = selected?.programme_type === "programme" && p.paid_programme;
+                      const on = alreadyOn.get(p.key);
                       const isChecked = checked.has(p.key);
                       return (
-                        <div key={p.key} className={`flex items-center gap-3 px-4 py-2.5 ${isChecked ? "bg-primary/[0.06]" : ""}`}>
-                          <Checkbox aria-label={`Select ${p.name}`} checked={isChecked} onCheckedChange={(v) => {
+                        <div key={p.key} className={`flex items-center gap-3 px-4 py-2.5 ${isChecked ? "bg-primary/[0.06]" : ""} ${on ? "opacity-70" : ""}`}>
+                          <Checkbox aria-label={`Select ${p.name}`} checked={isChecked} disabled={!!on} onCheckedChange={(v) => {
                             const next = new Set(checked);
                             v === true ? next.add(p.key) : next.delete(p.key);
                             setChecked(next);
@@ -1178,10 +1219,11 @@ const BookingsPanel = () => {
                               <span className="truncate text-[15px] font-medium">{p.name}</span>
                               <span className="shrink-0 rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">{p.age_group}</span>
                               {included && <StatusBadge tone="success" dot={false}>included</StatusBadge>}
+                              {on && <StatusBadge tone={on === "booked" ? "success" : "info"} dot={false}>{on === "booked" ? "Booked" : "Invited"}</StatusBadge>}
                             </div>
                             <div className="truncate text-[13px] text-muted-foreground">{p.contact_email ?? <span className="text-red-600">no parent email</span>}{p.parent_name ? ` · ${p.parent_name}` : ""}</div>
                           </button>
-                          {!included && (
+                          {!included && !on && (
                             <label className="flex shrink-0 flex-col items-center gap-0.5 text-[10px] text-muted-foreground">
                               <Checkbox aria-label={`Give ${p.name} a free place`} checked={freePlace.has(p.key)} onCheckedChange={(v) => {
                                 const next = new Set(freePlace);
@@ -1212,10 +1254,11 @@ const BookingsPanel = () => {
                       <TableBody>
                         {filteredPlayers.map((p) => {
                           const included = selected?.programme_type === "programme" && p.paid_programme;
+                          const on = alreadyOn.get(p.key);
                           return (
-                            <TableRow key={p.key} className={checked.has(p.key) ? "bg-primary/[0.06]" : undefined}>
+                            <TableRow key={p.key} className={checked.has(p.key) ? "bg-primary/[0.06]" : on ? "opacity-70" : undefined}>
                               <TableCell>
-                                <Checkbox aria-label={`Select ${p.name}`} checked={checked.has(p.key)} onCheckedChange={(v) => {
+                                <Checkbox aria-label={`Select ${p.name}`} checked={checked.has(p.key)} disabled={!!on} onCheckedChange={(v) => {
                                   const next = new Set(checked);
                                   v === true ? next.add(p.key) : next.delete(p.key);
                                   setChecked(next);
@@ -1227,6 +1270,7 @@ const BookingsPanel = () => {
                                 </button>
                                 {p.child_id && <Badge variant="outline" className="ml-2 text-[10px]">account</Badge>}
                                 {included && <StatusBadge tone="success" dot={false} className="ml-2">no extra charge</StatusBadge>}
+                                {on && <StatusBadge tone={on === "booked" ? "success" : "info"} dot={false} className="ml-2">{on === "booked" ? "Booked" : "Invited"}</StatusBadge>}
                               </TableCell>
                               <TableCell><Badge variant="outline" className="text-[10px]">{p.age_group}</Badge></TableCell>
                               <TableCell className="text-muted-foreground capitalize">{p.gender ?? "—"}</TableCell>
@@ -1236,7 +1280,9 @@ const BookingsPanel = () => {
                                 {p.parent_name && <div className="truncate max-w-[16rem]">{p.parent_name}</div>}
                               </TableCell>
                               <TableCell className="text-right">
-                                {included ? (
+                                {on ? (
+                                  <span className="text-[11px] text-muted-foreground">already on the list</span>
+                                ) : included ? (
                                   <span className="text-[11px] text-muted-foreground">automatic</span>
                                 ) : (
                                   <Checkbox
@@ -1266,11 +1312,74 @@ const BookingsPanel = () => {
                   ? "Children already paying for a programme are included free automatically. Tick “free place” to waive the fee for anyone else."
                   : "Tick “free place” to invite someone at no charge."}
               </p>
-              <Button onClick={sendInvites} disabled={sending || checked.size === 0} className="w-full md:w-auto" size="lg">
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Send {checked.size} invitation{checked.size === 1 ? "" : "s"}
+              <Button onClick={() => setReviewOpen(true)} disabled={sending || checked.size === 0} className="w-full md:w-auto" size="lg">
+                <Send className="w-4 h-4" />
+                Review {checked.size} invitation{checked.size === 1 ? "" : "s"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* The last look before anything goes out: exactly who gets an email, who is skipped, and a way to drop a stray tick. */}
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
+        <DialogContent className="max-h-[92dvh] gap-0 overflow-hidden p-0 md:max-w-lg" hideClose>
+          <div className="border-b border-border px-5 pb-3 pt-6">
+            <DialogTitle>Check before sending</DialogTitle>
+            <DialogDescription className="mt-1">{selected?.title}</DialogDescription>
+          </div>
+          <div className="max-h-[55dvh] overflow-y-auto">
+            <p className="px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Will be emailed · {selection.sending.length}
+            </p>
+            {selection.sending.length === 0 ? (
+              <p className="px-5 pb-3 text-sm text-muted-foreground">Nobody yet — every ticked player is missing a parent email.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {selection.sending.map((p) => (
+                  <li key={p.key} className="flex items-center gap-3 px-5 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[15px] font-medium">{p.name}</span>
+                        <span className="shrink-0 rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">{p.age_group}</span>
+                        {(freePlace.has(p.key) || (selected?.programme_type === "programme" && p.paid_programme)) && <StatusBadge tone="success" dot={false}>free place</StatusBadge>}
+                      </div>
+                      <div className="truncate text-[13px] text-muted-foreground">{p.contact_email}{p.parent_name ? ` · ${p.parent_name}` : ""}</div>
+                    </div>
+                    <Button variant="ghost" size="icon-sm" aria-label={`Remove ${p.name}`} onClick={() => { const next = new Set(checked); next.delete(p.key); setChecked(next); }}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {selection.skipped.length > 0 && (
+              <>
+                <p className="px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-600">
+                  Skipped, no parent email · {selection.skipped.length}
+                </p>
+                <ul className="divide-y divide-border">
+                  {selection.skipped.map((p) => (
+                    <li key={p.key} className="flex items-center gap-3 px-5 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[15px] font-medium">{p.name}</div>
+                        <div className="text-[13px] text-muted-foreground">Add an email from the player list, then invite them on their own.</div>
+                      </div>
+                      <Button variant="ghost" size="icon-sm" aria-label={`Remove ${p.name}`} onClick={() => { const next = new Set(checked); next.delete(p.key); setChecked(next); }}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+          <div className="flex flex-col-reverse gap-2 border-t border-border px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 md:flex-row md:justify-end">
+            <Button variant="outline" onClick={() => setReviewOpen(false)}>Back to the list</Button>
+            <Button onClick={sendInvites} disabled={sending || selection.sending.length === 0} size="lg">
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Send {selection.sending.length} invitation{selection.sending.length === 1 ? "" : "s"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
