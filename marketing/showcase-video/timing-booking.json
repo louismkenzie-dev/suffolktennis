@@ -1,0 +1,135 @@
+{
+  "source": "narration",
+  "project": "booking",
+  "total_s": 101.0,
+  "clips": [
+    {
+      "id": "place",
+      "title": "Getting a place",
+      "start_s": 0.0,
+      "end_s": 37.4,
+      "duration_s": 37.4
+    },
+    {
+      "id": "ticket",
+      "title": "The QR ticket",
+      "start_s": 37.4,
+      "end_s": 70.0,
+      "duration_s": 32.6
+    },
+    {
+      "id": "diary",
+      "title": "The diary",
+      "start_s": 70.0,
+      "end_s": 101.0,
+      "duration_s": 31.0
+    }
+  ],
+  "scenes": [
+    {
+      "id": 1,
+      "clip": "place",
+      "start_s": 0.0,
+      "duration_s": 5.9,
+      "shot": "The invitation email opening on a phone"
+    },
+    {
+      "id": 2,
+      "clip": "place",
+      "start_s": 5.9,
+      "duration_s": 7.9,
+      "shot": "Booking page on desktop, scrolling the session list"
+    },
+    {
+      "id": 3,
+      "clip": "place",
+      "start_s": 13.8,
+      "duration_s": 10.1,
+      "shot": "Accept and pay, then the confirmed state"
+    },
+    {
+      "id": 4,
+      "clip": "place",
+      "start_s": 23.9,
+      "duration_s": 7.5,
+      "shot": "Admin ledger: the new row and the totals moving"
+    },
+    {
+      "id": 5,
+      "clip": "place",
+      "start_s": 31.4,
+      "duration_s": 6.0,
+      "shot": "End card"
+    },
+    {
+      "id": 6,
+      "clip": "ticket",
+      "start_s": 37.4,
+      "duration_s": 6.1,
+      "shot": "Parent Hub ticket with the QR code"
+    },
+    {
+      "id": 7,
+      "clip": "ticket",
+      "start_s": 43.5,
+      "duration_s": 7.6,
+      "shot": "Coach scanner, green result, register row flipping to Arrived"
+    },
+    {
+      "id": 8,
+      "clip": "ticket",
+      "start_s": 51.1,
+      "duration_s": 6.5,
+      "shot": "Duplicate scan, then a rejected scan"
+    },
+    {
+      "id": 9,
+      "clip": "ticket",
+      "start_s": 57.6,
+      "duration_s": 6.4,
+      "shot": "Full register, 3 here, 1 not marked"
+    },
+    {
+      "id": 10,
+      "clip": "ticket",
+      "start_s": 64.0,
+      "duration_s": 6.0,
+      "shot": "End card"
+    },
+    {
+      "id": 11,
+      "clip": "diary",
+      "start_s": 70.0,
+      "duration_s": 6.0,
+      "shot": "Sporting Timetable with Suffolk sessions already in it"
+    },
+    {
+      "id": 12,
+      "clip": "diary",
+      "start_s": 76.0,
+      "duration_s": 7.3,
+      "shot": "Week to month view, hours bar against target"
+    },
+    {
+      "id": 13,
+      "clip": "diary",
+      "start_s": 83.3,
+      "duration_s": 4.4,
+      "shot": "Add to calendar from a booking"
+    },
+    {
+      "id": 14,
+      "clip": "diary",
+      "start_s": 87.7,
+      "duration_s": 7.3,
+      "shot": "Parent Hub bookings, next session card"
+    },
+    {
+      "id": 15,
+      "clip": "diary",
+      "start_s": 95.0,
+      "duration_s": 6.0,
+      "shot": "End card"
+    }
+  ]
+}
