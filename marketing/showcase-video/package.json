@@ -1,0 +1,15 @@
+{
+  "name": "suffolk-showcase-video",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Performance & Reports showcase video: sample data, Supabase mock, Playwright recording and ffmpeg assembly.",
+  "type": "module",
+  "scripts": {
+    "smoke": "node smoke.mjs",
+    "record": "node record.mjs",
+    "assemble": "node assemble.mjs"
+  },
+  "devDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  }
+}
