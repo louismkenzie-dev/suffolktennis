@@ -31,6 +31,7 @@ import {
 import VenuesPanel from "@/components/admin/VenuesPanel";
 import CoachesPanel from "@/components/admin/CoachesPanel";
 import BookingsPanel from "@/components/admin/BookingsPanel";
+import BookingsLedger from "@/components/admin/BookingsLedger";
 import EmailPanel from "@/components/admin/EmailPanel";
 import PeoplePanel from "@/components/admin/PeoplePanel";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
@@ -134,7 +135,10 @@ const ADMIN_NAV: NavItem[] = [
 ];
 
 const SECTION_VIEWS: Record<SectionId, ViewOption[]> = {
-  bookings: [],
+  bookings: [
+    { id: "events", label: "Programmes & events" },
+    { id: "ledger", label: "Ledger" },
+  ],
   people: [
     { id: "children", label: "Children" },
     { id: "parents", label: "Parents" },
@@ -155,7 +159,7 @@ const SECTION_VIEWS: Record<SectionId, ViewOption[]> = {
   email: [],
 };
 const DEFAULT_VIEW: Record<SectionId, string> = {
-  bookings: "", people: "children", coaching: "reports", website: "events", email: "",
+  bookings: "events", people: "children", coaching: "reports", website: "events", email: "",
 };
 const isSection = (t: string | null): t is SectionId => !!t && t in SECTION_VIEWS;
 
@@ -181,7 +185,7 @@ function readLocation(): { section: SectionId; view: string } {
     return { section: tab, view: DEFAULT_VIEW[tab] };
   }
   if (tab && LEGACY_TABS[tab]) return { section: LEGACY_TABS[tab][0], view: LEGACY_TABS[tab][1] };
-  return { section: "bookings", view: "" };
+  return { section: "bookings", view: "events" };
 }
 
 const PEOPLE_SEARCH_PLACEHOLDER: Record<string, string> = {
@@ -337,7 +341,8 @@ const AdminHub = () => {
           className="mb-4 md:hidden"
         />
       )}
-      {section === "bookings" && <BookingsPanel />}
+      {section === "bookings" && view === "events" && <BookingsPanel />}
+      {section === "bookings" && view === "ledger" && <BookingsLedger />}
       {isPeople && (view === "children" || view === "parents") && <FamiliesPanel view={view} query={peopleQuery} />}
       {isPeople && view === "roster" && <PeoplePanel search={peopleQuery} onSearchChange={setPeopleQuery} />}
       {isPeople && view === "coaches" && (
