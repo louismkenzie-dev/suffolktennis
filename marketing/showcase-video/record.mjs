@@ -210,22 +210,47 @@ const TAP_GAP = 350;
 
 export function makeHuman(page, frame, phoneCenter) {
   const last = { tap: 0 };
+  /**
+   * Scroll the element into view smoothly (inside the app frame, no round
+   * trips) and resolve once the scroll has actually run and the element has
+   * held still for three frames with nothing covering its centre.
+   */
+  const scrollAndSettle = (n, block) => new Promise((resolve) => {
+    const rect = () => n.getBoundingClientRect();
+    const hit = () => { const r = rect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!e && (e === n || n.contains(e)); };
+    const y0 = rect().top;
+    if (block !== "center" && hit()) return resolve({ moved: false });
+    n.scrollIntoView({ behavior: "smooth", block, inline: "nearest" });
+    const t0 = performance.now();
+    let last = null, stillSince = 0;
+    const step = () => {
+      const now = performance.now();
+      const y = rect().top;
+      const started = Math.abs(y - y0) > 0.5 || now - t0 > 300;
+      if (last === null || Math.abs(y - last) >= 0.5 || !started) stillSince = now;
+      last = y;
+      if ((now - stillSince >= 120 && started && hit()) || now - t0 > 1200) return resolve({ moved: Math.abs(y - y0) > 0.5, ms: Math.round(now - t0) });
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
   async function tap(locator, { block = "nearest", settle = 420 } = {}) {
     const t = Date.now();
     const el = locator.first();
     await el.waitFor({ state: "visible", timeout: 10000 });
-    const moved = await el.evaluate((n, b) => {
-      const y = n.getBoundingClientRect().top;
-      n.scrollIntoView({ behavior: "smooth", block: b, inline: "nearest" });
-      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(Math.abs(n.getBoundingClientRect().top - y) > 1))));
-    }, block);
-    await sleep(moved ? settle : Math.min(settle, 120));
+    const { moved } = await el.evaluate(scrollAndSettle, block);
+    await sleep(moved ? Math.max(0, settle - 200) : Math.min(settle, 120));
     const wait = TAP_GAP - (Date.now() - last.tap);
     if (wait > 0) await sleep(wait);
-    // Playwright moves the pointer to the element itself; one hop is enough for a tap.
-    await el.click({ delay: 40 });
+    // A raw pointer tap at the settled box centre. Playwright's element click
+    // (forced or not) re-scrolls the target inside the cross-origin frame and
+    // lands off-target once the sheet has scrolled; boundingBox() is already in
+    // page coordinates, phone scale included.
+    const box = await el.boundingBox();
+    if (!box) throw new Error("tap: element has no box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { delay: 40 });
     last.tap = Date.now();
-    if (process.env.RECORD_DEBUG) console.log(`[tap] ${Date.now() - t}ms`);
+    if (process.env.RECORD_DEBUG) console.log(`[tap] ${Date.now() - t}ms moved=${moved}`);
   }
   async function type(locator, text, perChar = 40) {
     await tap(locator, { block: "center" });
@@ -326,7 +351,12 @@ export function drivers({ page, frame, ctx, stage, human, clock }) {
       await until(4, 2.2);
       for (const [area, level] of RATING_PLAN) {
         const radio = F.getByRole("radiogroup", { name: area }).getByRole("radio", { name: level, exact: true });
-        await human.tap(radio, { block: "center", settle: 220 });
+        await human.tap(radio, { block: "center", settle: 300 });
+        if (await radio.getAttribute("aria-checked") !== "true") {
+          console.log(`[record] rating ${area} did not take on the first tap; retrying`);
+          await sleep(150);
+          await radio.click({ timeout: 4000 }).catch((e) => console.log(`[record] retry failed: ${e.message.split("\n")[0]}`));
+        }
       }
       const ta = F.getByPlaceholder("What went well, what to work on…");
       await human.type(ta, COMMENT, 40);
@@ -424,6 +454,8 @@ async function recordLayout(layout, timing, method, format) {
     viewport: size, deviceScaleFactor: 1, hasTouch: true, locale: "en-GB", timezoneId: "Europe/London",
     ...(method === "playwright" ? { recordVideo: { dir: videoDir, size } } : {}),
   });
+  // No action may wait forever: a stuck locator must fail the scene, not the recording.
+  ctx.setDefaultTimeout(12000);
   const issues = [];
   await installMock(ctx, { user: "parent" });
   const page = await ctx.newPage();

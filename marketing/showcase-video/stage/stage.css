@@ -27,20 +27,22 @@ body { font-family: var(--body); color: var(--white); -webkit-font-smoothing: an
 #stage { position: relative; width: 100vw; height: 100vh; overflow: clip; background: var(--navy); }
 
 /* ---------- ground: navy + light sweep ---------- */
-.ground { position: absolute; inset: 0; background: radial-gradient(120% 90% at 20% 0%, var(--navy-soft) 0%, var(--navy) 60%, #0A1530 100%); overflow: hidden; }
-.sweep {
-  position: absolute; top: -60%; left: -80%; width: 260%; height: 220%;
-  background: linear-gradient(115deg,
-    transparent 30%,
-    rgba(224, 41, 142, 0.16) 42%,
-    rgba(0, 172, 230, 0.16) 52%,
-    transparent 64%);
+/* The sweep is a second background on the opaque ground, animated through
+   background-position. A separate translucent full-screen layer moved by
+   transform costs the software compositor ~10 fps at 1080p (screencast fell
+   to 14 fps); one opaque re-rastered element keeps it at 25 fps. */
+.ground {
+  position: absolute; inset: 0; overflow: clip;
+  background:
+    linear-gradient(115deg, transparent 30%, rgba(224, 41, 142, 0.16) 42%, rgba(0, 172, 230, 0.16) 52%, transparent 64%),
+    radial-gradient(120% 90% at 20% 0%, var(--navy-soft) 0%, var(--navy) 60%, #0A1530 100%);
+  background-size: 260% 100%, 100% 100%;
+  background-position: 0% 0, 0 0;
   animation: sweep 14s ease-in-out infinite alternate;
-  will-change: transform;
 }
 @keyframes sweep {
-  from { transform: translateX(-16%) rotate(0.001deg); }
-  to   { transform: translateX(16%) rotate(0.001deg); }
+  from { background-position: 0% 0, 0 0; }
+  to   { background-position: 100% 0, 0 0; }
 }
 .glow { position: absolute; inset: 0; background: radial-gradient(45% 55% at var(--glow-x, 74%) 50%, rgba(0, 172, 230, 0.18) 0%, transparent 70%); }
 body[data-layout="tall"] .glow { --glow-x: 50%; background: radial-gradient(60% 40% at 50% 62%, rgba(0, 172, 230, 0.18) 0%, transparent 70%); }
@@ -48,6 +50,8 @@ body[data-layout="tall"] .glow { --glow-x: 50%; background: radial-gradient(60% 
 /* ---------- layers ---------- */
 .layer { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.55s ease, visibility 0s linear 0.55s; }
 .layer.on { opacity: 1; visibility: visible; transition: opacity 0.55s ease, visibility 0s; }
+/* Only the phone takes pointer input; a fading card must never swallow a tap. */
+#hero, #chapter, #end, .text-zone { pointer-events: none; }
 #chapter { z-index: 20; }
 #end { z-index: 30; }
 #fade { position: absolute; inset: 0; z-index: 40; background: var(--navy); opacity: 0; pointer-events: none; transition: opacity 1.4s ease; }
