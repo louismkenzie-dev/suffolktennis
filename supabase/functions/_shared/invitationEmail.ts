@@ -66,6 +66,12 @@ function costLabel(ev: EventRow, complimentary: boolean): string {
   return gbp(ev.price_pence);
 }
 
+/** "A", "A and B", "A, B and C". */
+function nameList(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 /** A bulleted list in the body voice; emailLayout has no list helper. */
 function emailList(items: string[]): string {
   const li = items.map((i) => `<li style="margin: 0 0 6px;">${i}</li>`).join("");
@@ -109,7 +115,7 @@ export function invitationEmail(opts: {
         "Greater continuity between age groups within the Suffolk County pathway",
       ]) +
       (shape.coaches.length > 0
-        ? emailParagraph(`${shape.coaches.length === 1 ? "The lead coach" : "The lead coaches"} for this programme: <strong>${shape.coaches.map(esc).join("</strong> and <strong>")}</strong>.`)
+        ? emailParagraph(`${shape.coaches.length === 1 ? "The lead coach" : "The lead coaches"} for this programme: ${nameList(shape.coaches.map((c) => `<strong>${esc(c)}</strong>`))}.`)
         : "") +
       emailParagraph("Players generally train with their age group and peers, helping them build confidence, friendships and strong team relationships. Where appropriate, they may also train or hit with an older age group in recognition of their effort, commitment, development and results. These additional opportunities are supported by the County Programme at no extra cost.")
     : "";
