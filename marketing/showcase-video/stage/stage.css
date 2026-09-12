@@ -1,0 +1,161 @@
+/* Suffolk Tennis showcase stage. Everything is sized from --u, one per cent
+   of the short side of the frame (1080 px in both layouts → --u ≈ 10.8 px),
+   so the same rules lay out 1920×1080 and 1080×1920. */
+
+:root {
+  --navy: #0E1D39;
+  --navy-soft: #16294B;
+  --pink: #E0298E;
+  --cyan: #00ACE6;
+  --ink: #1F2937;
+  --muted: #64748B;
+  --white: #ffffff;
+  --display: "Archivo", "Arial Black", Arial, sans-serif;
+  --body: "Hanken Grotesk", Arial, sans-serif;
+  --u: 1vh;
+  --phone-scale: 1;
+  --screen-bg: #ffffff;
+  --status-ink: #1F2937;
+}
+body[data-layout="tall"] { --u: 1vw; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: clip; background: var(--navy); }
+body { font-family: var(--body); color: var(--white); -webkit-font-smoothing: antialiased; }
+
+/* overflow: clip (not hidden) so a scrollIntoView inside the app iframe can never nudge the stage. */
+#stage { position: relative; width: 100vw; height: 100vh; overflow: clip; background: var(--navy); }
+
+/* ---------- ground: navy + light sweep ---------- */
+.ground { position: absolute; inset: 0; background: radial-gradient(120% 90% at 20% 0%, var(--navy-soft) 0%, var(--navy) 60%, #0A1530 100%); overflow: hidden; }
+.sweep {
+  position: absolute; top: -60%; left: -80%; width: 260%; height: 220%;
+  background: linear-gradient(115deg,
+    transparent 30%,
+    rgba(224, 41, 142, 0.16) 42%,
+    rgba(0, 172, 230, 0.16) 52%,
+    transparent 64%);
+  animation: sweep 14s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes sweep {
+  from { transform: translateX(-16%) rotate(0.001deg); }
+  to   { transform: translateX(16%) rotate(0.001deg); }
+}
+.glow { position: absolute; inset: 0; background: radial-gradient(45% 55% at var(--glow-x, 74%) 50%, rgba(0, 172, 230, 0.18) 0%, transparent 70%); }
+body[data-layout="tall"] .glow { --glow-x: 50%; background: radial-gradient(60% 40% at 50% 62%, rgba(0, 172, 230, 0.18) 0%, transparent 70%); }
+
+/* ---------- layers ---------- */
+.layer { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.55s ease, visibility 0s linear 0.55s; }
+.layer.on { opacity: 1; visibility: visible; transition: opacity 0.55s ease, visibility 0s; }
+#chapter { z-index: 20; }
+#end { z-index: 30; }
+#fade { position: absolute; inset: 0; z-index: 40; background: var(--navy); opacity: 0; pointer-events: none; transition: opacity 1.4s ease; }
+#fade.on { opacity: 1; }
+
+/* ---------- type ---------- */
+.kicker {
+  font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase;
+  color: var(--pink); letter-spacing: 0.22em; font-size: calc(2.1 * var(--u)); line-height: 1;
+  margin-bottom: calc(2.2 * var(--u));
+  opacity: 0; transform: translateY(calc(1.2 * var(--u)));
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.kicker.on { opacity: 1; transform: none; }
+.title {
+  font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase;
+  color: var(--white); font-size: calc(7.4 * var(--u)); line-height: 0.98; letter-spacing: 0.005em; margin: 0;
+  text-wrap: balance;
+}
+.title .w { display: inline-block; opacity: 0; transform: translateY(0.35em); animation: rise 0.55s cubic-bezier(.2,.7,.2,1) forwards; margin-right: 0.24em; }
+.title .w:last-child { margin-right: 0; }
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+.lines { list-style: none; margin: calc(3.4 * var(--u)) 0 0; padding: 0; }
+.lines li {
+  font-family: var(--body); font-weight: 500; font-size: calc(3.3 * var(--u)); line-height: 1.35; color: rgba(255,255,255,0.92);
+  opacity: 0; transform: translateX(calc(-1.2 * var(--u))); animation: slide 0.6s ease forwards;
+  display: flex; align-items: center; gap: calc(1.4 * var(--u));
+}
+.lines li::before { content: ""; width: calc(1.1 * var(--u)); height: calc(1.1 * var(--u)); border-radius: 50%; background: var(--cyan); flex: none; }
+.lines li:nth-child(2)::before { background: var(--pink); }
+.lines li:nth-child(3)::before { background: var(--white); }
+@keyframes slide { to { opacity: 1; transform: none; } }
+
+/* ---------- hero ---------- */
+#hero { z-index: 10; background: var(--navy); }
+#heroVideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
+.hero-shade { position: absolute; inset: 0; background:
+  linear-gradient(180deg, rgba(14,29,57,0.35) 0%, rgba(14,29,57,0.15) 40%, rgba(14,29,57,0.82) 100%),
+  linear-gradient(90deg, rgba(14,29,57,0.72) 0%, rgba(14,29,57,0.25) 55%, rgba(14,29,57,0.1) 100%); }
+.hero-text { position: absolute; left: calc(7 * var(--u)); right: calc(7 * var(--u)); bottom: calc(11 * var(--u)); }
+.hero-text .title { font-size: calc(10.5 * var(--u)); max-width: 12em; text-shadow: 0 calc(0.4 * var(--u)) calc(2 * var(--u)) rgba(0,0,0,0.35); }
+.hero-text .kicker { font-size: calc(2.6 * var(--u)); }
+body[data-layout="tall"] .hero-text { bottom: calc(18 * var(--u)); }
+body[data-layout="tall"] .hero-text .title { font-size: calc(9 * var(--u)); max-width: 9em; }
+
+/* ---------- app scenes: text zone + phone ---------- */
+#app { z-index: 5; }
+.text-zone { position: absolute; }
+.phone-zone { position: absolute; display: flex; align-items: center; justify-content: center; }
+
+body[data-layout="wide"] .text-zone { left: calc(8 * var(--u)); top: 0; bottom: 0; width: calc(96 * var(--u)); display: flex; flex-direction: column; justify-content: center; padding-bottom: calc(6 * var(--u)); }
+body[data-layout="wide"] .phone-zone { top: calc(6 * var(--u)); bottom: calc(11 * var(--u)); left: calc(120 * var(--u)); right: calc(9 * var(--u)); }
+
+body[data-layout="tall"] .text-zone { left: calc(7 * var(--u)); right: calc(7 * var(--u)); top: calc(6 * var(--u)); height: calc(30 * var(--u)); text-align: center; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+body[data-layout="tall"] .title { font-size: calc(7 * var(--u)); }
+body[data-layout="tall"] .lines { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(0.6 * var(--u)) calc(3 * var(--u)); margin-top: calc(2.4 * var(--u)); }
+body[data-layout="tall"] .lines li { font-size: calc(2.9 * var(--u)); }
+body[data-layout="tall"] .phone-zone { top: calc(41 * var(--u)); bottom: calc(22 * var(--u)); left: 0; right: 0; }
+
+/* The phone is laid out in CSS px at 1:1 (390×844 app + 44 px status bar,
+   14 px bezel) and scaled as a whole by --phone-scale, which stage.js sets
+   so it fills its zone. */
+/* No CSS filter on the phone: a drop-shadow filter over the cross-origin app
+   iframe forces a surface copy every frame and starves the screencast (6 fps).
+   The shadow lives on the bezel as a box-shadow instead. */
+.phone { width: 418px; height: 916px; flex: none; transform: scale(var(--phone-scale)); transform-origin: center center; }
+.phone.enter { animation: phoneIn 0.9s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes phoneIn { from { opacity: 0; transform: translateY(70px) scale(calc(var(--phone-scale) * 0.96)); } to { opacity: 1; transform: translateY(0) scale(var(--phone-scale)); } }
+.bezel { position: absolute; inset: 0; border-radius: 44px; background: linear-gradient(160deg, #2a3242 0%, #0f1521 45%, #0b0f18 100%); padding: 14px;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.10), inset 0 0 0 5px #05080f, 0 30px 60px rgba(0,0,0,0.55), 0 8px 16px rgba(0,0,0,0.35); }
+.screen { position: relative; width: 390px; height: 888px; border-radius: 32px; overflow: clip; background: var(--screen-bg); }
+.statusbar { position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 6px 26px 0 30px; color: var(--status-ink); background: var(--screen-bg); z-index: 2; }
+.statusbar .time { font-family: var(--body); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+.statusbar .icons { display: flex; align-items: center; gap: 6px; }
+.statusbar svg { height: 12px; width: auto; fill: currentColor; }
+.statusbar .signal { width: 17px; } .statusbar .wifi { width: 15px; } .statusbar .battery { width: 26px; }
+.notch { position: absolute; top: 10px; left: 50%; width: 116px; height: 30px; transform: translateX(-50%); border-radius: 18px; background: #05080f; z-index: 3; }
+.viewport { position: absolute; top: 44px; left: 0; width: 390px; height: 844px; overflow: clip; background: #fff; }
+#appFrame { display: block; width: 390px; height: 844px; border: 0; background: #fff; }
+
+/* ---------- chapter card ---------- */
+#chapter { background: var(--navy); display: flex; align-items: center; justify-content: center; }
+#chapter::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 55%, rgba(224,41,142,0.22) 0%, transparent 70%); }
+.chapter-inner { position: relative; text-align: center; padding: 0 calc(6 * var(--u)); }
+.chapter-kicker { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; letter-spacing: 0.3em; color: var(--cyan); font-size: calc(2.2 * var(--u)); margin-bottom: calc(2 * var(--u)); opacity: 0; animation: rise 0.5s ease 0.1s forwards; }
+.chapter-title { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; color: var(--white); font-size: calc(12 * var(--u)); line-height: 1; margin: 0; letter-spacing: 0.01em; }
+.chapter-title .w { display: inline-block; opacity: 0; transform: translateY(0.35em); animation: rise 0.55s cubic-bezier(.2,.7,.2,1) forwards; margin-right: 0.25em; }
+.chapter-title .w:last-child { margin-right: 0; }
+.chapter-rule { width: calc(14 * var(--u)); height: calc(0.7 * var(--u)); margin: calc(2.6 * var(--u)) auto; background: var(--pink); transform: scaleX(0); animation: rule 0.6s ease 0.45s forwards; }
+@keyframes rule { to { transform: scaleX(1); } }
+.chapter-sub { font-family: var(--body); font-weight: 500; font-size: calc(2.9 * var(--u)); color: rgba(255,255,255,0.8); letter-spacing: 0.02em; opacity: 0; animation: rise 0.5s ease 0.65s forwards; }
+body[data-layout="tall"] .chapter-title { font-size: calc(13 * var(--u)); }
+
+/* ---------- end card ---------- */
+#end { background: var(--navy); }
+#end::before { content: ""; position: absolute; inset: 0; background: radial-gradient(70% 60% at 50% 40%, rgba(0,172,230,0.16) 0%, transparent 70%); }
+.end-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: calc(6 * var(--u)); }
+.lockup { width: calc(46 * var(--u)); height: auto; margin-bottom: calc(6 * var(--u)); opacity: 0; animation: rise 0.7s ease 0.1s forwards; }
+.strap { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 0.35em; font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; font-size: calc(6.6 * var(--u)); line-height: 1.08; letter-spacing: 0.01em; }
+.strap span { opacity: 0; animation: rise 0.55s cubic-bezier(.2,.7,.2,1) forwards; }
+.strap .s1 { color: var(--pink); animation-delay: 0.5s; }
+.strap .s2 { color: var(--white); animation-delay: 0.85s; }
+.strap .s3 { color: var(--pink); animation-delay: 1.2s; }
+.url { margin-top: calc(4 * var(--u)); font-family: var(--body); font-weight: 600; font-size: calc(3.6 * var(--u)); color: var(--cyan); letter-spacing: 0.02em; opacity: 0; animation: rise 0.6s ease 1.9s forwards; }
+.mascot { position: absolute; right: calc(5 * var(--u)); bottom: 0; width: calc(22 * var(--u)); height: auto; transform: translateY(100%); animation: mascot 0.9s cubic-bezier(.2,.8,.2,1) 1.4s forwards; filter: drop-shadow(0 10px 24px rgba(0,0,0,0.4)); }
+@keyframes mascot { to { transform: translateY(4%); } }
+body[data-layout="tall"] .strap { flex-direction: column; font-size: calc(8.2 * var(--u)); }
+body[data-layout="tall"] .lockup { width: calc(62 * var(--u)); }
+body[data-layout="tall"] .mascot { width: calc(30 * var(--u)); }
+body[data-layout="tall"] .end-inner { padding-bottom: calc(18 * var(--u)); }

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Suffolk Tennis — Performance &amp; Reports stage</title>
+  <!-- The same stylesheet URL the app imports, so the relayed font cache is shared. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Barlow+Condensed:wght@700;800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="stage.css" />
+</head>
+<body data-layout="wide">
+  <div id="stage">
+    <!-- Base: navy with a slow diagonal pink/cyan light sweep -->
+    <div class="ground">
+      <div class="sweep"></div>
+      <div class="glow"></div>
+    </div>
+
+    <!-- Scene 1: hero b-roll under a navy gradient -->
+    <section id="hero" class="layer">
+      <video id="heroVideo" muted playsinline preload="auto" src="media/hero.webm"></video>
+      <div class="hero-shade"></div>
+      <div class="hero-text">
+        <div class="kicker" id="heroKicker">Suffolk Tennis</div>
+        <h1 class="title" id="heroTitle"></h1>
+      </div>
+    </section>
+
+    <!-- Scenes 2–8: text zone + phone -->
+    <section id="app" class="layer">
+      <div class="text-zone">
+        <div class="kicker" id="kicker"></div>
+        <h2 class="title" id="title"></h2>
+        <ul class="lines" id="lines"></ul>
+      </div>
+      <div class="phone-zone">
+        <div class="phone" id="phone">
+          <div class="bezel">
+            <div class="screen">
+              <div class="statusbar" id="statusbar">
+                <span class="time" id="statusTime">12:04</span>
+                <span class="icons">
+                  <svg class="signal" viewBox="0 0 18 12" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="0.8"/><rect x="5" y="5.5" width="3" height="6.5" rx="0.8"/><rect x="10" y="3" width="3" height="9" rx="0.8"/><rect x="15" y="0" width="3" height="12" rx="0.8"/></svg>
+                  <svg class="wifi" viewBox="0 0 16 12" aria-hidden="true"><path d="M8 11.2 5.9 8.9a3 3 0 0 1 4.2 0L8 11.2Zm-4-4.3-1.8-1.9a8.3 8.3 0 0 1 11.6 0L12 6.9a5.7 5.7 0 0 0-8 0ZM1.2 3.9 0 2.6a11.4 11.4 0 0 1 16 0l-1.2 1.3a9.6 9.6 0 0 0-13.6 0Z"/></svg>
+                  <svg class="battery" viewBox="0 0 27 12" aria-hidden="true"><rect x="0.5" y="0.5" width="22" height="11" rx="3" fill="none" stroke="currentColor" stroke-opacity=".4"/><rect x="2" y="2" width="19" height="8" rx="1.8"/><path d="M24.5 4v4a2 2 0 0 0 0-4Z" fill-opacity=".4"/></svg>
+                </span>
+              </div>
+              <div class="notch"></div>
+              <div class="viewport"><iframe id="appFrame" name="app" title="Suffolk Tennis app" src="about:blank"></iframe></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chapter cards -->
+    <section id="chapter" class="layer">
+      <div class="chapter-inner">
+        <div class="chapter-kicker" id="chapterKicker"></div>
+        <h2 class="chapter-title" id="chapterTitle"></h2>
+        <div class="chapter-rule"></div>
+        <div class="chapter-sub" id="chapterSub"></div>
+      </div>
+    </section>
+
+    <!-- Scene 9: end card -->
+    <section id="end" class="layer">
+      <div class="end-inner">
+        <img class="lockup" src="media/logo.png" alt="LTA Suffolk Tennis Partnership" />
+        <div class="strap">
+          <span class="s1">One County.</span>
+          <span class="s2">One Programme.</span>
+          <span class="s3">One Pathway.</span>
+        </div>
+        <div class="url">suffolktennis.online</div>
+      </div>
+      <img class="mascot" src="media/mascot.png" alt="" />
+    </section>
+
+    <div id="fade"></div>
+  </div>
+  <script src="stage.js"></script>
+</body>
+</html>
