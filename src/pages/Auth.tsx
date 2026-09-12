@@ -44,6 +44,8 @@ const Auth = () => {
     return r && r.startsWith("/") && !r.startsWith("//") ? r : null;
   })();
 
+  const isCoachInvite = !!redirectTarget?.startsWith("/coach/join/");
+
   useEffect(() => {
     // Land each user on their role's dashboard (admin/coach/parent), unless
     // they arrived with an explicit destination.
@@ -175,13 +177,15 @@ const Auth = () => {
           <img src={logo} alt="Suffolk Tennis" className="h-24 mb-8" />
         </Link>
         <h1 className="font-display text-4xl font-black text-primary-foreground text-center mb-4">
-          Parent Hub
+          {isCoachInvite ? "Coach Hub" : "Parent Hub"}
         </h1>
         <p className="text-primary-foreground/60 text-center max-w-sm font-body text-lg">
-          Access the LTA Player Pathway, track your child's progress, and stay updated with the latest programme news.
+          {isCoachInvite
+            ? "Registers, QR check-in and session reports for every programme you're assigned to."
+            : "Access the LTA Player Pathway, track your child's progress, and stay updated with the latest programme news."}
         </p>
         <div className="flex gap-6 mt-12">
-          {["Pathway Guides", "News & Updates", "Progress Tracking"].map((f) => (
+          {(isCoachInvite ? ["Registers", "QR check-in", "Session reports"] : ["Pathway Guides", "News & Updates", "Progress Tracking"]).map((f) => (
             <div key={f} className="flex items-center gap-2 text-lta-cyan text-sm font-medium">
               <Trophy size={16} />
               {f}
@@ -204,12 +208,15 @@ const Auth = () => {
           </div>
 
           <h2 className="font-display text-3xl font-black text-primary-foreground mb-2">
-            {verifyStep ? "Check Your Email" : forgotPassword ? "Reset Password" : isLogin ? "Welcome Back" : "Create Account"}
+            {verifyStep ? "Check Your Email" : forgotPassword ? "Reset Password" : isLogin ? "Welcome Back" : isCoachInvite ? "Create your coach account" : "Create Account"}
           </h2>
           <p className="text-primary-foreground/50 font-body mb-8">
             {verifyStep
               ? `Enter the verification code we sent to ${email}`
-              : forgotPassword ? "Enter your email and we'll send you a reset link" : isLogin ? "Sign in to access your Parent Hub" : "Join the Suffolk Tennis community"}
+              : forgotPassword ? "Enter your email and we'll send you a reset link"
+              : isCoachInvite
+                ? (isLogin ? "Sign in and we'll take you straight back to your invitation." : "One Suffolk Tennis account for everything. Once your email is verified we'll take you straight back to your invitation.")
+                : isLogin ? "Sign in to access your Parent Hub" : "Join the Suffolk Tennis community"}
           </p>
 
           {verifyStep ? (
@@ -245,7 +252,7 @@ const Auth = () => {
             {!isLogin && (
               <>
                 <p className="font-bold uppercase tracking-widest text-lta-cyan text-sm mb-1">
-                  Parent Details
+                  {isCoachInvite ? "Your details" : "Parent Details"}
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative">
@@ -254,7 +261,7 @@ const Auth = () => {
                       required
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="Parent First Name"
+                      placeholder={isCoachInvite ? "First name" : "Parent First Name"}
                       className="w-full pl-10 pr-4 py-3 rounded-xl bg-primary-foreground/10 border border-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/30 focus:outline-none focus:ring-2 focus:ring-lta-cyan/50 font-body"
                     />
                   </div>
@@ -263,17 +270,17 @@ const Auth = () => {
                       required
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Parent Last Name"
+                      placeholder={isCoachInvite ? "Last name" : "Parent Last Name"}
                       className="w-full px-4 py-3 rounded-xl bg-primary-foreground/10 border border-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/30 focus:outline-none focus:ring-2 focus:ring-lta-cyan/50 font-body"
                     />
                   </div>
                 </div>
-                <div className="rounded-xl border border-lta-cyan/30 bg-lta-cyan/10 p-3 text-xs font-body text-primary-foreground/80">
+                {!isCoachInvite && <div className="rounded-xl border border-lta-cyan/30 bg-lta-cyan/10 p-3 text-xs font-body text-primary-foreground/80">
                   <p className="font-display font-bold text-lta-cyan mb-1">Important — please complete your profile</p>
                   <p>
                     Once signed in, you'll be asked to add your <strong>contact number, home address</strong> and each child's <strong>date of birth, gender and BTM number</strong>. These details are required so coaches and county staff can invite your child to training, camps and events.
                   </p>
-                </div>
+                </div>}
               </>
             )}
 
