@@ -1,6 +1,6 @@
 {
   "source": "narration",
-  "total_s": 90.0,
+  "total_s": 95.0,
   "scenes": [
     {
       "id": 1,
@@ -40,11 +40,11 @@
     {
       "id": 8,
       "start_s": 70,
-      "duration_s": 9
+      "duration_s": 14
     },
     {
       "id": 9,
-      "start_s": 79,
+      "start_s": 84,
       "duration_s": 11.0
     }
   ]
