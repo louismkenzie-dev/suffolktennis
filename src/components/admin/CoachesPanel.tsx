@@ -35,6 +35,7 @@ type CoachInvitation = {
   id: string;
   email: string;
   name: string | null;
+  token: string;
   sent_at: string | null;
   reminded_at: string | null;
 };
@@ -115,7 +116,7 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
       db.from("profiles").select("user_id, first_name, last_name"),
       db.rpc("get_parent_emails"),
       db.from("event_coaches").select("user_id, events(title)"),
-      db.from("coach_invitations").select("id, email, name, sent_at, reminded_at").eq("status", "invited").order("created_at"),
+      db.from("coach_invitations").select("id, email, name, token, sent_at, reminded_at").eq("status", "invited").order("created_at"),
     ]);
     const nameOf = new Map<string, string>((profiles ?? []).map((p: any) => [p.user_id, `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim()]));
     const emailOf = new Map<string, string>((emails ?? []).map((e: any) => [e.user_id, e.email]));
@@ -153,6 +154,16 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
       toast.success(`Reminder sent to ${i.email}`);
     }
     loadAccounts();
+  };
+
+  const copyInviteLink = async (i: CoachInvitation) => {
+    const link = `${window.location.origin}/coach/join/${i.token}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success(`Invite link for ${i.email} copied`, { description: "Send it to them however you like — it only works signed in as that address." });
+    } catch {
+      toast.message(`Invite link for ${i.email}`, { description: link, duration: 15000 });
+    }
   };
 
   const revokeInvitation = async (i: CoachInvitation) => {
@@ -321,6 +332,7 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onSelect={() => resendInvitation(i)}>Resend</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => copyInviteLink(i)}>Copy invite link</DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => revokeInvitation(i)}>Delete invitation</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
