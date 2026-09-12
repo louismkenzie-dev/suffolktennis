@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { formatTimeRange } from "@/lib/timeFormat";
+import { venueLine, venueRuns, venueRunsSentence } from "@/lib/venueRuns";
 import { Link } from "react-router-dom";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -103,8 +104,10 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
 
   if (!booking) return null;
 
-  const venue = findVenueByLocation(event?.location ?? sessions[0]?.venue ?? null);
-  const locationText = event?.location ?? sessions[0]?.venue ?? null;
+  const runs = venueRuns(sessions, event?.location ?? null);
+  const venue = findVenueByLocation(runs[0]?.venue ?? event?.location ?? null);
+  const locationText = venueLine(runs, event?.location ?? null);
+  const venueSentence = venueRunsSentence(runs);
   const today = new Date().toISOString().slice(0, 10);
   const st = event?.cancelled_at ? { tone: "danger" as const, label: "Event cancelled" } : bookingStatus(booking.status);
   const upcomingSessions = sessions.filter((s) => s.session_date >= today);
@@ -150,13 +153,14 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
           <div>
             <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Getting there</p>
-              <a href={googleMapsUrl(locationText)} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 text-sm font-medium text-primary">
+              <a href={googleMapsUrl(runs[0]?.venue ?? locationText)} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 text-sm font-medium text-primary">
                 Directions <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </div>
             {venue ? <VenueMap coords={venue.coords} name={venue.name} /> : (
               <p className="flex items-center gap-2 text-sm text-muted-foreground"><MapPin className="h-4 w-4" /> {locationText}</p>
             )}
+            {venueSentence && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{venueSentence}</p>}
           </div>
         )}
 

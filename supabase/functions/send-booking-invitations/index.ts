@@ -10,6 +10,7 @@ import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts
 import { sendEmail } from "../_shared/resend.ts";
 import { FONT, brandedEmail, emailButton, emailDetails, emailHeading, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
+import { venueLine, venueRuns, venueRunsSentence } from "../_shared/venueRuns.ts";
 
 const Invitee = z.object({
   child_id: z.string().uuid().optional(),
@@ -49,6 +50,10 @@ type Shape = {
   firstDate: string | null;   // YYYY-MM-DD
   season: string | null;      // "2026/27"
   coaches: string[];
+  /** "Culford Sports & Tennis Centre, then Ipswich Sports Club" — from the sessions. */
+  venueLine: string | null;
+  /** The move spelled out, when the programme changes venue part-way through. */
+  venueSentence: string | null;
 };
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -143,9 +148,10 @@ function invitationEmail(opts: {
       [isProgramme ? "Programme" : "Event", title],
       ["Sessions", sessionsLabel],
       [isProgramme ? "First session" : "Date", shape.firstDate ? longDate(shape.firstDate) : (opts.dateLabel ?? "")],
-      ["Venue", ev.location ? esc(ev.location) : ""],
+      ["Venue", shape.venueLine ? esc(shape.venueLine) : ev.location ? esc(ev.location) : ""],
       ["Cost", costLabel(ev, opts.complimentary, shape)],
     ]) +
+    (shape.venueSentence ? emailParagraph(esc(shape.venueSentence)) : "") +
     (isProgramme && !noCharge
       ? emailParagraph("One payment covers the complete programme. It supports the delivery and continued development of a high-quality, sustainable County Performance Programme, including the additional age-group opportunities above.")
       : "") +
@@ -203,11 +209,12 @@ function invitationEmail(opts: {
 
 async function programmeShape(admin: ReturnType<typeof serviceClient>, ev: EventRow): Promise<Shape> {
   const [{ data: sessions }, { data: assigned }] = await Promise.all([
-    admin.from("event_sessions").select("session_date, start_time, end_time")
+    admin.from("event_sessions").select("session_date, start_time, end_time, venue")
       .eq("event_id", ev.id).is("cancelled_at", null).order("session_date"),
     admin.from("event_coaches").select("user_id").eq("event_id", ev.id),
   ]);
-  const rows = (sessions ?? []) as Array<{ session_date: string; start_time: string | null; end_time: string | null }>;
+  const rows = (sessions ?? []) as Array<{ session_date: string; start_time: string | null; end_time: string | null; venue: string | null }>;
+  const runs = venueRuns(rows, ev.location);
 
   // The typical length: the most common start→end gap, so one odd session
   // does not turn "2-hour sessions" into "1.9-hour sessions".
@@ -239,6 +246,8 @@ async function programmeShape(admin: ReturnType<typeof serviceClient>, ev: Event
     firstDate,
     season: ev.programme_type === "programme" && firstDate ? seasonOf(firstDate) : null,
     coaches,
+    venueLine: venueLine(runs, ev.location),
+    venueSentence: venueRunsSentence(runs),
   };
 }
 

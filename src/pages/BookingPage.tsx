@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, ChevronDown, type LucideIcon } from "lucide-react";
 import { formatTimeRange } from "@/lib/timeFormat";
+import { venueLine, venueRuns, venueRunsSentence } from "@/lib/venueRuns";
 import { FlowShell, Field, StatusBadge, SkeletonBlock } from "@/components/app";
 
 type InvitationPayload = {
@@ -268,6 +269,11 @@ const BookingPage = () => {
   const isProgramme = data?.event.programme_type === "programme";
   const complimentary = !!data?.invitation.complimentary;
   const noCharge = !!data && (complimentary || data.event.is_free || !data.event.price_pence);
+  // A programme that moves venue part-way through is described from its
+  // sessions, not the single location on the event.
+  const runs = data ? venueRuns(data.sessions, data.event.location) : [];
+  const venueText = data ? venueLine(runs, data.event.location) : null;
+  const venueSentence = venueRunsSentence(runs);
   const priceLabel = data
     ? complimentary
       ? "No extra charge"
@@ -339,7 +345,8 @@ const BookingPage = () => {
                     {data.event.meeting_cadence ? data.event.meeting_cadence[0]!.toUpperCase() + data.event.meeting_cadence.slice(1) : "Weekly"} programme · {data.sessions.length} session{data.sessions.length === 1 ? "" : "s"}
                   </p>
                 )}
-                {data.event.location && <p className="flex items-center gap-2"><MapPin size={15} className="shrink-0 text-muted-foreground/70" /> {data.event.location}</p>}
+                {venueText && <p className="flex items-center gap-2"><MapPin size={15} className="shrink-0 text-muted-foreground/70" /> {venueText}</p>}
+                {venueSentence && <p className="pl-6 text-xs leading-relaxed">{venueSentence}</p>}
               </div>
 
               <div className="mt-4 flex items-end justify-between gap-3 border-t border-border pt-4">
@@ -380,7 +387,7 @@ const BookingPage = () => {
                       </span>
                       <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                         {sn.cancelled_at ? <StatusBadge tone="danger" dot={false}>Cancelled</StatusBadge> : sn.moved_from_date ? <StatusBadge tone="warning" dot={false}>Moved</StatusBadge> : null}
-                        <span className="max-w-[9rem] truncate">{sn.venue ?? ""}</span>
+                        <span className="max-w-[11rem] truncate">{sn.venue ?? ""}</span>
                       </span>
                     </li>
                   ))}
