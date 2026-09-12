@@ -1,0 +1,14 @@
+{
+  "voice": { "style": "British male, warm, confident, unhurried", "model_id": "eleven_multilingual_v2" },
+  "lines": [
+    { "id": 1, "text": "Every County Training session is a step on the pathway. Now, every step is recorded.", "caption": "Every County Training session is a step on the pathway. Now, every step is recorded.", "estimate_s": 7 },
+    { "id": 2, "text": "Introducing Performance and Reports in the Suffolk Tennis app: one place where coaches capture how each player is developing, and parents watch it grow.", "caption": "Introducing Performance & Reports in the Suffolk Tennis app: one place where coaches capture how each player is developing, and parents watch it grow.", "estimate_s": 9 },
+    { "id": 3, "text": "For coaches, it starts at the register. Open today's session and every player on the programme is right there.", "caption": "For coaches, it starts at the register. Open today's session and every player on the programme is right there.", "estimate_s": 10 },
+    { "id": 4, "text": "Tap a player and rate the nine LTA areas, from Confident to Attack to Loves to Compete, with a single tap each. Add a short comment. Last session's ratings sit right beside today's.", "caption": "Tap a player and rate the nine LTA areas with a single tap each. Add a short comment. Last session's ratings sit right beside today's.", "estimate_s": 15 },
+    { "id": 5, "text": "When the session ends, every completed report goes to parents automatically. No paperwork. No chasing.", "caption": "When the session ends, every completed report goes to parents automatically. No paperwork. No chasing.", "estimate_s": 8 },
+    { "id": 6, "text": "For parents, the report lands in your inbox and in your Parent Hub, under your child's name.", "caption": "For parents, the report lands in your inbox and in your Parent Hub, under your child's name.", "estimate_s": 8 },
+    { "id": 7, "text": "Open Performance and Reports to see the latest rating on all nine areas, your coach's comment, and how it compares with last time.", "caption": "Open Performance & Reports to see the latest rating on all nine areas, your coach's comment, and how it compares with last time.", "estimate_s": 14 },
+    { "id": 8, "text": "Session by session, the trend lines show exactly where your child is excelling, and what they are working on next.", "caption": "Session by session, the trend lines show exactly where your child is excelling, and what they are working on next.", "estimate_s": 10 },
+    { "id": 9, "text": "One County. One Programme. One Pathway. Suffolk Tennis. Sign in at suffolktennis dot online.", "caption": "One County. One Programme. One Pathway. suffolktennis.online", "estimate_s": 9 }
+  ]
+}

@@ -36,3 +36,6 @@ verify_jwt = true
 # and the accept step insists on a matching signed-in email.
 [functions.coach-invitation]
 verify_jwt = false
+
+[functions.media-relay]
+verify_jwt = false
