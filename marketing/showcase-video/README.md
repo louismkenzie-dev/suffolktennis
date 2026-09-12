@@ -249,3 +249,50 @@ recording is shorter than `timing.json`).
 | `captions.mjs` | ASS captions, font fetch, sample alignment fixture |
 | `retime.mjs` | `timing.json` from `audio/alignment.json` |
 | `assemble.mjs` | ffmpeg assembly of the two mp4s |
+| `smoke-booking.mjs` | screenshot smoke test of the booking film's pages |
+| `drivers-booking.mjs` | the booking film's scene choreography |
+| `script-booking.json` / `timing-booking.json` | the booking film's narration and scene boundaries |
+
+## Second project: the booking film (`--project booking`)
+
+Three short 16:9 clips for the October coach forum, cut from **one** 101 s
+recording and sharing this pipeline unchanged — same stage, same recorder,
+same captions, same music bed:
+
+| File | Scenes | Length |
+|------|--------|--------|
+| `out-booking/suffolk-getting-a-place.mp4` | 1-5 | 37.4 s |
+| `out-booking/suffolk-qr-ticket.mp4` | 6-10 | 32.6 s |
+| `out-booking/suffolk-diary.mp4` | 11-15 | 31.0 s |
+
+```sh
+node record.mjs --project booking          # -> out-booking/wide.webm (16:9 only)
+node assemble.mjs --project booking        # -> the three mp4s
+node smoke-booking.mjs                     # every page the clips show, screenshotted
+```
+
+`--project` switches four things and nothing else: the timing file
+(`timing-booking.json`, whose `clips` array is where the three cuts come
+from), the audio folder (`audio-booking/`), the output folder
+(`out-booking/`) and the scene drivers (`drivers-booking.mjs`). With no
+`--project` both scripts behave exactly as they did for the reports film —
+same `timing.json`, same `audio/`, same `out/`, same `drivers()` in
+`record.mjs`, same captions (the stricter alignment word match that the
+booking captions need is opt-in, so the approved reports timings are
+untouched).
+
+The booking world is `installBookingFixtures()` in `fixtures.mjs`: a
+fictional county administrator (**Nina Hollis**) for the ledger, an
+invitation for Alfie Barker that has **not** been booked yet, a second
+Suffolk programme he is already on, an unpaid place (**Freya Dunn**) for the
+rejected scan, and Alfie's own weekly diary. Nothing in it runs unless
+`--project booking` is used, so the reports fixtures are untouched. Alfie's
+place is created on screen in scene 3 by the mocked `create-booking-checkout`,
+which is why the ledger in scene 4 has a new row and bigger totals.
+
+No Stripe page is ever shown: the mock settles the place the way the payment
+webhook does in production and the film ends the scene on the app's own
+"Booking confirmed" panel. Headless Chromium has no camera, so the scanner
+scenes use the app's own manual code-entry path (`/admin/scan`), and the
+register beside it refetches (it polls every 5 s; the driver nudges it with a
+`visibilitychange`) so the row flips to Arrived on screen.

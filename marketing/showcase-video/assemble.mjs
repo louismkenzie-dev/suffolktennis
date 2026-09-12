@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // assemble.mjs — cuts the final mp4s from the Playwright recordings.
 //
-//   node assemble.mjs [--layout wide|tall|both] [--video <path>] [--audio-dir <dir>]
+//   node assemble.mjs [--project reports|booking] [--layout wide|tall|both]
+//                     [--video <path>] [--audio-dir <dir>]
 //                     [--alignment <path>|none] [--preset slow] [--crf 18]
 //                     [--music-db -14] [--duration <s>] [--upsample dup|mci]
 //                     [--no-check-captions] [--dry-run] [--verbose]
@@ -28,12 +29,38 @@ import { createRequire } from "node:module";
 import { spawn, spawnSync } from "node:child_process";
 import { buildCaptions, HERE, LAYOUTS } from "./captions.mjs";
 
-const OUT = path.join(HERE, "out");
-const AUDIO = path.join(HERE, "audio");
 const NAVY = "0x0E1D39";
 const FPS = 50;          // v2 deliverable frame rate. Never encode below this.
 const FPS_SLACK = 0.6;   // a 50000/1001 (49.95) source still counts as native
-const OUTPUTS = { wide: "suffolk-performance-reports-16x9.mp4", tall: "suffolk-performance-reports-9x16.mp4" };
+
+// Two films share this assembly. "reports" is the shipped 95 s advert, cut
+// whole; "booking" is one 101 s recording cut into three standalone clips,
+// each with its own captions, its own fade in and out and its own copy of the
+// music bed. --project switches the timing file, the script, the audio folder
+// and the output folder; nothing else differs.
+const PROJECTS = {
+  reports: {
+    timing: "timing.json", script: "script.json", audio: "audio", out: "out",
+    fullFrameLines: [1, 9], chapterScenes: [3, 6],
+    outputs: { wide: "suffolk-performance-reports-16x9.mp4", tall: "suffolk-performance-reports-9x16.mp4" },
+    layouts: ["wide", "tall"], clips: null,
+  },
+  booking: {
+    timing: "timing-booking.json", script: "script-booking.json", audio: "audio-booking", out: "out-booking",
+    // The booking film has its own narration but reuses the reports film's
+    // instrumental bed; each clip gets it from the top with its own fades.
+    music: "audio/music.mp3",
+    // Each clip ends on the end card, which is full-frame; two scenes open on
+    // a chapter card the caption slides out from under.
+    fullFrameLines: [5, 10, 15], chapterScenes: [4, 7],
+    outputs: { place: "suffolk-getting-a-place.mp4", ticket: "suffolk-qr-ticket.mp4", diary: "suffolk-diary.mp4" },
+    layouts: ["wide"], clips: true,
+  },
+};
+let PROJECT = PROJECTS.reports;
+let OUT = path.join(HERE, PROJECT.out);
+let AUDIO = path.join(HERE, PROJECT.audio);
+const OUTPUTS = PROJECT.outputs;
 const warnings = [];
 const loud = (...lines) => {
   const bar = "!".repeat(72);
@@ -245,17 +272,26 @@ function captureRateReport(layout, video, rate) {
 /* ------------------------------------------------------------------ */
 /* One layout                                                           */
 /* ------------------------------------------------------------------ */
-async function assembleLayout(layout, opts, ffmpeg) {
+/**
+ * Cut one deliverable. `clip` is the window of the recording it comes from:
+ * the whole film for the reports cut ({ start: 0 }), one of the three
+ * booking clips otherwise. Everything downstream works in clip seconds.
+ */
+async function assembleLayout(layout, opts, ffmpeg, clip = null) {
   const geo = LAYOUTS[layout];
   const video = opts.video ?? path.join(OUT, `${layout}.webm`);
   if (!existsSync(video)) throw new Error(`missing ${video} - run "node record.mjs" first`);
-  const timing = JSON.parse(readFileSync(path.join(HERE, "timing.json"), "utf8"));
+  const timing = JSON.parse(readFileSync(path.join(HERE, PROJECT.timing), "utf8"));
   const audioDir = opts.audioDir ?? AUDIO;
-  const vo = path.join(audioDir, "vo.mp3"), music = path.join(audioDir, "music.mp3");
+  const vo = path.join(audioDir, "vo.mp3");
+  const music = opts.audioDir ? path.join(opts.audioDir, "music.mp3")
+    : PROJECT.music ? path.join(HERE, PROJECT.music) : path.join(audioDir, "music.mp3");
   const hasVo = existsSync(vo), hasMusic = existsSync(music);
   const alignmentPath = opts.alignment === undefined ? path.join(audioDir, "alignment.json") : opts.alignment === "none" ? "none" : path.resolve(opts.alignment);
+  const clipStart = clip ? clip.start_s : 0;
+  const name = clip ? `${layout}-${clip.id}` : layout;
 
-  console.log(`\n=== ${layout} (${geo.w}x${geo.h}) ===`);
+  console.log(`\n=== ${clip ? `${clip.id} — ${clip.title} (${clip.start_s}-${clip.end_s}s)` : layout} (${geo.w}x${geo.h}) ===`);
   const src = probe(ffmpeg, video);
   const vs = src.streams.find((s) => s.type === "video");
   if (!vs) throw new Error(`${video} has no video stream`);
@@ -264,18 +300,26 @@ async function assembleLayout(layout, opts, ffmpeg) {
 
   // Duration: the scene timeline when the recording covers it, else the recording.
   const scenesEnd = Math.max(...timing.scenes.map((s) => s.start_s + s.duration_s));
-  const target = opts.duration ?? timing.total_s ?? scenesEnd;
-  let D = Math.min(src.duration, target);
-  if (src.duration + 0.05 < target) console.warn(`[assemble] WARNING: recording is ${src.duration.toFixed(2)} s but the timeline needs ${target.toFixed(2)} s - the last scene(s) will be cut short`);
-  for (const s of timing.scenes) if (s.start_s + s.duration_s > D + 0.05) console.warn(`[assemble] WARNING: scene ${s.id} ends at ${(s.start_s + s.duration_s).toFixed(2)} s, beyond the ${D.toFixed(2)} s output`);
+  const target = (clip ? clip.end_s : opts.duration ?? timing.total_s ?? scenesEnd) - clipStart;
+  let D = Math.min(src.duration - clipStart, target);
+  if (src.duration + 0.05 < clipStart + target) console.warn(`[assemble] WARNING: recording is ${src.duration.toFixed(2)} s but the timeline needs ${(clipStart + target).toFixed(2)} s - the last scene(s) will be cut short`);
+  for (const s of timing.scenes) {
+    if (clip && (s.clip ?? clip.id) !== clip.id) continue;
+    if (s.start_s + s.duration_s - clipStart > D + 0.05) console.warn(`[assemble] WARNING: scene ${s.id} ends at ${(s.start_s + s.duration_s - clipStart).toFixed(2)} s, beyond the ${D.toFixed(2)} s output`);
+  }
   D = n2(D);
 
-  const captions = buildCaptions({ layout, alignmentPath });
+  const captions = buildCaptions({
+    layout, alignmentPath, name, outDir: OUT,
+    scriptPath: path.join(HERE, PROJECT.script), timingPath: path.join(HERE, PROJECT.timing),
+    fullFrameLines: PROJECT.fullFrameLines, chapterScenes: PROJECT.chapterScenes, strictWordMatch: !!PROJECT.clips,
+    window: clip ? { start: clip.start_s, end: clip.end_s } : null,
+  });
   const lastCaptionEnd = Math.max(...captions.events.map((e) => e.end));
   if (lastCaptionEnd > D + 0.05) console.warn(`[assemble] WARNING: captions run to ${lastCaptionEnd.toFixed(2)} s, beyond the ${D} s output`);
   console.log(`[assemble] audio: vo ${hasVo ? "yes" : "no (silent cut)"}, music ${hasMusic ? "yes" : "no"}; captions ${captions.events.length} events, font ${captions.fontFamily}${captions.fontFallback ? " (FALLBACK)" : ""}, timed from ${captions.timingSource}`);
   if (captions.fontFallback) loud(`CAPTIONS: Hanken Grotesk could not be fetched; falling back to ${captions.fontFamily}.`);
-  const captionCheck = opts.checkCaptions && !opts.dryRun ? checkCaptionOcclusion(ffmpeg, video, layout, captions) : null;
+  const captionCheck = opts.checkCaptions && !opts.dryRun ? checkCaptionOcclusion(ffmpeg, video, layout, captions, clipStart) : null;
 
   const inputs = ["-i", video];
   let idx = 1, voIdx = -1, musicIdx = -1;
@@ -288,7 +332,7 @@ async function assembleLayout(layout, opts, ffmpeg) {
   const voOffset = timing.vo_offset_s ?? 0;
   const fadeOutStart = n2(Math.max(0, D - 1.0));
   const vchain = [
-    `[0:v]trim=0:${D},setpts=PTS-STARTPTS`,
+    `[0:v]trim=${n2(clipStart)}:${n2(clipStart + D)},setpts=PTS-STARTPTS`,
     `scale=${geo.w}:${geo.h}:flags=lanczos`,
     rate.filter,
     "setsar=1",
@@ -306,7 +350,7 @@ async function assembleLayout(layout, opts, ffmpeg) {
   }
   if (hasVo) {
     const delay = Math.round(voOffset * 1000);
-    achain.push(`[${voIdx}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo${delay > 0 ? `,adelay=${delay}|${delay}` : ""},apad,atrim=0:${D},asetpts=PTS-STARTPTS${hasMusic ? ",asplit=2[vo][sc]" : "[aout]"}`);
+    achain.push(`[${voIdx}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo${delay > 0 ? `,adelay=${delay}|${delay}` : ""},apad,atrim=${n2(clipStart)}:${n2(clipStart + D)},asetpts=PTS-STARTPTS${hasMusic ? ",asplit=2[vo][sc]" : "[aout]"}`);
   }
   if (hasVo && hasMusic) {
     // Duck the bed under speech: the narration drives the compressor's sidechain.
@@ -316,7 +360,7 @@ async function assembleLayout(layout, opts, ffmpeg) {
     achain.push("[mus]anull[aout]");
   }
 
-  const outFile = path.join(OUT, OUTPUTS[layout]);
+  const outFile = path.join(OUT, PROJECT.outputs[clip ? clip.id : layout]);
   const args = [
     "-hide_banner", "-y", "-nostdin", "-loglevel", opts.verbose ? "verbose" : "warning", "-stats",
     ...inputs,
@@ -340,6 +384,7 @@ async function assembleLayout(layout, opts, ffmpeg) {
   });
   const secs = ((Date.now() - t0) / 1000).toFixed(0);
   const result = probe(ffmpeg, outFile);
+  if (clip) clip.duration_s = D;
   const size = (statSync(outFile).size / 1e6).toFixed(1);
   console.log(`[assemble] wrote ${path.relative(HERE, outFile)} (${size} MB, ${secs} s): ${fmtSummary(result)}`);
   const ov = result.streams.find((s) => s.type === "video");
@@ -369,7 +414,9 @@ async function assembleLayout(layout, opts, ffmpeg) {
 // card) are bright by design, so they are reported but never fail.
 const BRIGHT_LUMA = 140;
 const OCCLUSION_WARN = 0.06;
-const BRIGHT_BY_DESIGN = new Set([1, 9]);
+// The hero and the end cards are bright by design, so a pill over them is
+// reported and never fails.
+const brightByDesign = () => new Set(PROJECT.fullFrameLines);
 
 function brightFraction(ffmpeg, video, t, x, y, w, h) {
   const args = [
@@ -385,14 +432,15 @@ function brightFraction(ffmpeg, video, t, x, y, w, h) {
   return bright / buf.length;
 }
 
-function checkCaptionOcclusion(ffmpeg, video, layout, captions) {
+function checkCaptionOcclusion(ffmpeg, video, layout, captions, clipStart = 0) {
   const rows = [];
   let worst = 0, failures = 0;
   for (const ev of captions.events) {
-    const t = (ev.start + ev.end) / 2;
+    // Caption times are clip-relative; the recording is not.
+    const t = clipStart + (ev.start + ev.end) / 2;
     const f = brightFraction(ffmpeg, video, t, ev.x0, ev.y0, ev.pillW, ev.pillH);
     if (f == null) continue;
-    const exempt = BRIGHT_BY_DESIGN.has(ev.id);
+    const exempt = brightByDesign().has(ev.id);
     const bad = !exempt && f > OCCLUSION_WARN;
     if (bad) failures++;
     if (!exempt) worst = Math.max(worst, f);
@@ -466,10 +514,12 @@ function scanSafeZone(ffmpeg, video, layout, timing) {
 /* CLI                                                                  */
 /* ------------------------------------------------------------------ */
 function parseArgs(argv) {
-  const o = { layout: "both", video: undefined, alignment: undefined, audioDir: undefined, preset: "slow", crf: 18, musicDb: -14, dryRun: false, verbose: false, duration: undefined, upsample: "dup", checkCaptions: true, scanSafeZone: false };
+  const o = { project: "reports", layout: null, video: undefined, alignment: undefined, audioDir: undefined, preset: "slow", crf: 18, musicDb: -14, dryRun: false, verbose: false, duration: undefined, upsample: "dup", checkCaptions: true, scanSafeZone: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--layout") o.layout = argv[++i];
+    if (a === "--project") o.project = argv[++i];
+    else if (a.startsWith("--project=")) o.project = a.slice(10);
+    else if (a === "--layout") o.layout = argv[++i];
     else if (a === "--video") o.video = path.resolve(argv[++i]);
     else if (a === "--alignment") o.alignment = argv[++i];
     else if (a === "--audio-dir") o.audioDir = path.resolve(argv[++i]);
@@ -488,19 +538,28 @@ function parseArgs(argv) {
       process.exit(0);
     } else throw new Error(`unknown argument ${a}`);
   }
+  if (!PROJECTS[o.project]) throw new Error(`--project must be one of ${Object.keys(PROJECTS).join(", ")} (got ${o.project})`);
+  o.layout ??= PROJECTS[o.project].layouts.length === 1 ? PROJECTS[o.project].layouts[0] : "both";
   if (!["wide", "tall", "both"].includes(o.layout)) throw new Error(`--layout must be wide, tall or both (got ${o.layout})`);
+  for (const l of o.layout === "both" ? ["wide", "tall"] : [o.layout]) {
+    if (!PROJECTS[o.project].layouts.includes(l)) throw new Error(`project ${o.project} has no ${l} layout (it cuts ${PROJECTS[o.project].layouts.join(", ")} only)`);
+  }
   if (!["dup", "mci"].includes(o.upsample)) throw new Error(`--upsample must be dup or mci (got ${o.upsample})`);
   if (o.video && o.layout === "both") throw new Error("--video needs --layout wide or --layout tall");
   return o;
 }
 
 const opts = parseArgs(process.argv.slice(2));
+PROJECT = PROJECTS[opts.project];
+OUT = path.join(HERE, PROJECT.out);
+AUDIO = path.join(HERE, PROJECT.audio);
 const ffmpeg = resolveFfmpeg();
+console.log(`[assemble] project ${opts.project}: ${PROJECT.timing} + ${PROJECT.audio}/ -> ${PROJECT.out}/`);
 console.log(`[assemble] ffmpeg: ${ffmpeg}`);
 const layouts = opts.layout === "both" ? ["wide", "tall"] : [opts.layout];
 const results = [];
 if (opts.scanSafeZone) {
-  const timing = JSON.parse(readFileSync(path.join(HERE, "timing.json"), "utf8"));
+  const timing = JSON.parse(readFileSync(path.join(HERE, PROJECT.timing), "utf8"));
   for (const layout of layouts) {
     const video = opts.video ?? path.join(OUT, `${layout}.webm`);
     if (!existsSync(video)) { console.warn(`[assemble] scan-safe-zone: missing ${video}`); continue; }
@@ -510,8 +569,14 @@ if (opts.scanSafeZone) {
 }
 try {
   for (const layout of layouts) {
-    const r = await assembleLayout(layout, opts, ffmpeg);
-    if (r) results.push(r);
+    // One film, cut whole — or one recording cut into its clips.
+    const clips = PROJECT.clips
+      ? JSON.parse(readFileSync(path.join(HERE, PROJECT.timing), "utf8")).clips
+      : [null];
+    for (const clip of clips) {
+      const r = await assembleLayout(layout, opts, ffmpeg, clip);
+      if (r) results.push({ ...r, clip });
+    }
   }
 } catch (e) {
   console.error(`\n[assemble] FAILED: ${e instanceof Error ? e.message : e}`);

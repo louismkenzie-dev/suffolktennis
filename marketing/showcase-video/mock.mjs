@@ -284,6 +284,14 @@ export async function installMock(context, { user = "coach", dismissBanners = tr
   // Playwright checks routes newest-first, so: catch-all 204 first (lowest
   // priority), then the fonts pass-through, then the Supabase host on top.
   await context.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, (route) => route.fulfill({ status: 204, body: "" }));
+  // The transactional emails (stage/invite-sample.html) carry the brand lockup
+  // and mascot as absolute suffolktennis.online URLs; serve them from the
+  // repo's own public/email so the email renders whole and offline.
+  await context.route(/^https:\/\/suffolktennis\.online\/email\/[\w.-]+$/, (route) => {
+    const file = path.join(HERE, "..", "..", "public", "email", path.basename(new URL(route.request().url()).pathname));
+    if (!existsSync(file)) return route.fulfill({ status: 404, body: "" });
+    return route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=31536000" }, contentType: file.endsWith(".png") ? "image/png" : "application/octet-stream", body: readFileSync(file) });
+  });
   if (fonts !== "block") {
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => (fonts === "continue" ? route.continue() : relayFont(route)));
   }

@@ -2,3 +2,5 @@ node_modules/
 out/
 audio/*.mp3
 audio-booking/*.mp3
+out-booking/
+out-booking/

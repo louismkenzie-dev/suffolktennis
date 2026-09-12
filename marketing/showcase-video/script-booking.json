@@ -1,18 +1,43 @@
 {
   "project": "booking",
   "note": "Three short clips for the October coach forum. Same pipeline, same voice (George), same music bed as the reports film. Recorded as ONE continuous timeline and cut into three at assembly.",
-  "voice": { "id": "JBFqnCBsd6RMkjVDRZzb", "style": "British male, warm, confident", "model_id": "eleven_multilingual_v2" },
+  "voice": {
+    "id": "JBFqnCBsd6RMkjVDRZzb",
+    "style": "British male, warm, confident",
+    "model_id": "eleven_multilingual_v2"
+  },
   "clips": [
     {
       "id": "place",
       "title": "Getting a place",
       "target_s": 42,
       "lines": [
-        { "id": 1, "text": "A county place starts with one invitation, sent to one family.", "shot": "The invitation email opening on a phone" },
-        { "id": 2, "text": "It opens on a single page: every session, the venue, the coaches, and one price for the whole season.", "shot": "Booking page on desktop, scrolling the session list" },
-        { "id": 3, "text": "They accept and pay by card. The place is confirmed the moment the payment clears. No forms, no bank transfers, no chasing.", "shot": "Accept and pay, then the confirmed state" },
-        { "id": 4, "text": "And on the county's side, that place, that payment and that player land in one ledger the moment it happens.", "shot": "Admin ledger: the new row and the totals moving" },
-        { "id": 5, "text": "Suffolk Tennis. Sign in at suffolktennis dot online.", "shot": "End card" }
+        {
+          "id": 1,
+          "text": "A county place starts with one invitation, sent to one family.",
+          "shot": "The invitation email opening on a phone"
+        },
+        {
+          "id": 2,
+          "text": "It opens on a single page: every session, the venue, the coaches, and one price for the whole season.",
+          "shot": "Booking page on desktop, scrolling the session list"
+        },
+        {
+          "id": 3,
+          "text": "They accept and pay by card. The place is confirmed the moment the payment clears. No forms, no bank transfers, no chasing.",
+          "shot": "Accept and pay, then the confirmed state"
+        },
+        {
+          "id": 4,
+          "text": "And on the county's side, that place, that payment and that player land in one ledger the moment it happens.",
+          "shot": "Admin ledger: the new row and the totals moving"
+        },
+        {
+          "id": 5,
+          "text": "Suffolk Tennis. Sign in at suffolktennis dot online.",
+          "shot": "End card",
+          "caption": "Suffolk Tennis. Sign in at suffolktennis.online."
+        }
       ]
     },
     {
@@ -20,11 +45,32 @@
       "title": "The QR ticket",
       "target_s": 40,
       "lines": [
-        { "id": 1, "text": "Every paid place comes with its own QR ticket, one for each session.", "shot": "Parent Hub ticket with the QR code" },
-        { "id": 2, "text": "The coach scans it at the door. Green means admitted, and the register marks them arrived, with the time.", "shot": "Coach scanner, green result, register row flipping to Arrived" },
-        { "id": 3, "text": "A second scan says already here. A place that has not been paid for is turned away.", "shot": "Duplicate scan, then a rejected scan" },
-        { "id": 4, "text": "So the coach knows exactly who is on court, and nobody is working from a clipboard.", "shot": "Full register, 3 here, 1 not marked" },
-        { "id": 5, "text": "Suffolk Tennis. Sign in at suffolktennis dot online.", "shot": "End card" }
+        {
+          "id": 1,
+          "text": "Every paid place comes with its own QR ticket, one for each session.",
+          "shot": "Parent Hub ticket with the QR code"
+        },
+        {
+          "id": 2,
+          "text": "The coach scans it at the door. Green means admitted, and the register marks them arrived, with the time.",
+          "shot": "Coach scanner, green result, register row flipping to Arrived"
+        },
+        {
+          "id": 3,
+          "text": "A second scan says already here. A place that has not been paid for is turned away.",
+          "shot": "Duplicate scan, then a rejected scan"
+        },
+        {
+          "id": 4,
+          "text": "So the coach knows exactly who is on court, and nobody is working from a clipboard.",
+          "shot": "Full register, 3 here, 1 not marked"
+        },
+        {
+          "id": 5,
+          "text": "Suffolk Tennis. Sign in at suffolktennis dot online.",
+          "shot": "End card",
+          "caption": "Suffolk Tennis. Sign in at suffolktennis.online."
+        }
       ]
     },
     {
@@ -32,11 +78,32 @@
       "title": "The diary",
       "target_s": 40,
       "lines": [
-        { "id": 1, "text": "Every session a child is booked onto fills their timetable on its own.", "shot": "Sporting Timetable with Suffolk sessions already in it" },
-        { "id": 2, "text": "Their week, their term, and their hours against the LTA target, without anyone typing a date.", "shot": "Week to month view, hours bar against target" },
-        { "id": 3, "text": "One tap adds a session to the family calendar.", "shot": "Add to calendar from a booking" },
-        { "id": 4, "text": "Parents stop asking when and where. Coaches stop answering the same question twenty times.", "shot": "Parent Hub bookings, next session card" },
-        { "id": 5, "text": "Suffolk Tennis. Sign in at suffolktennis dot online.", "shot": "End card" }
+        {
+          "id": 1,
+          "text": "Every session a child is booked onto fills their timetable on its own.",
+          "shot": "Sporting Timetable with Suffolk sessions already in it"
+        },
+        {
+          "id": 2,
+          "text": "Their week, their term, and their hours against the LTA target, without anyone typing a date.",
+          "shot": "Week to month view, hours bar against target"
+        },
+        {
+          "id": 3,
+          "text": "One tap adds a session to the family calendar.",
+          "shot": "Add to calendar from a booking"
+        },
+        {
+          "id": 4,
+          "text": "Parents stop asking when and where. Coaches stop answering the same question twenty times.",
+          "shot": "Parent Hub bookings, next session card"
+        },
+        {
+          "id": 5,
+          "text": "Suffolk Tennis. Sign in at suffolktennis dot online.",
+          "shot": "End card",
+          "caption": "Suffolk Tennis. Sign in at suffolktennis.online."
+        }
       ]
     }
   ]

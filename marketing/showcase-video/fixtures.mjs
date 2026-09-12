@@ -527,6 +527,12 @@ function endSessionAction(userId, body) {
 /** What POST /functions/v1/<name> answers, for the signed-in `user` ({ id, email }). */
 export function functionResponse(name, body = {}, user = USERS.coach) {
   const a = body?.action;
+  // The booking film (project "booking") adds the invitation, checkout,
+  // ticket and scanner functions; the reports film never installs them.
+  if (BOOKING_WORLD.installed) {
+    const b = bookingFunctionResponse(name, body, user);
+    if (b) return b;
+  }
   switch (name) {
     case "coach-session": {
       if (!T.user_roles.some((r) => r.user_id === user.id && (r.role === "coach" || r.role === "admin"))) return { error: "Coach access required" };
@@ -549,7 +555,368 @@ export function functionResponse(name, body = {}, user = USERS.coach) {
 
 /** What POST /rest/v1/rpc/<fn> answers. */
 export function rpcResponse(fn, _args = {}, _user = USERS.coach) {
-  if (fn === "timetable_sessions") return [];
+  if (fn === "timetable_sessions") return BOOKING_WORLD.installed ? timetableSessions(_args, _user) : [];
   if (fn === "get_parent_emails") return T.profiles.map((p) => ({ user_id: p.user_id, email: USERS.coach.id === p.user_id ? USERS.coach.email : USERS.parent.id === p.user_id ? USERS.parent.email : `${p.first_name}.${p.last_name}@example.com`.toLowerCase() }));
   return [];
+}
+
+/* ================================================================== */
+/* Project "booking": the second film (getting a place / QR ticket /   */
+/* the diary). Everything below is inert until installBookingFixtures()*/
+/* is called, so the Performance & Reports film sees the world above   */
+/* exactly as it was.                                                  */
+/* ================================================================== */
+
+export const BOOKING_WORLD = { installed: false };
+
+export const ADMIN_ID = "ad401000-0000-4000-8000-000000000001";
+export const PARENT_DUNN = "9a4e0000-0000-4000-8000-000000000005";
+export const CHILD_FREYA = "c41d0000-0000-4000-8000-000000000005";
+export const BOOKING_FREYA = "b00c0000-0000-4000-8000-000000000005";
+export const EVENT_HIT_ID = "e0e00000-0000-4000-8000-000000000003";
+export const BOOKING_ALFIE_HIT = "b00c0000-0000-4000-8000-000000000006";
+export const INVITATION_ID = "1a4d0000-0000-4000-8000-000000000001";
+/** The token in the invitation email's "Accept & pay" button. */
+export const INVITATION_TOKEN = "sample";
+export const HITTING_TITLE = "Suffolk County Hitting Squad";
+
+/** Entry codes, short enough to read on screen and type into the scanner. */
+export const TOKEN = {
+  alfieSeason: "ST-ALFIE-SEASON",
+  alfieToday: "ST-ALFIE-06",
+  freyaToday: "ST-FREYA-06",
+};
+
+const hitSessionId = (i) => `5e550000-0000-4000-8000-0000000002${pad2(i + 1)}`;
+const HIT_COUNT = 12;
+// Wednesdays, starting six weeks before today.
+const hitFirst = addDays(TODAY, ((3 - new Date(TODAY + "T12:00:00Z").getUTCDay() + 7) % 7) - 14);
+const hitDate = (i) => addDays(hitFirst, 7 * i);
+
+/** Alfie's own diary outside the county programme (scene 11-12). */
+const MANUAL_WEEK = [
+  { dow: 2, title: "Club squad — Bury St Edmunds TC", category: "squad_training", start: "17:00", end: "18:30" },
+  { dow: 4, title: "Strength & conditioning", category: "tennis_sc", start: "16:30", end: "17:30" },
+  { dow: 5, title: "Individual lesson with Coach Ellis", category: "individual_lesson", start: "17:00", end: "18:00" },
+  { dow: 0, title: "Practice matches", category: "free_play", start: "09:30", end: "11:00" },
+];
+
+const minutesBetween = (a, b) => {
+  const [ah, am] = a.split(":").map(Number);
+  const [bh, bm] = b.split(":").map(Number);
+  return bh * 60 + bm - (ah * 60 + am);
+};
+
+function buildSportingSchedule() {
+  const rows = [];
+  let n = 0;
+  // Monday of the week containing today, in London wall-clock terms.
+  const todayDow = new Date(TODAY + "T12:00:00Z").getUTCDay();
+  const monday = addDays(TODAY, todayDow === 0 ? -6 : 1 - todayDow);
+  for (let w = -6; w <= 10; w++) {
+    for (const m of MANUAL_WEEK) {
+      const offset = m.dow === 0 ? 6 : m.dow - 1;
+      const date = addDays(monday, w * 7 + offset);
+      rows.push({
+        id: `5c4e0000-0000-4000-8000-${String(++n).padStart(12, "0")}`,
+        child_id: CHILD.alfie, parent_user_id: PARENT_ID, title: m.title, category: m.category,
+        event_date: date, start_time: `${m.start}:00`, end_time: `${m.end}:00`,
+        duration_minutes: minutesBetween(m.start, m.end),
+        location: m.category === "tennis_sc" ? "Abbeycroft Leisure" : "Bury St Edmunds Tennis Club",
+        notes: null, is_tournament: false, recurrence_rule: `weekly:${m.dow}`, recurrence_end_date: null,
+        recurrence_group_id: `5c40e000-0000-4000-8000-00000000000${MANUAL_WEEK.indexOf(m) + 1}`,
+      });
+    }
+  }
+  // A couple of dated one-offs so the month and the year counters look lived-in.
+  const extras = [
+    { date: addDays(monday, -12), title: "Suffolk Junior Open", category: "tournament", start: "09:00", end: "16:00", tournament: true, location: "Ipswich Sports Club" },
+    { date: addDays(monday, 9), title: "County league match", category: "official_match", start: "10:00", end: "12:00", tournament: false, location: "Framlingham Tennis Club" },
+    { date: addDays(monday, -19), title: "County league match", category: "official_match", start: "10:00", end: "12:00", tournament: false, location: "Woodbridge Tennis Club" },
+  ];
+  for (const e of extras) {
+    rows.push({
+      id: `5c4e0000-0000-4000-8000-${String(++n).padStart(12, "0")}`,
+      child_id: CHILD.alfie, parent_user_id: PARENT_ID, title: e.title, category: e.category,
+      event_date: e.date, start_time: `${e.start}:00`, end_time: `${e.end}:00`,
+      duration_minutes: minutesBetween(e.start, e.end), location: e.location, notes: null,
+      is_tournament: e.tournament, recurrence_rule: null, recurrence_end_date: null, recurrence_group_id: null,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Switch the fixtures into the booking film's world:
+ *  - a fictional county administrator (Nina Hollis) for the ledger,
+ *  - Alfie NOT yet booked on the 12U programme, but invited,
+ *  - a second Suffolk programme he is already on (so the timetable and the
+ *    Parent Hub have more than one thing in them),
+ *  - an unpaid place (Freya Dunn) for the rejected scan,
+ *  - Alfie's own weekly diary outside the county programme.
+ */
+export function installBookingFixtures() {
+  if (BOOKING_WORLD.installed) return BOOKING_WORLD;
+  BOOKING_WORLD.installed = true;
+
+  USERS.admin = { id: ADMIN_ID, email: "nina.hollis@example.com", first_name: "Nina", last_name: "Hollis" };
+  T.user_roles.push({ user_id: ADMIN_ID, role: "admin" });
+  T.profiles.push(profileRow(ADMIN_ID, "Nina", "Hollis", "07700 900105", "Bury St Edmunds", "IP33 2BB", { address: "1 Northgate Street" }));
+  T.profiles.push(profileRow(PARENT_DUNN, "Mark", "Dunn", "07700 900745", "Felixstowe", "IP11 7QS", { address: "18 Sea Road" }));
+
+  // The county season has only just started: the booking film's programme is
+  // today's session, last week's and the rest of the autumn, not the
+  // half-finished season the reports film needs.
+  const dropped = new Set(T.event_sessions.filter((s) => s.event_id === EVENT_ID && s.session_date < addDays(TODAY, -7)).map((s) => s.id));
+  T.event_sessions = T.event_sessions.filter((s) => !dropped.has(s.id));
+  T.session_attendance = T.session_attendance.filter((a) => !dropped.has(a.session_id));
+  T.session_reports = T.session_reports.filter((r) => !dropped.has(r.session_id));
+
+  // Maya and Theo scanned in before the film's clock starts (11:40), so the
+  // scan on screen is the last arrival of the morning, not the earliest.
+  for (const [key, time] of [["maya", "11:31"], ["theo", "11:36"]]) {
+    const row = T.session_attendance.find((a) => a.booking_id === BOOKING[key] && a.session_id === TODAY_SESSION_ID);
+    if (row) row.marked_at = londonIso(TODAY, time);
+  }
+
+  // Alfie's place does not exist yet: it is created on screen in scene 3.
+  T.bookings = T.bookings.filter((b) => b.id !== BOOKING.alfie);
+  T.tickets = T.tickets.filter((t) => t.booking_id !== BOOKING.alfie);
+  T.session_tickets = T.session_tickets.filter((t) => t.booking_id !== BOOKING.alfie);
+  T.session_attendance = T.session_attendance.filter((a) => a.booking_id !== BOOKING.alfie);
+
+  // Ledger columns the reports film never needed.
+  for (const b of T.bookings) Object.assign(b, { currency: "gbp", stripe_env: "live", photo_consent: true });
+
+  // The invitation that is still open (the email in scene 1).
+  T.booking_invitations.push({
+    id: INVITATION_ID, event_id: EVENT_ID, token: INVITATION_TOKEN, status: "opened",
+    child_name: "Alfie Barker", parent_name: "Hannah Barker", parent_email: USERS.parent.email,
+    parent_user_id: PARENT_ID, complimentary: false, complimentary_reason: null,
+    created_at: londonIso(addDays(TODAY, -3), "18:02"), opened_at: londonIso(TODAY, "08:41"), booked_at: null,
+  });
+
+  // A second Suffolk programme Alfie is already on: Wednesday hitting squad.
+  T.events.push({
+    id: EVENT_HIT_ID, title: HITTING_TITLE, description: "Midweek hitting and match play for selected county players.",
+    event_date: londonIso(hitDate(0), "17:30"), location: VENUE, age_group: "12U", capacity: 10, visibility: "private",
+    programme_type: "programme", price_pence: 18000, is_free: false, meeting_cadence: "weekly", sign_up_enabled: false,
+    cancelled_at: null, programme_months: null, event_type: "county-training", poster_url: null, featured: false, cost: "£180",
+    session_slots: null, register_closed_at: null, created_at: "2026-08-20T09:00:00.000Z",
+  });
+  for (let i = 0; i < HIT_COUNT; i++) {
+    T.event_sessions.push({
+      id: hitSessionId(i), event_id: EVENT_HIT_ID, session_date: hitDate(i), start_time: "17:30:00", end_time: "19:00:00",
+      venue: VENUE, cancelled_at: null, cancel_reason: null, moved_from_date: null, moved_from_start: null, moved_at: null,
+      ended_at: hitDate(i) < TODAY ? londonIso(hitDate(i), "19:03") : null, created_at: "2026-08-20T09:00:00.000Z",
+    });
+  }
+  T.bookings.push({
+    id: BOOKING_ALFIE_HIT, event_id: EVENT_HIT_ID, invitation_id: null, parent_user_id: PARENT_ID, parent_name: "Hannah Barker",
+    parent_email: USERS.parent.email, parent_phone: "07700 900311", child_id: CHILD.alfie, child_name: "Alfie Barker",
+    child_dob: "2014-08-22", medical_notes: null, status: "paid", amount_pence: 18000, session_slot: null,
+    paid_at: londonIso(addDays(TODAY, -44), "20:08"), membership_id: null, complimentary: false,
+    created_at: londonIso(addDays(TODAY, -44), "20:05"), currency: "gbp", stripe_env: "live", photo_consent: true,
+  });
+  T.tickets.push({ booking_id: BOOKING_ALFIE_HIT, qr_token: "ST-ALFIE-HIT", status: "active" });
+
+  // An unpaid place, for the scan that is turned away.
+  T.children.push({
+    id: CHILD_FREYA, parent_user_id: PARENT_DUNN, name: "Freya Dunn", date_of_birth: "2014-06-14", gender: "girl",
+    btm_number: "10877402", county_rank: null, national_rank: null, favorite_player: null, favorite_shot: null,
+    handedness: "right", has_medical_needs: false, has_send_needs: false, medical_conditions: [], medical_details: null,
+    send_conditions: [], send_details: null, description: null, medical_needs: null, photo_url: null, home_club: null,
+    country: "GB", created_at: "2026-03-04T18:30:00.000Z", updated_at: "2026-08-30T10:00:00.000Z",
+  });
+  T.bookings.push({
+    id: BOOKING_FREYA, event_id: EVENT_ID, invitation_id: null, parent_user_id: PARENT_DUNN, parent_name: "Mark Dunn",
+    parent_email: "mark.dunn@example.com", parent_phone: "07700 900745", child_id: CHILD_FREYA, child_name: "Freya Dunn",
+    child_dob: "2014-06-14", medical_notes: null, status: "pending", amount_pence: 27500, session_slot: null,
+    paid_at: null, membership_id: null, complimentary: false, created_at: londonIso(addDays(TODAY, -2), "21:14"),
+    currency: "gbp", stripe_env: "live", photo_consent: true,
+  });
+  T.session_tickets.push({
+    id: "57c40000-0000-4000-8000-000000000009", booking_id: BOOKING_FREYA, event_id: EVENT_ID, session_id: TODAY_SESSION_ID,
+    child_id: CHILD_FREYA, qr_token: TOKEN.freyaToday, status: "active",
+    reminder_12h_sent_at: null, reminder_1h_sent_at: null, created_at: londonIso(addDays(TODAY, -2), "21:14"),
+  });
+
+  T.sporting_schedule.push(...buildSportingSchedule());
+  return BOOKING_WORLD;
+}
+
+/** Alfie's place on the 12U programme, created the moment the parent accepts. */
+export function bookAlfie(user = USERS.parent) {
+  const existing = T.bookings.find((b) => b.id === BOOKING.alfie);
+  if (existing) return existing;
+  const now = nowIso();
+  const booking = {
+    id: BOOKING.alfie, event_id: EVENT_ID, invitation_id: INVITATION_ID, parent_user_id: PARENT_ID,
+    parent_name: "Hannah Barker", parent_email: USERS.parent.email, parent_phone: "07700 900311",
+    child_id: CHILD.alfie, child_name: "Alfie Barker", child_dob: "2014-08-22", medical_notes: null,
+    status: "paid", amount_pence: 27500, session_slot: null, paid_at: now, membership_id: null,
+    complimentary: false, created_at: now, currency: "gbp", stripe_env: "live", photo_consent: true,
+  };
+  T.bookings.push(booking);
+  T.tickets.push({ booking_id: BOOKING.alfie, qr_token: TOKEN.alfieSeason, status: "active" });
+  // One entry code per remaining session; today's is the one that gets scanned.
+  let n = 0;
+  for (let i = 0; i < SESSION_COUNT; i++) {
+    if (sessionDate(i) < TODAY) continue;
+    T.session_tickets.push({
+      id: `57c40000-0000-4000-8000-0000000001${pad2(++n)}`, booking_id: BOOKING.alfie, event_id: EVENT_ID,
+      session_id: sessionId(i), child_id: CHILD.alfie,
+      qr_token: i === TODAY_INDEX ? TOKEN.alfieToday : `ST-ALFIE-${pad2(i + 1)}`, status: "active",
+      reminder_12h_sent_at: null, reminder_1h_sent_at: null, created_at: now,
+    });
+  }
+  const inv = T.booking_invitations.find((x) => x.id === INVITATION_ID);
+  if (inv) { inv.status = "booked"; inv.booked_at = now; }
+  void user;
+  return booking;
+}
+
+/* ----- edge functions used only by the booking film ----- */
+
+const eventForBooking = (e) => ({
+  id: e.id, title: e.title, description: e.description, event_date: e.event_date, location: e.location,
+  poster_url: e.poster_url, session_slots: e.session_slots, programme_type: e.programme_type,
+  price_pence: e.price_pence, is_free: e.is_free, meeting_cadence: e.meeting_cadence, capacity: e.capacity,
+  cancelled_at: e.cancelled_at,
+});
+
+function getInvitationResponse(token) {
+  const inv = T.booking_invitations.find((i) => i.token === token);
+  if (!inv) return { error: "This invitation link could not be opened." };
+  const event = T.events.find((e) => e.id === inv.event_id);
+  const booking = T.bookings.find((b) => b.invitation_id === inv.id && ["pending", "paid"].includes(b.status)) ?? null;
+  return {
+    invitation: {
+      id: inv.id, status: inv.status, child_name: inv.child_name, parent_name: inv.parent_name,
+      parent_email: inv.parent_email, complimentary: !!inv.complimentary, complimentary_reason: inv.complimentary_reason ?? null,
+    },
+    event: eventForBooking(event),
+    sessions: sessionsOf(inv.event_id).map((s) => ({
+      id: s.id, session_date: s.session_date, start_time: s.start_time, end_time: s.end_time,
+      venue: s.venue, notes: null, cancelled_at: s.cancelled_at, moved_from_date: s.moved_from_date,
+    })),
+    existing_booking: booking ? { id: booking.id, status: booking.status } : null,
+  };
+}
+
+/** get-booking-status, mirroring the real function (the ticket is withheld on the booking_id path). */
+function bookingStatusResponse(body) {
+  let booking = null;
+  let sessionTicket = null;
+  if (body.qr_token) {
+    sessionTicket = T.session_tickets.find((t) => t.qr_token === body.qr_token) ?? null;
+    const seasonTicket = sessionTicket ? null : T.tickets.find((t) => t.qr_token === body.qr_token);
+    const bookingId = sessionTicket?.booking_id ?? seasonTicket?.booking_id;
+    if (!bookingId) return { error: "Ticket not found" };
+    booking = T.bookings.find((b) => b.id === bookingId) ?? null;
+  } else if (body.booking_id) {
+    booking = T.bookings.find((b) => b.id === body.booking_id) ?? null;
+  }
+  if (!booking) return { error: "Booking not found" };
+  const provedOwnership = !!body.qr_token || !!body.session_id;
+  const e = T.events.find((x) => x.id === booking.event_id) ?? null;
+  const ticketRow = T.tickets.find((t) => t.booking_id === booking.id) ?? null;
+  const session = sessionTicket?.session_id ? T.event_sessions.find((s) => s.id === sessionTicket.session_id) ?? null : null;
+  const upcoming = sessionTicket ? [] : T.event_sessions
+    .filter((s) => s.event_id === booking.event_id && !s.cancelled_at && s.session_date >= TODAY)
+    .sort((a, b) => a.session_date.localeCompare(b.session_date))
+    .slice(0, 6)
+    .map((s) => ({ session_date: s.session_date, start_time: s.start_time, end_time: s.end_time, venue: s.venue, moved_from_date: s.moved_from_date }));
+  const scoped = sessionTicket
+    ? { qr_token: sessionTicket.qr_token, status: sessionTicket.status, scope: "session" }
+    : ticketRow ? { qr_token: ticketRow.qr_token, status: ticketRow.status, scope: "season" } : null;
+  return {
+    booking: {
+      status: booking.status, child_name: booking.child_name, parent_name: booking.parent_name,
+      session_slot: booking.session_slot, amount_pence: booking.amount_pence, paid_at: booking.paid_at,
+    },
+    event: e ? { title: e.title, location: e.location, event_date: e.event_date, programme_type: e.programme_type, cancelled_at: e.cancelled_at } : null,
+    session: session ? { id: session.id, session_date: session.session_date, start_time: session.start_time, end_time: session.end_time, venue: session.venue } : null,
+    upcoming_sessions: upcoming,
+    ticket: booking.status === "paid" && provedOwnership ? scoped : null,
+  };
+}
+
+const NO_PLAYER = { child_name: null, parent_name: null, session_slot: null, has_medical_notes: false, event_title: null, age_group: null, medical_notes: null };
+
+/** scan-ticket: every outcome is a 200, exactly as the real function answers. */
+function scanTicketResponse(body, user) {
+  const token = String(body?.qr_token ?? "").trim();
+  const bare = (result, message) => ({ ok: false, result, message, player: NO_PLAYER, session: null, event: null, booking_id: null, resolved_from: null });
+  if (token.length < 6) return bare("unknown", "That code is too short to be a ticket");
+  const sessionTicket = T.session_tickets.find((t) => t.qr_token === token) ?? null;
+  const seasonTicket = sessionTicket ? null : T.tickets.find((t) => t.qr_token === token) ?? null;
+  if (!sessionTicket && !seasonTicket) return bare("unknown", "This code is not a Suffolk Tennis ticket");
+  const bookingId = sessionTicket?.booking_id ?? seasonTicket.booking_id;
+  const booking = T.bookings.find((b) => b.id === bookingId) ?? null;
+  const eventRow = T.events.find((e) => e.id === (sessionTicket?.event_id ?? booking?.event_id)) ?? null;
+  const sessionRow = sessionTicket?.session_id
+    ? T.event_sessions.find((s) => s.id === sessionTicket.session_id) ?? null
+    : T.event_sessions.find((s) => s.event_id === booking?.event_id && s.session_date === TODAY) ?? null;
+  const child = booking ? T.children.find((c) => c.id === booking.child_id) : null;
+  const player = {
+    child_name: booking?.child_name ?? null, parent_name: booking?.parent_name ?? null,
+    session_slot: booking?.session_slot ?? null, has_medical_notes: false,
+    event_title: eventRow?.title ?? null, age_group: ageGroupOf(child?.date_of_birth ?? booking?.child_dob), medical_notes: null,
+  };
+  const session = sessionRow ? { id: sessionRow.id, session_date: sessionRow.session_date, start_time: sessionRow.start_time, end_time: sessionRow.end_time, venue: sessionRow.venue } : null;
+  const event = eventRow ? { id: eventRow.id, title: eventRow.title } : null;
+  const respond = (result, message) => ({ ok: result === "admitted", result, message, player, session, event, booking_id: bookingId, resolved_from: sessionTicket ? "qr" : "clock" });
+  const status = sessionTicket?.status ?? seasonTicket?.status;
+  if (status === "void") return respond("rejected_void", "Ticket has been cancelled");
+  if (!booking || booking.status !== "paid") return respond("rejected_unpaid", "Booking is not paid");
+  if (!session) return respond("no_session", "Season ticket — no session of this programme is running now");
+  const already = T.session_attendance.some((a) => a.booking_id === booking.id && a.session_id === session.id && a.status === "arrived");
+  if (already) return respond("duplicate", "Already scanned in");
+  T.session_attendance.push({
+    id: `a77e0000-0000-4000-8000-0000000060${pad2(T.session_attendance.length % 90)}`, booking_id: booking.id,
+    event_id: booking.event_id, session_id: session.id, child_id: booking.child_id, status: "arrived",
+    source: "scan", marked_at: nowIso(), marked_by: user?.id ?? ADMIN_ID, absence_notified_at: null,
+  });
+  return respond("admitted", "Admitted — welcome!");
+}
+
+function bookingFunctionResponse(name, body = {}, user = USERS.parent) {
+  switch (name) {
+    case "get-invitation": return getInvitationResponse(body?.token);
+    case "create-booking-checkout": {
+      const booking = bookAlfie(user);
+      // No Stripe page is ever shown: the mock settles the place the way the
+      // webhook does in production and the app lands on its own confirmed state.
+      return { free: true, booking_id: booking.id, amount_pence: booking.amount_pence, is_programme: true };
+    }
+    case "get-booking-status": return bookingStatusResponse(body ?? {});
+    case "scan-ticket": return scanTicketResponse(body ?? {}, user);
+    default: return null;
+  }
+}
+
+/** timetable_sessions(p_from, p_to): the Suffolk sessions behind this parent's paid bookings. */
+function timetableSessions(args = {}, user = USERS.parent) {
+  const from = args.p_from ?? "0000-01-01";
+  const to = args.p_to ?? "9999-12-31";
+  const rows = [];
+  for (const b of T.bookings) {
+    if (b.parent_user_id !== user.id || b.status !== "paid") continue;
+    const e = T.events.find((x) => x.id === b.event_id);
+    for (const s of T.event_sessions.filter((s) => s.event_id === b.event_id && !s.cancelled_at)) {
+      if (s.session_date < from || s.session_date > to) continue;
+      const att = T.session_attendance.find((a) => a.booking_id === b.id && a.session_id === s.id) ?? null;
+      const mins = s.start_time && s.end_time
+        ? (Number(s.end_time.slice(0, 2)) * 60 + Number(s.end_time.slice(3, 5))) - (Number(s.start_time.slice(0, 2)) * 60 + Number(s.start_time.slice(3, 5)))
+        : 60;
+      rows.push({
+        source_id: `auto:${s.id}:${b.id}`, child_id: b.child_id, title: e?.title ?? "Suffolk Tennis session",
+        category: "squad_training", event_date: s.session_date, start_time: s.start_time, end_time: s.end_time,
+        duration_minutes: mins, location: s.venue ?? e?.location ?? null,
+        attendance_status: att?.status ?? null, is_tournament: false,
+      });
+    }
+  }
+  return rows;
 }

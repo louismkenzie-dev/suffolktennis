@@ -3,7 +3,7 @@
 // to the clock in timing.json and captured at 1920×1080 (wide) or 1080×1920
 // (tall).
 //
-//   node record.mjs [--layout wide|tall|both] [--timing timing.json]
+//   node record.mjs [--project reports|booking] [--layout wide|tall|both] [--timing timing.json]
 //                   [--method screencast|playwright] [--format jpeg|png]
 //                   [--hero offline|live] [--timescale 2.5] [--uncap]
 //
@@ -63,7 +63,12 @@ import { PROGRAMME_TITLE, VENUE, TODAY, londonEpoch } from "./fixtures.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
-const OUT = path.join(HERE, "out");
+// Shared between projects: the transcoded hero clip and the relayed font cache
+// live in out/ whichever film is being recorded.
+const OUT_SHARED = path.join(HERE, "out");
+// Per-project output folder (out/ for the reports film, out-booking/ for the
+// booking film); set from --project in main().
+let OUT = OUT_SHARED;
 const STAGE_DIR = path.join(HERE, "stage");
 const APP = "http://127.0.0.1:4173";
 const STAGE_PORT = 4174;
@@ -91,14 +96,35 @@ const { chromium } = require(path.join(ROOT, "node_modules", "playwright"));
 const CLOCK = { coachStart: "13:57", coach: "13:58", parent: "14:12" };
 
 /* ------------------------------------------------------------------ */
+/* Projects                                                             */
+/* ------------------------------------------------------------------ */
+// Two films share this recorder. "reports" is the shipped Performance &
+// Reports advert and must keep behaving exactly as it did; "booking" is the
+// three-clip booking film, whose scene choreography lives in
+// drivers-booking.mjs so nothing above it has to change.
+const PROJECTS = {
+  reports: {
+    timing: "timing.json", out: "out", layouts: ["wide", "tall"], hero: true,
+    motionScenes: [4, 7, 8], leads: LEADS, drivers: null,
+  },
+  booking: {
+    // 16:9 only: the three clips are cut from one wide recording.
+    timing: "timing-booking.json", out: "out-booking", layouts: ["wide"], hero: false,
+    motionScenes: [2, 3, 4, 7, 11, 12, 14], leads: null, drivers: "./drivers-booking.mjs",
+  },
+};
+
+/* ------------------------------------------------------------------ */
 /* CLI                                                                  */
 /* ------------------------------------------------------------------ */
 
 function parseArgs(argv) {
-  const o = { layout: "both", timing: path.join(HERE, "timing.json"), method: "screencast", format: "jpeg", hero: "offline", timescale: TIMESCALE, uncap: false };
+  const o = { project: "reports", layout: null, timing: null, method: "screencast", format: "jpeg", hero: "offline", timescale: TIMESCALE, uncap: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--layout") o.layout = argv[++i];
+    if (a === "--project") o.project = argv[++i];
+    else if (a.startsWith("--project=")) o.project = a.slice(10);
+    else if (a === "--layout") o.layout = argv[++i];
     else if (a === "--timing") o.timing = path.resolve(argv[++i]);
     else if (a === "--method") o.method = argv[++i];
     else if (a === "--format") o.format = argv[++i];
@@ -113,8 +139,15 @@ function parseArgs(argv) {
     else if (a.startsWith("--hero=")) o.hero = a.slice(7);
     else throw new Error(`unknown argument ${a}`);
   }
+  if (!PROJECTS[o.project]) throw new Error(`--project must be one of ${Object.keys(PROJECTS).join(", ")} (got ${o.project})`);
+  const project = PROJECTS[o.project];
+  o.layout ??= project.layouts.length === 1 ? project.layouts[0] : "both";
+  o.timing = o.timing ?? path.join(HERE, project.timing);
   if (!["jpeg", "png"].includes(o.format)) throw new Error("--format must be jpeg or png");
   if (!["wide", "tall", "both"].includes(o.layout)) throw new Error(`--layout must be wide, tall or both (got ${o.layout})`);
+  for (const l of o.layout === "both" ? ["wide", "tall"] : [o.layout]) {
+    if (!project.layouts.includes(l)) throw new Error(`project ${o.project} has no ${l} layout (it records ${project.layouts.join(", ")} only)`);
+  }
   if (!["screencast", "playwright"].includes(o.method)) throw new Error(`--method must be screencast or playwright`);
   if (!["offline", "live"].includes(o.hero)) throw new Error(`--hero must be offline or live`);
   if (!(o.timescale >= 1 && o.timescale <= 6)) throw new Error(`--timescale must be between 1 and 6 (got ${o.timescale})`);
@@ -182,12 +215,12 @@ async function ensurePreview() {
 // seeks cheap (a seek decodes forward from the previous keyframe).
 const HERO_ENCODE = "vp9 crf28 g10";
 function ensureHero() {
-  const out = path.join(OUT, "hero.webm");
+  const out = path.join(OUT_SHARED, "hero.webm");
   const marker = `${out}.encode`;
   if (existsSync(out) && statSync(out).size > 0 && existsSync(marker) && readFileSync(marker, "utf8") === HERO_ENCODE) return out;
   const src = path.join(ROOT, "public", "hero-video.mov");
   console.log("[record] transcoding hero-video.mov → out/hero.webm (VP9)");
-  mkdirSync(OUT, { recursive: true });
+  mkdirSync(OUT_SHARED, { recursive: true });
   ffmpeg(["-i", src, "-an", "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "28", "-g", "10", "-row-mt", "1", "-cpu-used", "3", "-pix_fmt", "yuv420p", out], "hero transcode");
   writeFileSync(marker, HERO_ENCODE);
   return out;
@@ -201,7 +234,7 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=
 
 export async function stageServer() {
   const media = {
-    "/media/hero.webm": path.join(OUT, "hero.webm"),
+    "/media/hero.webm": path.join(OUT_SHARED, "hero.webm"),
     "/media/logo.png": path.join(ROOT, "public", "email", "logo.png"),
     "/media/mascot.png": path.join(ROOT, "public", "email", "mascot.png"),
   };
@@ -780,7 +813,14 @@ export function drivers({ page, frame, desk, ctx, stage, human, deskHuman, clock
 /* One layout                                                           */
 /* ------------------------------------------------------------------ */
 
-async function recordLayout(layout, timing, method, format, hero, timescale = 1, uncap = false) {
+async function recordLayout(layout, timing, method, format, hero, timescale = 1, uncap = false, projectId = "reports") {
+  const project = PROJECTS[projectId];
+  // The booking film brings its own scene drivers, its own device leads and
+  // its own time of day; everything else on the stage is shared.
+  const mod = project.drivers ? await import(project.drivers) : null;
+  const makeDrivers = mod ? mod.drivers : drivers;
+  const leads = project.leads ?? mod?.LEADS ?? {};
+  const clockStart = mod?.CLOCK_START ?? CLOCK.coachStart;
   const ts = method === "screencast" ? timescale : 1;
   const size = SIZES[layout];
   const total = timing.total_s ?? timing.scenes.reduce((m, s) => Math.max(m, s.start_s + s.duration_s), 0);
@@ -796,8 +836,9 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
   });
 
   // Scene 1 rendered frame by frame before the live pass (its own context).
+  // Only the reports film opens on the hero b-roll.
   const scene1 = timing.scenes.find((s) => s.id === 1);
-  const heroFrames = hero === "offline" && method === "screencast" && scene1 ? await renderHeroOffline(browser, layout, scene1, format) : [];
+  const heroFrames = project.hero && hero === "offline" && method === "screencast" && scene1 ? await renderHeroOffline(browser, layout, scene1, format) : [];
 
   const ctx = await browser.newContext({
     viewport: size, deviceScaleFactor: 1, hasTouch: true, locale: "en-GB", timezoneId: "Europe/London",
@@ -806,8 +847,9 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
   // No action may wait forever: a stuck locator must fail the scene, not the recording.
   ctx.setDefaultTimeout(12000);
   const issues = [];
-  // Freeze the time of day: the register is ended ~60 s from now, at ~13:58.
-  const clockOffsetMs = londonEpoch(TODAY, CLOCK.coachStart) + 20_000 - Date.now();
+  // Freeze the time of day: the reports register is ended ~60 s from now at
+  // ~13:58; the booking film plays out in the half hour before the session.
+  const clockOffsetMs = londonEpoch(TODAY, clockStart) + 20_000 - Date.now();
   await installMock(ctx, { user: "parent", clockOffsetMs });
   const page = await ctx.newPage();
   const pageCreatedAt = Date.now();
@@ -821,8 +863,15 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
   if (!ready.heroReady) issues.push("hero clip not ready before recording");
 
   const frame = page.frame({ name: "app" });
-  await frame.goto(`${APP}/parent-hub`, { waitUntil: "domcontentloaded" });
-  await frame.getByRole("button", { name: "Alfie Barker's performance & reports", exact: true }).waitFor({ timeout: 20000 });
+  const desk0 = layout === "wide" ? page.frame({ name: "desk" }) : null;
+  if (mod?.prepare) {
+    // A project with its own opening state loads both devices itself.
+    page.on("popup", (p) => p.close().catch(() => {}));
+    await mod.prepare({ ctx, page, frame, desk: desk0, app: APP, stageUrl: STAGE });
+  } else {
+    await frame.goto(`${APP}/parent-hub`, { waitUntil: "domcontentloaded" });
+    await frame.getByRole("button", { name: "Alfie Barker's performance & reports", exact: true }).waitFor({ timeout: 20000 });
+  }
   const appFonts = await frame.evaluate(async () => {
     await document.fonts.ready;
     const fams = new Set([...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family.replace(/"/g, "")));
@@ -832,11 +881,13 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
 
   // The desktop window: 16:9 only (stage.js removes the whole zone in the tall
   // layout, so the second iframe is never created there).
-  const desk = layout === "wide" ? page.frame({ name: "desk" }) : null;
+  const desk = desk0;
   if (layout === "wide" && !desk) issues.push("desktop iframe missing from the wide stage");
   if (desk) {
-    await desk.goto(`${APP}/parent-hub`, { waitUntil: "domcontentloaded" });
-    await desk.getByRole("button", { name: "Alfie Barker's performance & reports", exact: true }).waitFor({ timeout: 20000 });
+    if (!mod?.prepare) {
+      await desk.goto(`${APP}/parent-hub`, { waitUntil: "domcontentloaded" });
+      await desk.getByRole("button", { name: "Alfie Barker's performance & reports", exact: true }).waitFor({ timeout: 20000 });
+    }
     const dsize = await desk.evaluate(() => ({ w: document.documentElement.clientWidth, h: document.documentElement.clientHeight, sw: document.documentElement.scrollWidth }));
     if (dsize.w !== 1440 || dsize.h !== 900) issues.push(`desktop viewport is ${dsize.w}x${dsize.h}, expected 1440x900`);
     if (dsize.sw > dsize.w + 1) issues.push(`desktop page scrolls horizontally (${dsize.sw} > ${dsize.w})`);
@@ -864,7 +915,7 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
   // phone instead. Nothing is lost - headless Chromium never draws a cursor.
   const human = makeHuman(page, frame, { ts, quiet: () => false, pad: 72 });
   const deskHuman = desk ? makeHuman(page, desk, { ts, quiet: () => true, pad: 96 }) : null;
-  const D = drivers({ page, frame, desk, ctx, stage, human, deskHuman, clock, ts, issues });
+  const D = makeDrivers({ page, frame, desk, ctx, stage, human, deskHuman, clock, ts, issues, app: APP, stageUrl: STAGE });
 
   let sc = null;
   if (method === "screencast") {
@@ -939,10 +990,10 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
     }
     // Motion-heavy scenes (4 rating taps, 7 report scrolls, 8 trend scroll):
     // this is the number the judder is judged on.
-    const motion = [4, 7, 8].map((id) => timing.scenes.find((x) => x.id === id)).filter(Boolean).map((x) => [x.start_s, x.start_s + x.duration_s]);
+    const motion = project.motionScenes.map((id) => timing.scenes.find((x) => x.id === id)).filter(Boolean).map((x) => [x.start_s, x.start_s + x.duration_s]);
     smoothness = {
       ...gapStats(live, motion),
-      scenes: [4, 7, 8],
+      scenes: project.motionScenes,
       overall: gapStats(live, [[timing.scenes[1]?.start_s ?? 0, total]]),
       fps_out: FPS,
       timescale: ts,
@@ -950,7 +1001,7 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
       source_frames: sourceFrames,
       ...repeatedTicks(frames, total),
       ...(duplicateFrames(outFile, Math.round(total * FPS)) ?? {}),
-      method: `Page.startScreencast jpeg q${JPEG_QUALITY} everyNthFrame 1 with a per-frame requestAnimationFrame repaint pump, driven at ${ts}x slow motion and timestamped from metadata.timestamp; muxed through an ffmpeg concat list carrying each frame's exact duration and resampled to ${FPS} fps cfr. Gaps are inter-frame deltas in video seconds over scenes 4, 7 and 8; duplicate_frames is mpdecimate on the finished webm (scene 1 is rendered offline at ${HERO_FPS} fps, so 1 in 2 of its output frames is a legitimate repeat).`,
+      method: `Page.startScreencast jpeg q${JPEG_QUALITY} everyNthFrame 1 with a per-frame requestAnimationFrame repaint pump, driven at ${ts}x slow motion and timestamped from metadata.timestamp; muxed through an ffmpeg concat list carrying each frame's exact duration and resampled to ${FPS} fps cfr. Gaps are inter-frame deltas in video seconds over scenes ${project.motionScenes.join(", ")}; duplicate_frames is mpdecimate on the finished webm (scene 1 is rendered offline at ${HERO_FPS} fps, so 1 in 2 of its output frames is a legitimate repeat).`,
     };
     console.log(`[record] ${layout}: smoothness ${JSON.stringify({ median_gap_ms: smoothness.median_gap_ms, p95_gap_ms: smoothness.p95_gap_ms, fps: smoothness.fps, repeated_frames: smoothness.repeated_frames, duplicate_frames: smoothness.duplicate_frames })}`);
     writeFileSync(path.join(OUT, `${layout}.frames.json`), JSON.stringify({ format: sc.format, t0: sc.t0, hero: heroFrames.length ? "offline" : "live", frames: live.map((f) => [f.i, +f.t.toFixed(3)]) }));
@@ -966,7 +1017,7 @@ async function recordLayout(layout, timing, method, format, hero, timescale = 1,
     issues.push(`playwright video starts ${leadS}s before scene 1 (lead not trimmed)`);
   }
 
-  const summary = { layout, method, format: method === "screencast" ? format : "webm(vp8)", size, fps: FPS, total_s: total, lead_s: leadS, hero: heroFrames.length ? "offline" : "live", timescale: ts, devices: desk ? { desktop: "1440x900 iframe", phone: "390x844 iframe", leads: LEADS } : { phone: "390x844 iframe" }, smoothness, clock: CLOCK, timing: path.basename(process.env.RECORD_TIMING ?? "timing.json"), scenes: actual, stills: stills.sort(), issues, recorded_at: new Date().toISOString() };
+  const summary = { project: projectId, layout, method, format: method === "screencast" ? format : "webm(vp8)", size, fps: FPS, total_s: total, lead_s: leadS, hero: heroFrames.length ? "offline" : "live", timescale: ts, devices: desk ? { desktop: "1440x900 iframe", phone: "390x844 iframe", leads } : { phone: "390x844 iframe" }, smoothness, clock: mod?.CLOCK ?? CLOCK, timing: path.basename(process.env.RECORD_TIMING ?? project.timing), scenes: actual, stills: stills.sort(), issues, recorded_at: new Date().toISOString() };
   writeFileSync(path.join(OUT, `${layout}.scenes.json`), JSON.stringify(summary, null, 2));
   console.log(`[record] ${layout}: wrote ${outFile}`);
   return summary;
@@ -980,20 +1031,23 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.layout === "both") {
     for (const layout of ["wide", "tall"]) {
-      const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--layout", layout, "--timing", opts.timing, "--method", opts.method, "--format", opts.format, "--hero", opts.hero, "--timescale", String(opts.timescale), ...(opts.uncap ? ["--uncap"] : [])], { stdio: "inherit", cwd: HERE });
+      const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--project", opts.project, "--layout", layout, "--timing", opts.timing, "--method", opts.method, "--format", opts.format, "--hero", opts.hero, "--timescale", String(opts.timescale), ...(opts.uncap ? ["--uncap"] : [])], { stdio: "inherit", cwd: HERE });
       if (r.status !== 0) { console.error(`[record] ${layout} failed with status ${r.status}`); process.exit(r.status ?? 1); }
     }
     return;
   }
   const timing = JSON.parse(readFileSync(opts.timing, "utf8"));
   process.env.RECORD_TIMING = opts.timing;
+  OUT = path.join(HERE, PROJECTS[opts.project].out);
   mkdirSync(OUT, { recursive: true });
+  // The stage always carries the hero layer, even in a film that never shows
+  // it, so the clip is transcoded once and served from out/ either way.
   ensureHero();
   await ensurePreview();
   const server = await stageServer();
   try {
-    const summary = await recordLayout(opts.layout, timing, opts.method, opts.format, opts.hero, opts.timescale, opts.uncap);
-    console.log(JSON.stringify({ layout: summary.layout, method: summary.method, hero: summary.hero, smoothness: summary.smoothness && { median_gap_ms: summary.smoothness.median_gap_ms, p95_gap_ms: summary.smoothness.p95_gap_ms, fps: summary.smoothness.fps, fps_out: summary.smoothness.fps_out, duplicate_frames: summary.smoothness.duplicate_frames }, issues: summary.issues, scenes: summary.scenes.map((s) => [s.id, s.start_s, s.end_s]) }));
+    const summary = await recordLayout(opts.layout, timing, opts.method, opts.format, opts.hero, opts.timescale, opts.uncap, opts.project);
+    console.log(JSON.stringify({ project: summary.project, layout: summary.layout, method: summary.method, hero: summary.hero, smoothness: summary.smoothness && { median_gap_ms: summary.smoothness.median_gap_ms, p95_gap_ms: summary.smoothness.p95_gap_ms, fps: summary.smoothness.fps, fps_out: summary.smoothness.fps_out, duplicate_frames: summary.smoothness.duplicate_frames }, issues: summary.issues, scenes: summary.scenes.map((s) => [s.id, s.start_s, s.end_s]) }));
   } finally {
     server.close();
   }

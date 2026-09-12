@@ -95,13 +95,15 @@ export const LAYOUTS = {
 // CHAPTER_MS (stage/stage.js) then lifts over the 0.3 s .layer fade. Captions
 // that start under the card are centred and slide across as it lifts.
 const CHAPTER_CARD = { scenes: [3, 6], holdS: 1.5, fadeS: 0.3 };
-const FULL_FRAME_LINES = new Set([1, 9]);
+const FULL_FRAME_LINES = [1, 9];
 
 // Which zone a caption event uses: "safe" beside the phone, "full" centred on
-// the frame (wide), "end" above the mascot (tall).
-function zoneFor(layout, lineId) {
-  if (layout === "wide" && FULL_FRAME_LINES.has(lineId)) return "full";
-  if (layout === "tall" && lineId === 9) return "end";
+// the frame (wide), "end" above the mascot (tall). Which lines are full-frame
+// is per film: the reports cut opens on the hero (1) and closes on the end
+// card (9); the booking cut ends each of its three clips on one (5, 10, 15).
+function zoneFor(layout, lineId, fullFrame) {
+  if (layout === "wide" && fullFrame.has(lineId)) return "full";
+  if (layout === "tall" && fullFrame.has(lineId)) return "end";
   return "safe";
 }
 
@@ -361,21 +363,30 @@ function spokenWords(line) {
   return words.map((w) => ({ ...w, norm: norm(w.text) }));
 }
 
-function findWord(words, target, from) {
+/**
+ * Where `target` is spoken. `strict` refuses a partial match that covers less
+ * than 60 % of the caption word: without it "suffolktennis.online" matches the
+ * bare "Suffolk" a few words earlier and the caption leaves the screen while
+ * the line is still being read. It is off by default so the approved reports
+ * cut keeps its exact caption timings.
+ */
+function findWord(words, target, from, strict = false) {
   const t = norm(target);
   if (!t) return -1;
   for (let i = from; i < words.length; i++) if (words[i].norm === t) return i;
   if (t.length >= 4) {
     for (let i = from; i < words.length; i++) {
       const n = words[i].norm;
-      if (n.length >= 4 && (n.startsWith(t) || t.startsWith(n))) return i;
+      if (n.length < 4) continue;
+      if (n.startsWith(t)) return i;
+      if (t.startsWith(n) && (!strict || n.length >= t.length * 0.6)) return i;
     }
   }
   return -1;
 }
 
 // Time chunks of one caption against the alignment of the same script line.
-function timeChunksFromAlignment(chunks, line, offset) {
+function timeChunksFromAlignment(chunks, line, offset, strict = false) {
   const words = spokenWords(line);
   const lineStart = line.start_s + offset, lineEnd = line.end_s + offset;
   const spans = [];
@@ -384,8 +395,8 @@ function timeChunksFromAlignment(chunks, line, offset) {
   let charsSoFar = 0;
   for (const chunk of chunks) {
     const cw = chunk.split(/\s+/).filter(Boolean);
-    const iFirst = findWord(words, cw[0], cursor);
-    const iLast = iFirst >= 0 ? findWord(words, cw[cw.length - 1], iFirst) : -1;
+    const iFirst = findWord(words, cw[0], cursor, strict);
+    const iLast = iFirst >= 0 ? findWord(words, cw[cw.length - 1], iFirst, strict) : -1;
     // Proportional fallback when the caption text has no spoken counterpart.
     const propStart = lineStart + ((lineEnd - lineStart) * charsSoFar) / totalChars;
     const propEnd = lineStart + ((lineEnd - lineStart) * (charsSoFar + chunk.length)) / totalChars;
@@ -466,9 +477,19 @@ export function buildCaptions({
   outDir = OUT,
   voOffset = null,
   quiet = false,
+  // Per-project: which lines are full-frame (hero / end card) and which
+  // scenes open on a chapter card the caption has to slide out from under.
+  fullFrameLines = FULL_FRAME_LINES,
+  chapterScenes = CHAPTER_CARD.scenes,
+  // One clip cut out of a longer timeline: keep the events inside
+  // [start, end) and re-time them to the clip's own zero.
+  window: win = null,
+  name = layout,
+  strictWordMatch = false,
 } = {}) {
   const geo = LAYOUTS[layout];
   if (!geo) throw new Error(`unknown layout ${layout}; use wide or tall`);
+  const fullFrame = new Set(fullFrameLines);
   const script = JSON.parse(readFileSync(scriptPath, "utf8"));
   const timing = JSON.parse(readFileSync(timingPath, "utf8"));
   const alignment = alignmentPath === "none" ? null : loadAlignment(alignmentPath);
@@ -497,13 +518,19 @@ export function buildCaptions({
   const sceneById = new Map(timing.scenes.map((s) => [s.id, s]));
   const alignById = new Map((alignment?.lines ?? []).map((l) => [l.id, l]));
 
-  const lines = [...script.lines].sort((a, b) => a.id - b.id);
+  // A one-film script has a flat `lines` array; a multi-clip one (the booking
+  // film) authors its lines per clip, and they are numbered across the whole
+  // recording, exactly as the alignment and the timing file number them.
+  let n = 0;
+  const scriptLines = script.lines ?? (script.clips ?? []).flatMap((c) => c.lines.map((l) => ({ ...l, id: ++n, clip: c.id })));
+  if (!scriptLines.length) throw new Error(`${scriptPath}: no script lines`);
+  const lines = [...scriptLines].sort((a, b) => a.id - b.id);
   const perLine = lines.map((line) => {
     const chunks = chunkCaption(line.caption ?? line.text, measure, maxTextW);
     const al = alignById.get(line.id);
     const scene = sceneById.get(line.id);
     let spans;
-    if (al) spans = timeChunksFromAlignment(chunks, al, offset);
+    if (al) spans = timeChunksFromAlignment(chunks, al, offset, strictWordMatch);
     else if (scene) spans = timeChunksFromScene(chunks, scene);
     else throw new Error(`no timing for script line ${line.id} (neither alignment nor timing.json scene)`);
     return { line, spans };
@@ -521,7 +548,7 @@ export function buildCaptions({
       const textLines = breakLines(span.text, measure, maxTextW);
       if (!textLines) throw new Error(`caption chunk does not fit in two lines: "${span.text}"`);
       const textW = Math.max(...textLines.map(measure));
-      const box = pillBox(geo, textW, textLines.length, lineH, zoneFor(layout, line.id));
+      const box = pillBox(geo, textW, textLines.length, lineH, zoneFor(layout, line.id, fullFrame));
       // Hard guarantee: <= 2 lines and inside its zone (and it would fit the
       // safe box too, since widths are measured against the safe box).
       if (textLines.length > 2) throw new Error(`${layout}: caption for line ${line.id} wrapped to ${textLines.length} lines: "${span.text}"`);
@@ -533,7 +560,7 @@ export function buildCaptions({
       // the card and slides to the text-zone position as the card lifts.
       let move = null;
       const scene = sceneById.get(line.id);
-      if (layout === "wide" && scene && CHAPTER_CARD.scenes.includes(line.id) && box.zone === "safe") {
+      if (layout === "wide" && scene && chapterScenes.includes(line.id) && box.zone === "safe") {
         const cardHoldEnd = scene.start_s + CHAPTER_CARD.holdS;
         if (start < cardHoldEnd) {
           const centred = pillBox(geo, textW, textLines.length, lineH, "full");
@@ -543,6 +570,16 @@ export function buildCaptions({
       events.push({ id: line.id, chunk: i, start, end, lines: textLines.map(unglue), matched: span.matched, ...box, move });
     });
   });
+
+  // A clip of a longer film: drop the captions outside it and re-zero the rest.
+  let clipped = events;
+  if (win) {
+    clipped = events
+      .filter((e) => e.end > win.start + 0.05 && e.start < win.end - 0.05)
+      .map((e) => ({ ...e, start: Math.max(0, e.start - win.start), end: Math.min(win.end, e.end) - win.start }));
+    events.length = 0;
+    events.push(...clipped);
+  }
 
   const styles = [
     `Style: Caption,${font.family},${assFontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1`,
@@ -579,7 +616,7 @@ export function buildCaptions({
   ].join("\n");
 
   mkdirSync(outDir, { recursive: true });
-  const assPath = path.join(outDir, `${layout}.ass`);
+  const assPath = path.join(outDir, `${name}.ass`);
   writeFileSync(assPath, ass);
   const timingSource = alignment ? `alignment (${path.relative(HERE, alignmentPath)})` : `timing.json (${path.relative(HERE, timingPath)})`;
   if (!quiet) {
@@ -601,6 +638,7 @@ export function makeSampleAlignment({
   outPath = path.join(AUDIO, "alignment.sample.json"),
   charsPerSecond = 15,
 } = {}) {
+  const fullFrame = new Set(fullFrameLines);
   const script = JSON.parse(readFileSync(scriptPath, "utf8"));
   const timing = JSON.parse(readFileSync(timingPath, "utf8"));
   const sceneById = new Map(timing.scenes.map((s) => [s.id, s]));
