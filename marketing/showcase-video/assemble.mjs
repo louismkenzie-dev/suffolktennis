@@ -3,17 +3,24 @@
 //
 //   node assemble.mjs [--layout wide|tall|both] [--video <path>] [--audio-dir <dir>]
 //                     [--alignment <path>|none] [--preset slow] [--crf 18]
-//                     [--music-db -14] [--duration <s>] [--dry-run] [--verbose]
+//                     [--music-db -14] [--duration <s>] [--upsample dup|mci]
+//                     [--no-check-captions] [--dry-run] [--verbose]
 //
 // Inputs (BRIEF.md "Assembly"): out/<layout>.webm (1920x1080 / 1080x1920,
-// 25 fps), audio/vo.mp3 + audio/alignment.json + audio/music.mp3 when they
+// 50 fps), audio/vo.mp3 + audio/alignment.json + audio/music.mp3 when they
 // exist, script.json and timing.json. Captions come from captions.mjs (ASS,
 // burned in with the `ass` filter). Without audio/vo.mp3 the cut is silent
 // (music alone is still used when present). Music is ducked under the
 // narration with sidechaincompress, fades in over 1.5 s and out over the
-// last 3 s. Video: libx264 crf 18 preset slow yuv420p 25 fps +faststart;
-// audio: aac 192k. Outputs out/suffolk-performance-reports-16x9.mp4 and
-// out/suffolk-performance-reports-9x16.mp4.
+// last 3 s of the end card. Video: libx264 crf 18 preset slow yuv420p 50 fps
+// +faststart; audio: aac 192k. Outputs out/suffolk-performance-reports-16x9.mp4
+// and out/suffolk-performance-reports-9x16.mp4.
+//
+// v2 frame rate: the deliverable is ALWAYS 50 fps. A 50 fps recording is
+// passed through frame for frame; anything slower is resampled up to 50 and
+// the fact is logged loudly (and repeated in the closing summary) because a
+// resampled cut is not genuinely smoother than its source -- the fix is to
+// re-record at 50 fps, not to re-encode.
 
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -24,8 +31,17 @@ import { buildCaptions, HERE, LAYOUTS } from "./captions.mjs";
 const OUT = path.join(HERE, "out");
 const AUDIO = path.join(HERE, "audio");
 const NAVY = "0x0E1D39";
-const FPS = 25;
+const FPS = 50;          // v2 deliverable frame rate. Never encode below this.
+const FPS_SLACK = 0.6;   // a 50000/1001 (49.95) source still counts as native
 const OUTPUTS = { wide: "suffolk-performance-reports-16x9.mp4", tall: "suffolk-performance-reports-9x16.mp4" };
+const warnings = [];
+const loud = (...lines) => {
+  const bar = "!".repeat(72);
+  console.warn(`\n[assemble] ${bar}`);
+  for (const l of lines) console.warn(`[assemble] !! ${l}`);
+  console.warn(`[assemble] ${bar}\n`);
+  warnings.push(lines[0]);
+};
 
 /* ------------------------------------------------------------------ */
 /* ffmpeg                                                               */
@@ -57,6 +73,17 @@ function findFfprobe(ffmpeg) {
   const sibling = path.join(path.dirname(ffmpeg), "ffprobe");
   if (existsSync(sibling)) return sibling;
   if (process.env.FFPROBE_PATH && existsSync(process.env.FFPROBE_PATH)) return process.env.FFPROBE_PATH;
+  const require = createRequire(import.meta.url);
+  for (const spec of ["ffprobe-static"]) {
+    try {
+      const m = require(spec);
+      const p = typeof m === "string" ? m : m?.path;
+      if (p && existsSync(p)) return p;
+    } catch { /* not installed here */ }
+  }
+  // ffmpeg-static ships no ffprobe; the scratchpad build of this project has one.
+  const scratch = "/tmp/claude-0/-home-user-suffolktennis/c5bd7322-1f33-58c2-8b7e-d417e6049455/scratchpad/ffm/node_modules/ffprobe-static/bin/linux/x64/ffprobe";
+  if (existsSync(scratch)) return scratch;
   const which = spawnSync("which", ["ffprobe"], { encoding: "utf8" });
   return which.status === 0 && which.stdout.trim() ? which.stdout.trim() : null;
 }
@@ -66,14 +93,14 @@ function findFfprobe(ffmpeg) {
 function probe(ffmpeg, file) {
   const ffprobe = findFfprobe(ffmpeg);
   if (ffprobe) {
-    const r = spawnSync(ffprobe, ["-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,r_frame_rate,pix_fmt,sample_rate,channels,bit_rate", "-of", "json", file], { encoding: "utf8" });
+    const r = spawnSync(ffprobe, ["-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,r_frame_rate,avg_frame_rate,nb_frames,pix_fmt,profile,sample_rate,channels,bit_rate", "-of", "json", file], { encoding: "utf8" });
     if (r.status === 0) {
       const j = JSON.parse(r.stdout);
       return {
         tool: "ffprobe",
         duration: Number(j.format?.duration),
         streams: (j.streams ?? []).map((s) => (s.codec_type === "video"
-          ? { type: "video", codec: s.codec_name, width: s.width, height: s.height, fps: evalRate(s.r_frame_rate), pix_fmt: s.pix_fmt }
+          ? { type: "video", codec: s.codec_name, profile: s.profile, width: s.width, height: s.height, fps: evalRate(s.r_frame_rate), avgFps: evalRate(s.avg_frame_rate), frames: Number(s.nb_frames) || undefined, pix_fmt: s.pix_fmt }
           : { type: s.codec_type, codec: s.codec_name, sample_rate: Number(s.sample_rate), channels: s.channels, bit_rate: Number(s.bit_rate) || undefined })),
       };
     }
@@ -111,7 +138,11 @@ function decodeDuration(ffmpeg, file) {
 const fmtSummary = (p) => {
   const parts = [`duration ${p.duration.toFixed(2)} s`];
   for (const s of p.streams) {
-    if (s.type === "video") parts.push(`video ${s.codec} ${s.width}x${s.height} ${Number(s.fps).toFixed(2)} fps ${s.pix_fmt ?? ""}`.trim());
+    if (s.type === "video") {
+      const fps = `${Number(s.fps).toFixed(2)} fps`;
+      const avg = Number.isFinite(s.avgFps) && Math.abs(s.avgFps - s.fps) > 0.01 ? ` (avg ${Number(s.avgFps).toFixed(2)})` : "";
+      parts.push(`video ${s.codec} ${s.width}x${s.height} ${fps}${avg} ${s.pix_fmt ?? ""}${s.frames ? ` ${s.frames} frames` : ""}`.trim());
+    }
     else parts.push(`audio ${s.codec} ${s.sample_rate} Hz ${s.channels}${s.bit_rate ? ` ${Math.round(s.bit_rate / 1000)} kb/s` : ""}`);
   }
   return `${parts.join(" | ")}  (${p.tool})`;
@@ -120,6 +151,96 @@ const fmtSummary = (p) => {
 // Escape a path for use inside an ffmpeg filter option value.
 const filterPath = (p) => p.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/:/g, "\\:").replace(/,/g, "\\,").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
 const n2 = (n) => Number(n.toFixed(3));
+
+/* ------------------------------------------------------------------ */
+/* Frame rate (v2: smoothness is the top priority)                      */
+/* ------------------------------------------------------------------ */
+// The deliverable is 50 fps, full stop. Decide how to get there from whatever
+// the recorder handed us, and say out loud which of the two happened.
+function frameRatePlan(videoStream, label, opts) {
+  const src = Number(videoStream.avgFps ?? videoStream.fps);
+  const mci = `minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`;
+
+  if (!Number.isFinite(src) || src <= 0) {
+    loud(
+      `FRAME RATE: cannot read the frame rate of ${label}.`,
+      `Forcing the output to ${FPS} fps anyway. If the source was slower, the cut`,
+      `will judder exactly as much as the source did.`,
+    );
+    return { mode: "unknown", srcFps: null, filter: `fps=${FPS}` };
+  }
+  if (src >= FPS - FPS_SLACK) {
+    console.log(`[assemble] frame rate: source ${src.toFixed(2)} fps -> ${FPS} fps NATIVE (every recorded frame kept, no resampling).`);
+    return { mode: "native", srcFps: src, filter: `fps=${FPS}` };
+  }
+
+  const how = opts.upsample === "mci"
+    ? `motion-interpolated (${mci.split("=")[0]}, mi_mode=mci) - smoother, but it can warp scrolling UI text`
+    : "frame-duplicated (fps filter) - artefact-free, but NOT actually smoother than the source";
+  loud(
+    `FRAME RATE: ${label} is only ${src.toFixed(2)} fps, below the ${FPS} fps deliverable.`,
+    `The output is NOT being dropped to ${src.toFixed(2)} fps - it is still encoded at ${FPS} fps,`,
+    `RESAMPLED UP: ${how}.`,
+    `The client's number one note on v1 was judder. Re-record at ${FPS} fps`,
+    `(node record.mjs) so this path is never taken; --upsample mci is a stopgap.`,
+  );
+  return { mode: opts.upsample === "mci" ? "resampled-mci" : "resampled-dup", srcFps: src, filter: opts.upsample === "mci" ? mci : `fps=${FPS}` };
+}
+
+// A container can claim 50 fps while the picture underneath it only moves 30
+// times a second, because record.mjs padded out the frames it missed. That is
+// exactly the v1 judder, and only the recorder's own report can see it.
+function captureRateReport(layout, video, rate) {
+  if (path.resolve(video) !== path.join(OUT, `${layout}.webm`)) return null; // a --video from elsewhere
+  const file = path.join(OUT, `${layout}.scenes.json`);
+  if (!existsSync(file)) return null;
+  // record.mjs writes the report after the webm; an older report belongs to a
+  // previous take and would raise a false alarm about this one.
+  try {
+    if (statSync(file).mtimeMs + 1000 < statSync(video).mtimeMs) {
+      console.warn(`[assemble] WARNING: ${path.relative(HERE, file)} is older than the recording - skipping the capture-rate check. Re-run "node record.mjs" so the two match.`);
+      return null;
+    }
+  } catch {
+    return null; // the recording moved under us; the encode will report it
+  }
+  let j;
+  try { j = JSON.parse(readFileSync(file, "utf8")); } catch { return null; }
+  const scenes = (j.scenes ?? []).filter((s) => Number.isFinite(s.captured_fps));
+  if (!scenes.length) return null;
+  const worst = scenes.reduce((a, b) => (b.captured_fps < a.captured_fps ? b : a));
+  const mean = scenes.reduce((n, s) => n + s.captured_fps, 0) / scenes.length;
+  console.log(`[assemble] capture rate (${path.relative(HERE, file)}): nominal ${j.fps} fps, mean ${mean.toFixed(1)} fps, worst scene ${worst.id} at ${worst.captured_fps} fps`);
+  // record.mjs also measures inter-frame gaps, which catch a stutter that an
+  // average frame rate hides: one 60 ms hitch reads as judder even at 50 fps.
+  const sm = j.smoothness;
+  const p95 = sm?.p95_gap_ms ?? sm?.overall?.p95_gap_ms;
+  if (sm) {
+    console.log(`[assemble] smoothness: p95 gap ${p95} ms, max ${sm.max_gap_ms ?? sm.overall?.max_gap_ms} ms (${(1000 / FPS).toFixed(0)} ms is one frame), ${sm.repeated_pct ?? "?"}% repeated frames`);
+    const budget = (1000 / FPS) * 1.6;
+    if (Number.isFinite(p95) && p95 > budget) {
+      loud(
+        `SMOOTHNESS: the ${layout} recording's p95 inter-frame gap is ${p95} ms, over the ${budget.toFixed(0)} ms budget`,
+        `for ${FPS} fps. One frame is ${(1000 / FPS).toFixed(0)} ms, so the slowest 5 % of frames hold for`,
+        `${(p95 / (1000 / FPS)).toFixed(1)} frame times and will read as a hitch. Fix it in record.mjs.`,
+      );
+    }
+  }
+  // A scene averaging a little under 50 with healthy gaps just had a few slow
+  // frames; sustained under-capture is what reads as judder, so the loud box
+  // is reserved for that (and for the p95 gap check above).
+  if (worst.captured_fps < FPS * 0.75) {
+    loud(
+      `CAPTURE RATE: scene ${worst.id} of the ${layout} recording was captured at only ${worst.captured_fps} fps`,
+      `(mean ${mean.toFixed(1)}, nominal ${j.fps}). Frames were padded out at record time, so the`,
+      `container can say ${FPS} fps while the picture still moves like ${Math.round(worst.captured_fps)} fps.`,
+      `That is the v1 judder. Fix it in record.mjs - re-encoding here cannot.`,
+    );
+  } else if (worst.captured_fps < FPS) {
+    console.log(`[assemble] (scene ${worst.id} dipped below ${FPS} fps but the gap distribution is within budget, so it should not read as a hitch.)`);
+  }
+  return { mean, worst: worst.captured_fps, nominal: j.fps, worstScene: worst.id };
+}
 
 /* ------------------------------------------------------------------ */
 /* One layout                                                           */
@@ -153,18 +274,23 @@ async function assembleLayout(layout, opts, ffmpeg) {
   const lastCaptionEnd = Math.max(...captions.events.map((e) => e.end));
   if (lastCaptionEnd > D + 0.05) console.warn(`[assemble] WARNING: captions run to ${lastCaptionEnd.toFixed(2)} s, beyond the ${D} s output`);
   console.log(`[assemble] audio: vo ${hasVo ? "yes" : "no (silent cut)"}, music ${hasMusic ? "yes" : "no"}; captions ${captions.events.length} events, font ${captions.fontFamily}${captions.fontFallback ? " (FALLBACK)" : ""}, timed from ${captions.timingSource}`);
+  if (captions.fontFallback) loud(`CAPTIONS: Hanken Grotesk could not be fetched; falling back to ${captions.fontFamily}.`);
+  const captionCheck = opts.checkCaptions && !opts.dryRun ? checkCaptionOcclusion(ffmpeg, video, layout, captions) : null;
 
   const inputs = ["-i", video];
   let idx = 1, voIdx = -1, musicIdx = -1;
   if (hasVo) { inputs.push("-i", vo); voIdx = idx++; }
   if (hasMusic) { inputs.push("-i", music); musicIdx = idx++; }
 
+  const rate = frameRatePlan(vs, path.relative(HERE, video), opts);
+  const capture = captureRateReport(layout, video, rate);
+
   const voOffset = timing.vo_offset_s ?? 0;
   const fadeOutStart = n2(Math.max(0, D - 1.0));
   const vchain = [
     `[0:v]trim=0:${D},setpts=PTS-STARTPTS`,
-    `fps=${FPS}`,
     `scale=${geo.w}:${geo.h}:flags=lanczos`,
+    rate.filter,
     "setsar=1",
     "format=yuv420p",
     `ass=filename='${filterPath(captions.assPath)}':fontsdir='${filterPath(captions.fontsDir)}'`,
@@ -197,7 +323,8 @@ async function assembleLayout(layout, opts, ffmpeg) {
     "-filter_complex", [vchain, ...achain].join(";"),
     "-map", "[vout]",
     ...(achain.length ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : ["-an"]),
-    "-c:v", "libx264", "-crf", String(opts.crf), "-preset", opts.preset, "-pix_fmt", "yuv420p", "-r", String(FPS),
+    "-c:v", "libx264", "-crf", String(opts.crf), "-preset", opts.preset, "-pix_fmt", "yuv420p",
+    "-r", String(FPS), "-fps_mode", "cfr",
     "-movflags", "+faststart", "-t", String(D),
     outFile,
   ];
@@ -219,14 +346,127 @@ async function assembleLayout(layout, opts, ffmpeg) {
   if (!ov || ov.width !== geo.w || ov.height !== geo.h) throw new Error(`${outFile}: expected ${geo.w}x${geo.h}, got ${ov?.width}x${ov?.height}`);
   if (Math.abs(result.duration - D) > 0.25) throw new Error(`${outFile}: expected ${D} s, got ${result.duration.toFixed(2)} s`);
   if (achain.length && !result.streams.some((s) => s.type === "audio")) throw new Error(`${outFile}: audio stream missing`);
-  return { file: outFile, summary: result };
+  // The whole point of v2: never ship below 50 fps, whatever came in.
+  const outFps = Number(ov.avgFps ?? ov.fps);
+  if (!Number.isFinite(outFps) || Math.abs(outFps - FPS) > FPS_SLACK) {
+    throw new Error(`${outFile}: expected ${FPS} fps, got ${Number.isFinite(outFps) ? outFps.toFixed(2) : ov.fps} fps`);
+  }
+  if (ov.frames && Math.abs(ov.frames - Math.round(D * FPS)) > FPS) {
+    console.warn(`[assemble] WARNING: ${ov.frames} frames for ${D} s at ${FPS} fps (expected ~${Math.round(D * FPS)})`);
+  }
+  console.log(`[assemble] frame rate check: ${outFps.toFixed(2)} fps, ${ov.frames ?? "?"} frames over ${D} s (${rate.mode}).`);
+  return { file: outFile, summary: result, rate, capture, captionCheck };
+}
+
+/* ------------------------------------------------------------------ */
+/* Captions vs the stage: does any pill sit on top of the artwork?      */
+/* ------------------------------------------------------------------ */
+// Samples the SOURCE recording (no captions burned in yet) inside each pill
+// rectangle and reports how much of it is bright. The stage ground is navy
+// (#0E1D39, luma ~31) with a soft pink/cyan glow; the phone screen and the
+// desktop browser window are near-white. A pill sitting over either shows up
+// as a large bright fraction. Scenes 1 (full-frame hero b-roll) and 9 (end
+// card) are bright by design, so they are reported but never fail.
+const BRIGHT_LUMA = 140;
+const OCCLUSION_WARN = 0.06;
+const BRIGHT_BY_DESIGN = new Set([1, 9]);
+
+function brightFraction(ffmpeg, video, t, x, y, w, h) {
+  const args = [
+    "-hide_banner", "-v", "error", "-ss", String(n2(t)), "-i", video, "-frames:v", "1",
+    "-vf", `crop=${Math.round(w)}:${Math.round(h)}:${Math.round(x)}:${Math.round(y)},format=gray`,
+    "-f", "rawvideo", "-",
+  ];
+  const r = spawnSync(ffmpeg, args, { encoding: "buffer", maxBuffer: 64e6 });
+  const buf = r.stdout;
+  if (!buf || !buf.length) return null;
+  let bright = 0;
+  for (let i = 0; i < buf.length; i++) if (buf[i] >= BRIGHT_LUMA) bright++;
+  return bright / buf.length;
+}
+
+function checkCaptionOcclusion(ffmpeg, video, layout, captions) {
+  const rows = [];
+  let worst = 0, failures = 0;
+  for (const ev of captions.events) {
+    const t = (ev.start + ev.end) / 2;
+    const f = brightFraction(ffmpeg, video, t, ev.x0, ev.y0, ev.pillW, ev.pillH);
+    if (f == null) continue;
+    const exempt = BRIGHT_BY_DESIGN.has(ev.id);
+    const bad = !exempt && f > OCCLUSION_WARN;
+    if (bad) failures++;
+    if (!exempt) worst = Math.max(worst, f);
+    rows.push(`  ${String(ev.id).padStart(2)}.${ev.chunk} @ ${t.toFixed(1)}s  pill ${ev.pillW}x${ev.pillH} at (${Math.round(ev.x0)},${Math.round(ev.y0)})  bright ${(f * 100).toFixed(1)}%${exempt ? "  (hero/end card - bright by design)" : bad ? "  <-- OVERLAPS STAGE ARTWORK" : ""}`);
+  }
+  console.log(`[assemble] caption placement vs the ${layout} stage (bright pixels under each pill, before captions are burned in):`);
+  for (const r of rows) console.log(r);
+  if (failures) {
+    loud(
+      `CAPTION PLACEMENT: ${failures} ${layout} caption pill(s) sit over the stage artwork`,
+      `(the desktop browser window or the phone). Retune LAYOUTS.${layout}.safe in captions.mjs.`,
+    );
+  } else {
+    console.log(`[assemble] caption placement OK: worst non-hero pill is ${(worst * 100).toFixed(1)}% bright (threshold ${(OCCLUSION_WARN * 100).toFixed(0)}%).`);
+  }
+  return { layout, failures, worst };
+}
+
+/* ------------------------------------------------------------------ */
+/* --scan-safe-zone: measure the clear band from the recording          */
+/* ------------------------------------------------------------------ */
+// Answers "how far right can the wide pill go before it touches the desktop
+// browser window?" without guessing from stage.css. Samples the stage scenes
+// (2-8; 1 and 9 are full-frame by design), builds a column and row brightness
+// profile of the caption band, and prints the box that is actually clear.
+function scanSafeZone(ffmpeg, video, layout, timing) {
+  const geo = LAYOUTS[layout];
+  const top = Math.round(geo.safe.top ?? geo.safe.bottom - 220);
+  const h = Math.round(geo.safe.bottom - top);
+  const grid = new Float64Array(geo.w * h); // bright hits per pixel, over all samples
+  const samples = [];
+  for (const s of timing.scenes.filter((s) => s.id >= 2 && s.id <= 8)) {
+    for (const f of [0.3, 0.55, 0.85]) samples.push(n2(s.start_s + s.duration_s * f));
+  }
+  let taken = 0;
+  for (const t of samples) {
+    const r = spawnSync(ffmpeg, ["-hide_banner", "-v", "error", "-ss", String(t), "-i", video, "-frames:v", "1",
+      "-vf", `crop=${geo.w}:${h}:0:${top},format=gray`, "-f", "rawvideo", "-"], { encoding: "buffer", maxBuffer: 64e6 });
+    const buf = r.stdout;
+    if (!buf || buf.length < geo.w * h) continue;
+    taken++;
+    for (let i = 0; i < geo.w * h; i++) if (buf[i] >= BRIGHT_LUMA) grid[i] += 1;
+  }
+  if (!taken) { console.warn(`[assemble] scan-safe-zone: could not sample ${video}`); return null; }
+  const DIRTY = 0.02;
+  // Columns first: how wide is the clear corridor around the caption's centre?
+  const mid = Math.round((geo.safe.left + geo.safe.right) / 2);
+  const colFrac = (x) => { let n = 0; for (let y = 0; y < h; y++) n += grid[y * geo.w + x]; return n / (taken * h); };
+  let right = geo.w;
+  for (let x = mid; x < geo.w; x++) if (colFrac(x) > DIRTY) { right = x; break; }
+  let left = 0;
+  for (let x = mid; x >= 0; x--) if (colFrac(x) > DIRTY) { left = x + 1; break; }
+  // Then rows, but only inside that corridor - the phone standing off to the
+  // side must not make the whole band look occupied.
+  const rowFrac = (y) => { let n = 0; for (let x = left; x < right; x++) n += grid[y * geo.w + x]; return n / (taken * Math.max(1, right - left)); };
+  let clearFromY = top;
+  for (let y = h - 1; y >= 0; y--) if (rowFrac(y) > DIRTY) { clearFromY = top + y + 1; break; }
+
+  console.log(`\n[assemble] --scan-safe-zone ${layout} (${taken} samples from scenes 2-8, band y ${top}-${geo.safe.bottom}):`);
+  console.log(`  clear horizontally: x ${left} .. ${right}   (current LAYOUTS.${layout}.safe: ${geo.safe.left} .. ${geo.safe.right})`);
+  console.log(`  stage artwork stops at y ${clearFromY}       (current safe.top: ${geo.safe.top ?? "-"})`);
+  const okX = geo.safe.left >= left && geo.safe.right <= right;
+  const okY = geo.safe.top == null || geo.safe.top >= clearFromY;
+  console.log(`  verdict: ${okX && okY ? "the caption box fits in the clear area" : "RETUNE captions.mjs LAYOUTS." + layout + ".safe"}`);
+  if (!okX) console.log(`  suggestion: safe.left ${Math.max(left, 60)}, safe.right ${Math.min(right - 8, geo.w - 60)}`);
+  if (!okY) console.log(`  suggestion: safe.top ${clearFromY + 8}`);
+  return { layout, left, right, clearFromY, ok: okX && okY };
 }
 
 /* ------------------------------------------------------------------ */
 /* CLI                                                                  */
 /* ------------------------------------------------------------------ */
 function parseArgs(argv) {
-  const o = { layout: "both", video: undefined, alignment: undefined, audioDir: undefined, preset: "slow", crf: 18, musicDb: -14, dryRun: false, verbose: false, duration: undefined };
+  const o = { layout: "both", video: undefined, alignment: undefined, audioDir: undefined, preset: "slow", crf: 18, musicDb: -14, dryRun: false, verbose: false, duration: undefined, upsample: "dup", checkCaptions: true, scanSafeZone: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--layout") o.layout = argv[++i];
@@ -237,14 +477,19 @@ function parseArgs(argv) {
     else if (a === "--crf") o.crf = Number(argv[++i]);
     else if (a === "--music-db") o.musicDb = Number(argv[++i]);
     else if (a === "--duration") o.duration = Number(argv[++i]);
+    else if (a === "--upsample") o.upsample = argv[++i];
+    else if (a === "--scan-safe-zone") o.scanSafeZone = true;
+    else if (a === "--check-captions") o.checkCaptions = true;
+    else if (a === "--no-check-captions") o.checkCaptions = false;
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--verbose") o.verbose = true;
     else if (a === "-h" || a === "--help") {
-      console.log("usage: node assemble.mjs [--layout wide|tall|both] [--video <webm>] [--audio-dir <dir>] [--alignment <json>|none] [--preset slow] [--crf 18] [--music-db -14] [--duration s] [--dry-run] [--verbose]");
+      console.log("usage: node assemble.mjs [--layout wide|tall|both] [--video <webm>] [--audio-dir <dir>] [--alignment <json>|none] [--preset slow] [--crf 18] [--music-db -14] [--duration s] [--upsample dup|mci] [--scan-safe-zone] [--no-check-captions] [--dry-run] [--verbose]");
       process.exit(0);
     } else throw new Error(`unknown argument ${a}`);
   }
   if (!["wide", "tall", "both"].includes(o.layout)) throw new Error(`--layout must be wide, tall or both (got ${o.layout})`);
+  if (!["dup", "mci"].includes(o.upsample)) throw new Error(`--upsample must be dup or mci (got ${o.upsample})`);
   if (o.video && o.layout === "both") throw new Error("--video needs --layout wide or --layout tall");
   return o;
 }
@@ -254,6 +499,15 @@ const ffmpeg = resolveFfmpeg();
 console.log(`[assemble] ffmpeg: ${ffmpeg}`);
 const layouts = opts.layout === "both" ? ["wide", "tall"] : [opts.layout];
 const results = [];
+if (opts.scanSafeZone) {
+  const timing = JSON.parse(readFileSync(path.join(HERE, "timing.json"), "utf8"));
+  for (const layout of layouts) {
+    const video = opts.video ?? path.join(OUT, `${layout}.webm`);
+    if (!existsSync(video)) { console.warn(`[assemble] scan-safe-zone: missing ${video}`); continue; }
+    scanSafeZone(ffmpeg, video, layout, timing);
+  }
+  process.exit(0);
+}
 try {
   for (const layout of layouts) {
     const r = await assembleLayout(layout, opts, ffmpeg);
@@ -264,6 +518,17 @@ try {
   process.exit(1);
 }
 if (results.length) {
-  console.log("\n=== outputs ===");
-  for (const r of results) console.log(`${path.relative(HERE, r.file)}\n  ${fmtSummary(r.summary)}`);
+  console.log("\n=== outputs (ffprobe) ===");
+  for (const r of results) {
+    console.log(`${path.relative(HERE, r.file)}`);
+    console.log(`  ${fmtSummary(r.summary)}`);
+    const src = r.rate.srcFps == null ? "unknown" : `${r.rate.srcFps.toFixed(2)} fps`;
+    console.log(`  frame rate: ${src} source -> ${FPS} fps output (${r.rate.mode})`);
+    if (r.capture) console.log(`  capture rate: mean ${r.capture.mean.toFixed(1)} fps, worst ${r.capture.worst} fps (scene ${r.capture.worstScene})`);
+    if (r.captionCheck) console.log(`  captions: ${r.captionCheck.failures ? `${r.captionCheck.failures} pill(s) over the stage artwork` : "all clear of the stage artwork"} (worst ${(r.captionCheck.worst * 100).toFixed(1)}% bright)`);
+  }
+}
+if (warnings.length) {
+  console.warn(`\n=== ${warnings.length} warning(s) to read before shipping ===`);
+  for (const w of warnings) console.warn(`  - ${w}`);
 }

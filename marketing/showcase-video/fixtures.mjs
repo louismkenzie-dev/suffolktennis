@@ -201,7 +201,8 @@ const profileRow = (user_id, first_name, last_name, phone, city, postcode, extra
 const childRow = (p, i) => ({
   id: CHILD[p.key], parent_user_id: p.parent, name: p.name, date_of_birth: p.dob, gender: p.gender, btm_number: p.btm,
   county_rank: p.key === "alfie" ? 14 : null, national_rank: p.key === "alfie" ? 236 : null,
-  favorite_player: p.key === "alfie" ? "Jack Draper" : null, favorite_shot: p.key === "alfie" ? "Forehand" : null,
+  // No favourite player: a real professional's name has no place in the film.
+  favorite_player: null, favorite_shot: p.key === "alfie" ? "Forehand" : null,
   handedness: "right", has_medical_needs: false, has_send_needs: false, medical_conditions: [], medical_details: null,
   send_conditions: [], send_details: null,
   description: p.key === "alfie" ? "Loves a long rally and never stops chasing. Working on the serve this term." : null,
@@ -346,7 +347,18 @@ export const alfieReports = () => T.session_reports.filter((r) => r.child_id ===
 
 const AREA_SET = new Set(AREAS);
 const isCompleteRatings = (r) => !!r && AREAS.every((a) => [1, 2, 3, 4].includes(r[a]));
-const nowIso = () => new Date().toISOString();
+// The mock's clock. The recorder shifts it (setClockOffset) so "now" reads a
+// few minutes before the 12-2pm session ends, and the app prints "Ended
+// 1.58pm" instead of the wall-clock time of the recording; mock.mjs shifts
+// the browser's Date by the same offset.
+let clockOffsetMs = 0;
+export function setClockOffset(ms) { clockOffsetMs = ms; }
+export const getClockOffset = () => clockOffsetMs;
+/** Epoch ms of the London wall-clock instant `ymd hh:mm` (helper for the recorder). */
+export const londonEpoch = (ymd, hhmm) => Date.parse(londonIso(ymd, hhmm));
+const nowIso = () => new Date(Date.now() + clockOffsetMs).toISOString();
+/** True once end_session has run (mock.mjs slows the register refetch after it). */
+export const state = { sessionEnded: false };
 let reportSeq = 0;
 
 function ageGroupOf(dob) {
@@ -508,6 +520,7 @@ function endSessionAction(userId, body) {
   }
   if (sid) { const s = T.event_sessions.find((x) => x.id === sid); if (s) s.ended_at = now; }
   else e.register_closed_at = now;
+  state.sessionEnded = true;
   return { ok: true, absent_marked, reports_sent, absence_emails: absent_marked, errors: [] };
 }
 

@@ -6,17 +6,21 @@
 //   node smoke.mjs            (from marketing/showcase-video)
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { chromium } from "/home/user/suffolktennis/node_modules/playwright/index.mjs";
 import { installMock } from "./mock.mjs";
 import { alfieReports, CHILD, PROGRAMME_TITLE, VENUE } from "./fixtures.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
+// Playwright comes from the repo's own node_modules (a devDependency at the root).
+const { chromium } = createRequire(import.meta.url)(path.join(ROOT, "node_modules", "playwright"));
 const BASE = "http://127.0.0.1:4173";
 const OUT = path.join(HERE, "out", "smoke");
-const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+// Chromium: PW_CHROME overrides, else Playwright's own installed browser.
+const CHROME = process.env.PW_CHROME && existsSync(process.env.PW_CHROME) ? process.env.PW_CHROME : chromium.executablePath();
 
 /* ------------------------------------------------------------------ */
 /* vite preview                                                         */

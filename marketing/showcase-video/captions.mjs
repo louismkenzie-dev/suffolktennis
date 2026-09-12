@@ -9,8 +9,10 @@
 // Style (BRIEF.md "Assembly"): Hanken Grotesk (fetched once from Google Fonts
 // into out/fonts/, Liberation Sans / Arial fallback), white on a 60% navy
 // rounded pill, two lines max, along the bottom of the wide cut (centred on
-// the text zone so it never touches the phone on the right third) and below
-// the phone (around y = 1795 of 1920) in the tall cut.
+// the text column so it never touches the desktop browser window or the phone
+// on the right) and below the phone (around y = 1795 of 1920) in the tall cut.
+// Every pill is bounds-checked against its layout's `safe` box in LAYOUTS and
+// the build fails rather than shipping a caption over the device artwork.
 //
 // A caption that cannot fit in two lines at the layout's size is split into
 // sequential chunks at sentence / clause boundaries; each chunk is timed from
@@ -50,18 +52,75 @@ const SYSTEM_FALLBACKS = [
 // the ASS Fontsize is derived from it (libass sizes fonts so that
 // ascender - descender == Fontsize, not the em).
 //
-// Wide: the phone frame occupies x ~1365-1755 down to y ~940, so a pill
-// centred on the full frame would clip its bottom-left corner. The pill is
-// therefore centred on the text zone left of the phone (x 90-1270 at most),
-// bottom-aligned with a 64 px safe margin. Tall: the phone bezel runs from
-// y ~442 to ~1682 (stage.css phone-zone: top 41u, bottom 22u), so the pill is
-// centred on y = 1795 in the band below it (a two-line pill spans 1727-1863,
-// clear of the phone and 57 px above the frame edge). The hero title in
-// scene 1 is kept above both bands by stage.css (.hero-text bottom).
+// Every caption pill is centred in, and must fit inside, that layout's `safe`
+// box. Nothing outside this file needs to change when the stage moves: retune
+// `safe` (and stage.css alongside it) and every pill follows.
+//
+// Wide (v2 stage): the right of the frame carries a desktop browser window
+// with the phone over its lower-right corner. From stage.css: the desk is
+// 1440x944 centred in a zone at (688,106,1094,718), scaled 0.700 or 0.760
+// when it leads, so at its largest it reaches x 688-1782, y 106-824; the
+// phone zone is (1530,297,320,700), so the phone reaches y 997 but never left
+// of x ~1523. On the app scenes (2-8) the pill therefore sits in the band
+// below the desk and left of the phone (`safe`, x 90-1280, y 836-1016) -
+// bottom-aligned with a 64 px margin, 55 px clear of the desk above it and
+// 258 px clear of the phone beside it. On the full-frame scenes - the hero
+// (1), the end card (9) and while
+// a chapter card is up at the start of 3 and 6 - there is nothing on the
+// right, and an off-centre pill under centred artwork reads as a mistake, so
+// those captions are centred on the frame (`full`, x = 960). A caption that
+// starts on a chapter card slides to the text-zone position as the card lifts.
+//
+// Tall: the phone bezel runs from y ~442 to ~1682 (stage.css phone-zone:
+// top 41u, bottom 22u), so the pill is centred on y = 1795 in the band below
+// it; a two-line pill spans 1727-1863, clear of the phone and 57 px above the
+// frame edge. On the end card the mascot stands in that band (bottom-right,
+// y ~1470-1900), so the scene 9 caption sits higher (`end`, centred on 1360,
+// below the web address at ~1160). The hero title in scene 1 is kept above
+// the caption band by `.hero-text` in stage/stage.css.
 export const LAYOUTS = {
-  wide: { w: 1920, h: 1080, fontPx: 40, maxPillW: 1180, padX: 34, padY: 16, radius: 24, centreX: 680, bottomY: 1080 - 64 },
-  tall: { w: 1080, h: 1920, fontPx: 40, maxPillW: 960, padX: 30, padY: 16, radius: 24, centreY: 1795 },
+  wide: {
+    w: 1920, h: 1080, fontPx: 40, padX: 34, padY: 16, radius: 24,
+    safe: { left: 90, right: 1280, top: 836, bottom: 1080 - 64 },
+    full: { left: 72, right: 1848, top: 812, bottom: 1080 - 64 },
+  },
+  tall: {
+    w: 1080, h: 1920, fontPx: 40, padX: 30, padY: 16, radius: 24,
+    safe: { left: 60, right: 1020, top: 1706, bottom: 1884, centreY: 1795 },
+    end: { left: 60, right: 1020, top: 1270, bottom: 1450, centreY: 1360 },
+  },
 };
+
+// Scenes that open on a chapter card, and how long the card is up: it holds
+// CHAPTER_MS (stage/stage.js) then lifts over the 0.3 s .layer fade. Captions
+// that start under the card are centred and slide across as it lifts.
+const CHAPTER_CARD = { scenes: [3, 6], holdS: 1.5, fadeS: 0.3 };
+const FULL_FRAME_LINES = new Set([1, 9]);
+
+// Which zone a caption event uses: "safe" beside the phone, "full" centred on
+// the frame (wide), "end" above the mascot (tall).
+function zoneFor(layout, lineId) {
+  if (layout === "wide" && FULL_FRAME_LINES.has(lineId)) return "full";
+  if (layout === "tall" && lineId === 9) return "end";
+  return "safe";
+}
+
+// Pill box for one caption, given its measured text width and line count.
+export function pillBox(geo, textW, nLines, lineH, zoneName = "safe") {
+  const zone = geo[zoneName] ?? geo.safe;
+  const pillW = Math.ceil(textW + 2 * geo.padX);
+  const pillH = Math.ceil(nLines * lineH + 2 * geo.padY);
+  const cx = (zone.left + zone.right) / 2;
+  const cy = zone.centreY != null ? zone.centreY : zone.bottom - pillH / 2;
+  return { pillW, pillH, cx, cy, x0: cx - pillW / 2, x1: cx + pillW / 2, y0: cy - pillH / 2, y1: cy + pillH / 2, zone: zoneName };
+}
+
+// Product names and the web address never break across lines or chunks.
+const UNBREAKABLE = ["Performance & Reports", "Suffolk Tennis", "Parent Hub", "County Training", "suffolktennis.online"];
+const NBSP = " ";
+const glue = (s) => UNBREAKABLE.reduce((t, tok) => t.split(tok).join(tok.split(" ").join(NBSP)), s);
+const unglue = (s) => s.split(NBSP).join(" ");
+const capitalise = (s) => s.replace(/^(["'(]*)([a-z])/, (_, q, c) => q + c.toUpperCase());
 
 /* ------------------------------------------------------------------ */
 /* Minimal TrueType metrics reader: unitsPerEm, hhea, hmtx, cmap, name  */
@@ -205,16 +264,20 @@ function makeMeasurer(metrics, fontPx) {
   const scale = fontPx / metrics.upm;
   return (text) => {
     let w = 0;
-    for (const ch of text) w += metrics.advanceOf(ch);
+    for (const ch of text) w += metrics.advanceOf(ch === NBSP ? " " : ch);
     return w * scale * WIDTH_SLACK;
   };
 }
+
+// Words are separated by plain spaces only; a no-break space (inside an
+// UNBREAKABLE token) is part of the word.
+const splitWords = (s) => s.split(" ").filter(Boolean);
 
 // Best two-line break of `text` (or one line if it fits). Returns lines[] or
 // null when it cannot be done within maxW.
 function breakLines(text, measure, maxW) {
   if (measure(text) <= maxW) return [text];
-  const words = text.split(/\s+/).filter(Boolean);
+  const words = splitWords(text);
   let best = null;
   for (let i = 1; i < words.length; i++) {
     const a = words.slice(0, i).join(" "), b = words.slice(i).join(" ");
@@ -226,36 +289,53 @@ function breakLines(text, measure, maxW) {
   return best ? best.lines : null;
 }
 
-// Split a caption into chunks that each fit within two lines.
-function chunkCaption(caption, measure, maxW) {
-  const fits = (s) => breakLines(s, measure, maxW) != null;
-  const pack = (units) => {
-    const out = [];
-    let cur = "";
-    for (const u of units) {
-      const cand = cur ? `${cur} ${u}` : u;
-      if (fits(cand)) cur = cand;
-      else { if (cur) out.push(cur); cur = u; }
+// Group consecutive units (sentences, or the clauses of one sentence) into
+// the fewest chunks that each fit in two lines, and among those the most
+// balanced grouping (smallest widest chunk), so a caption never ends on a
+// three-word orphan ("No chasing.") when the words could sit with the
+// sentence before them. Units that fit nowhere come back on their own.
+function groupUnits(units, fits, measure) {
+  const n = units.length;
+  const join = (i, j) => units.slice(i, j).join(" ");
+  const memo = new Map();
+  const best = (i) => {
+    if (i === n) return { count: 0, widest: 0, groups: [] };
+    if (memo.has(i)) return memo.get(i);
+    let out = null;
+    for (let j = i + 1; j <= n; j++) {
+      const g = join(i, j);
+      if (j > i + 1 && !fits(g)) break;
+      const rest = best(j);
+      if (!rest) continue;
+      const cand = { count: rest.count + 1, widest: Math.max(measure(g), rest.widest), groups: [g, ...rest.groups] };
+      if (!out || cand.count < out.count || (cand.count === out.count && cand.widest < out.widest)) out = cand;
     }
-    if (cur) out.push(cur);
+    memo.set(i, out);
     return out;
   };
-  const sentences = caption.trim().split(/(?<=[.!?:;])\s+/).filter(Boolean);
+  return best(0).groups;
+}
+
+// Split a caption into chunks that each fit within two lines. Every chunk
+// starts with a capital letter, product names never split (see glue()).
+function chunkCaption(caption, measure, maxW) {
+  const fits = (s) => breakLines(s, measure, maxW) != null;
+  const sentences = glue(caption.trim()).split(/(?<=[.!?:;]) +/).filter(Boolean);
   const chunks = [];
-  for (const sentence of pack(sentences)) {
-    if (fits(sentence)) { chunks.push(sentence); continue; }
-    // A single sentence that is too long: break at commas, then hard-wrap by words.
-    for (const clause of pack(sentence.split(/(?<=,)\s+/))) {
+  for (const group of groupUnits(sentences, fits, measure)) {
+    if (fits(group)) { chunks.push(group); continue; }
+    // A single sentence that is too long: group its clauses, then hard-wrap by words.
+    for (const clause of groupUnits(group.split(/(?<=,) +/), fits, measure)) {
       if (fits(clause)) { chunks.push(clause); continue; }
       let cur = [];
-      for (const w of clause.split(/\s+/)) {
+      for (const w of splitWords(clause)) {
         if (fits([...cur, w].join(" "))) cur.push(w);
         else { if (cur.length) chunks.push(cur.join(" ")); cur = [w]; }
       }
       if (cur.length) chunks.push(cur.join(" "));
     }
   }
-  return chunks;
+  return chunks.map(capitalise);
 }
 
 /* ------------------------------------------------------------------ */
@@ -401,7 +481,18 @@ export function buildCaptions({
   const assFontSize = r1(geo.fontPx * heightPerEm);
   const lineH = assFontSize; // libass line advance (no lineGap)
   const measure = makeMeasurer(metrics, geo.fontPx);
-  const maxTextW = geo.maxPillW - 2 * geo.padX;
+  const maxPillW = geo.safe.right - geo.safe.left;
+  const maxTextW = maxPillW - 2 * geo.padX;
+  // A two-line pill is the tallest we ever draw; make sure the safe box can
+  // hold it, so a long line (v2 line 8) can never grow down into the phone or
+  // up into the stage artwork.
+  const maxPillH = Math.ceil(2 * assFontSize + 2 * geo.padY);
+  if (geo.safe.top != null) {
+    const probe = pillBox(geo, maxTextW, 2, assFontSize);
+    if (probe.y0 < geo.safe.top - 0.5) {
+      throw new Error(`${layout}: a two-line pill (${maxPillH} px) reaches y ${r1(probe.y0)}, above the safe box top ${geo.safe.top}; raise safe.top or drop fontPx in LAYOUTS`);
+    }
+  }
 
   const sceneById = new Map(timing.scenes.map((s) => [s.id, s]));
   const alignById = new Map((alignment?.lines ?? []).map((l) => [l.id, l]));
@@ -430,11 +521,26 @@ export function buildCaptions({
       const textLines = breakLines(span.text, measure, maxTextW);
       if (!textLines) throw new Error(`caption chunk does not fit in two lines: "${span.text}"`);
       const textW = Math.max(...textLines.map(measure));
-      const pillW = Math.ceil(textW + 2 * geo.padX);
-      const pillH = Math.ceil(textLines.length * lineH + 2 * geo.padY);
-      const cx = geo.centreX ?? geo.w / 2;
-      const cy = geo.centreY != null ? geo.centreY : geo.bottomY - pillH / 2;
-      events.push({ id: line.id, chunk: i, start, end, lines: textLines, matched: span.matched, pillW, pillH, cx, cy });
+      const box = pillBox(geo, textW, textLines.length, lineH, zoneFor(layout, line.id));
+      // Hard guarantee: <= 2 lines and inside its zone (and it would fit the
+      // safe box too, since widths are measured against the safe box).
+      if (textLines.length > 2) throw new Error(`${layout}: caption for line ${line.id} wrapped to ${textLines.length} lines: "${span.text}"`);
+      const s = geo[box.zone];
+      if (box.x0 < s.left - 0.5 || box.x1 > s.right + 0.5 || (s.top != null && box.y0 < s.top - 0.5) || box.y1 > s.bottom + 0.5) {
+        throw new Error(`${layout}: caption pill for line ${line.id}.${i} (${box.pillW}x${box.pillH} at ${r1(box.x0)},${r1(box.y0)}) escapes the ${box.zone} box [${s.left}-${s.right}] x [${s.top ?? 0}-${s.bottom}]: "${span.text}"`);
+      }
+      // Wide: a caption that starts while a chapter card is up is centred on
+      // the card and slides to the text-zone position as the card lifts.
+      let move = null;
+      const scene = sceneById.get(line.id);
+      if (layout === "wide" && scene && CHAPTER_CARD.scenes.includes(line.id) && box.zone === "safe") {
+        const cardHoldEnd = scene.start_s + CHAPTER_CARD.holdS;
+        if (start < cardHoldEnd) {
+          const centred = pillBox(geo, textW, textLines.length, lineH, "full");
+          move = { fromCx: centred.cx, fromX0: centred.x0, t1: Math.max(0, cardHoldEnd - start), t2: Math.max(0, cardHoldEnd - start) + CHAPTER_CARD.fadeS };
+        }
+      }
+      events.push({ id: line.id, chunk: i, start, end, lines: textLines.map(unglue), matched: span.matched, ...box, move });
     });
   });
 
@@ -446,8 +552,11 @@ export function buildCaptions({
   for (const ev of events) {
     const t = `${assTime(ev.start)},${assTime(ev.end)}`;
     const x0 = r1(ev.cx - ev.pillW / 2), y0 = r1(ev.cy - ev.pillH / 2);
-    dialogue.push(`Dialogue: 0,${t},Pill,,0,0,0,,{\\an7\\pos(${x0},${y0})\\fad(120,150)\\bord0\\shad0\\1c${ASS_NAVY}\\1a${PILL_ALPHA}\\p1}${roundedRectPath(ev.pillW, ev.pillH, Math.min(geo.radius, ev.pillH / 2))}{\\p0}`);
-    dialogue.push(`Dialogue: 1,${t},Caption,,0,0,0,,{\\an5\\pos(${r1(ev.cx)},${r1(ev.cy)})\\fad(120,150)\\bord0\\shad0}${ev.lines.map(escapeAss).join("\\N")}`);
+    const ms = (s) => Math.round(s * 1000);
+    const pillPos = ev.move ? `\\move(${r1(ev.move.fromX0)},${y0},${x0},${y0},${ms(ev.move.t1)},${ms(ev.move.t2)})` : `\\pos(${x0},${y0})`;
+    const textPos = ev.move ? `\\move(${r1(ev.move.fromCx)},${r1(ev.cy)},${r1(ev.cx)},${r1(ev.cy)},${ms(ev.move.t1)},${ms(ev.move.t2)})` : `\\pos(${r1(ev.cx)},${r1(ev.cy)})`;
+    dialogue.push(`Dialogue: 0,${t},Pill,,0,0,0,,{\\an7${pillPos}\\fad(120,150)\\bord0\\shad0\\1c${ASS_NAVY}\\1a${PILL_ALPHA}\\p1}${roundedRectPath(ev.pillW, ev.pillH, Math.min(geo.radius, ev.pillH / 2))}{\\p0}`);
+    dialogue.push(`Dialogue: 1,${t},Caption,,0,0,0,,{\\an5${textPos}\\fad(120,150)\\bord0\\shad0}${ev.lines.map(escapeAss).join("\\N")}`);
   }
   const ass = [
     "[Script Info]",
@@ -477,7 +586,7 @@ export function buildCaptions({
     const unmatched = events.filter((e) => !e.matched).length;
     console.log(`[captions] ${layout}: ${events.length} caption events from ${timingSource}; font ${font.family}${font.fallback ? " (fallback)" : ""} size ${assFontSize} (em ${geo.fontPx}px)${alignment && unmatched ? `; ${unmatched} chunk(s) timed proportionally` : ""} -> ${path.relative(HERE, assPath)}`);
   }
-  return { assPath, fontFamily: font.family, fontFile: font.file, fontsDir: font.fontsDir, fontFallback: font.fallback, timingSource, events, assFontSize };
+  return { assPath, fontFamily: font.family, fontFile: font.file, fontsDir: font.fontsDir, fontFallback: font.fallback, timingSource, events, assFontSize, safe: geo.safe, maxPillW };
 }
 
 /* ------------------------------------------------------------------ */
@@ -535,6 +644,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   for (const layout of layouts) {
     const alignmentPath = args.alignment === undefined ? path.join(AUDIO, "alignment.json") : args.alignment === "none" ? "none" : path.resolve(args.alignment);
     const r = buildCaptions({ layout, alignmentPath });
-    for (const e of r.events) console.log(`  ${String(e.id).padStart(2)}.${e.chunk}  ${assTime(e.start)} -> ${assTime(e.end)}  ${e.lines.length}L ${e.pillW}x${e.pillH}${e.matched ? "" : "  (proportional)"}  ${e.lines.join(" / ")}`);
+    const s = r.safe;
+    console.log(`  safe box x ${s.left}-${s.right} (max pill ${r.maxPillW}), y ${s.top ?? 0}-${s.bottom}${s.centreY != null ? ` centred on ${s.centreY}` : " bottom-aligned"}`);
+    for (const e of r.events) console.log(`  ${String(e.id).padStart(2)}.${e.chunk}  ${assTime(e.start)} -> ${assTime(e.end)}  ${e.lines.length}L ${e.pillW}x${e.pillH} @ x ${r1(e.x0)}-${r1(e.x1)} y ${r1(e.y0)}-${r1(e.y1)} [${e.zone}${e.move ? `, from x ${r1(e.move.fromX0)} at +${e.move.t1.toFixed(2)}s` : ""}]${e.matched ? "" : "  (proportional)"}  ${e.lines.join(" / ")}`);
   }
 }

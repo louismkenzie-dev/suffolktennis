@@ -10,7 +10,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { REF, STORAGE_KEY, T, USERS, authSession, functionResponse, rpcResponse } from "./fixtures.mjs";
+import { REF, STORAGE_KEY, T, USERS, authSession, functionResponse, rpcResponse, getClockOffset, setClockOffset, state } from "./fixtures.mjs";
+
+// After End session the register is refetched while the confirm dialog is
+// still sliding out; with live data it re-renders as "0 complete reports will
+// be sent" for a few frames. Holding that one response back lets the dialog
+// close first. Only the post-end refetch is delayed.
+const REGISTER_REFETCH_DELAY_MS = 450;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const execFileAsync = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -164,7 +171,7 @@ export function applyQuery(rows, params) {
 /* Route handler                                                        */
 /* ------------------------------------------------------------------ */
 
-function handleSupabase(route, user) {
+async function handleSupabase(route, user) {
   const req = route.request();
   const url = new URL(req.url());
   const p = url.pathname;
@@ -185,6 +192,7 @@ function handleSupabase(route, user) {
     const name = p.split("/")[3];
     let body = {}; try { body = JSON.parse(req.postData() || "{}"); } catch { /* not JSON */ }
     const res = functionResponse(name, body, session.user);
+    if (name === "coach-session" && body?.action === "register" && state.sessionEnded) await sleep(REGISTER_REFETCH_DELAY_MS);
     return json(res, res && res.error ? 400 : 200);
   }
 
@@ -243,17 +251,35 @@ function handleSupabase(route, user) {
  *   user: "coach" (Sam Reid) | "parent" (Hannah Barker)
  *   dismissBanners: pre-dismiss the Parent Hub's WhatsApp banner (default true)
  *   fonts: "relay" (curl + disk cache, default) | "continue" (let the browser fetch) | "block"
+ *   clockOffsetMs: shift "now" (browser Date and the mock's timestamps) by this
+ *     many ms, so the footage shows a plausible time of day rather than the
+ *     wall clock of the recording. Omit to keep whatever offset is already set.
  */
-export async function installMock(context, { user = "coach", dismissBanners = true, fonts = "relay" } = {}) {
+export async function installMock(context, { user = "coach", dismissBanners = true, fonts = "relay", clockOffsetMs } = {}) {
   if (!USERS[user]) throw new Error(`installMock: unknown user "${user}"`);
   const session = authSession(user);
+  if (clockOffsetMs != null) setClockOffset(clockOffsetMs);
+  const offset = getClockOffset();
 
-  await context.addInitScript(({ key, session, dismiss }) => {
+  await context.addInitScript(({ key, session, dismiss, offset }) => {
     try {
       window.localStorage.setItem(key, JSON.stringify(session));
       if (dismiss) window.localStorage.setItem("whatsapp-banner-dismissed", "true");
     } catch { /* storage unavailable */ }
-  }, { key: STORAGE_KEY, session, dismiss: dismissBanners });
+    // A real-time clock shifted by a constant: Date.now()/new Date() read
+    // `offset` ms away from the machine clock; timers and rAF are untouched.
+    if (offset && !window.__clockShifted) {
+      window.__clockShifted = true;
+      const RealDate = Date;
+      class ShiftedDate extends RealDate {
+        constructor(...args) { if (args.length === 0) super(RealDate.now() + offset); else super(...args); }
+        static now() { return RealDate.now() + offset; }
+      }
+      ShiftedDate.parse = RealDate.parse;
+      ShiftedDate.UTC = RealDate.UTC;
+      window.Date = ShiftedDate;
+    }
+  }, { key: STORAGE_KEY, session, dismiss: dismissBanners, offset });
 
   // Playwright checks routes newest-first, so: catch-all 204 first (lowest
   // priority), then the fonts pass-through, then the Supabase host on top.

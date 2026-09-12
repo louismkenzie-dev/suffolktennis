@@ -48,14 +48,21 @@ body { font-family: var(--body); color: var(--white); -webkit-font-smoothing: an
 body[data-layout="tall"] .glow { --glow-x: 50%; background: radial-gradient(60% 40% at 50% 62%, rgba(0, 172, 230, 0.18) 0%, transparent 70%); }
 
 /* ---------- layers ---------- */
-.layer { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.55s ease, visibility 0s linear 0.55s; }
-.layer.on { opacity: 1; visibility: visible; transition: opacity 0.55s ease, visibility 0s; }
+/* Layers never cross-dissolve type on type. The hero -> app and app -> end
+   switches dip through navy (#fade.dip, stage.js dip()) and the layers snap
+   while the frame is fully navy (.snap). Only the chapter card fades over
+   the app, and it is a solid navy card whose text starts after it is opaque. */
+.layer { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
+.layer.on { opacity: 1; visibility: visible; transition: opacity 0.3s ease, visibility 0s; }
+.layer.snap, .layer.snap.on { transition: none; }
 /* Only the phone takes pointer input; a fading card must never swallow a tap. */
 #hero, #chapter, #end, .text-zone { pointer-events: none; }
 #chapter { z-index: 20; }
 #end { z-index: 30; }
 #fade { position: absolute; inset: 0; z-index: 40; background: var(--navy); opacity: 0; pointer-events: none; transition: opacity 1.4s ease; }
 #fade.on { opacity: 1; }
+#fade.dip { transition-duration: 0.22s; }
+#fade.dip.out { transition-duration: 0.4s; }
 
 /* ---------- type ---------- */
 .kicker {
@@ -89,6 +96,10 @@ body[data-layout="tall"] .glow { --glow-x: 50%; background: radial-gradient(60% 
 /* ---------- hero ---------- */
 #hero { z-index: 10; background: var(--navy); }
 #heroVideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
+/* 9:16 shows only the middle ~32% of the 16:9 two-shot. Anchored on the
+   right-hand player (her face sits at x 62-75% of the clip throughout) so one
+   subject stays whole instead of both faces being sliced at the frame edges. */
+body[data-layout="tall"] #heroVideo { object-position: 69% 50%; }
 .hero-shade { position: absolute; inset: 0; background:
   linear-gradient(180deg, rgba(14,29,57,0.35) 0%, rgba(14,29,57,0.15) 40%, rgba(14,29,57,0.82) 100%),
   linear-gradient(90deg, rgba(14,29,57,0.72) 0%, rgba(14,29,57,0.25) 55%, rgba(14,29,57,0.1) 100%); }
@@ -106,10 +117,12 @@ body[data-layout="tall"] .hero-text .title { font-size: calc(9 * var(--u)); max-
 .text-zone { position: absolute; }
 .phone-zone { position: absolute; display: flex; align-items: center; justify-content: center; }
 
-body[data-layout="wide"] .text-zone { left: calc(8 * var(--u)); top: 0; bottom: 0; width: calc(96 * var(--u)); display: flex; flex-direction: column; justify-content: center; padding-bottom: calc(6 * var(--u)); }
+/* The kicker is pinned to a fixed top (not vertically centred) so it stays on
+   the same baseline whether the title runs one line or two. */
+body[data-layout="wide"] .text-zone { left: calc(8 * var(--u)); top: 0; bottom: 0; width: calc(96 * var(--u)); display: flex; flex-direction: column; justify-content: flex-start; padding-top: calc(34 * var(--u)); }
 body[data-layout="wide"] .phone-zone { top: calc(6 * var(--u)); bottom: calc(11 * var(--u)); left: calc(120 * var(--u)); right: calc(9 * var(--u)); }
 
-body[data-layout="tall"] .text-zone { left: calc(7 * var(--u)); right: calc(7 * var(--u)); top: calc(6 * var(--u)); height: calc(30 * var(--u)); text-align: center; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+body[data-layout="tall"] .text-zone { left: calc(7 * var(--u)); right: calc(7 * var(--u)); top: calc(12 * var(--u)); height: calc(28 * var(--u)); text-align: center; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; }
 body[data-layout="tall"] .title { font-size: calc(7 * var(--u)); }
 body[data-layout="tall"] .lines { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(0.6 * var(--u)) calc(3 * var(--u)); margin-top: calc(2.4 * var(--u)); }
 body[data-layout="tall"] .lines li { font-size: calc(2.9 * var(--u)); }
@@ -139,14 +152,18 @@ body[data-layout="tall"] .phone-zone { top: calc(41 * var(--u)); bottom: calc(22
 /* ---------- chapter card ---------- */
 #chapter { background: var(--navy); display: flex; align-items: center; justify-content: center; }
 #chapter::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 55%, rgba(224,41,142,0.22) 0%, transparent 70%); }
-.chapter-inner { position: relative; text-align: center; padding: 0 calc(6 * var(--u)); }
-.chapter-kicker { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; letter-spacing: 0.3em; color: var(--cyan); font-size: calc(2.2 * var(--u)); margin-bottom: calc(2 * var(--u)); opacity: 0; animation: rise 0.5s ease 0.1s forwards; }
+/* Card copy starts 0.3 s late (after the card is opaque, see .layer) and is
+   faded out 0.25 s before the card itself lifts, so no type ever dissolves
+   through other type. */
+.chapter-inner { position: relative; text-align: center; padding: 0 calc(6 * var(--u)); transition: opacity 0.25s ease; }
+.chapter-inner.out { opacity: 0; }
+.chapter-kicker { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; letter-spacing: 0.3em; color: var(--cyan); font-size: calc(2.2 * var(--u)); margin-bottom: calc(2 * var(--u)); opacity: 0; animation: rise 0.5s ease 0.4s forwards; }
 .chapter-title { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; color: var(--white); font-size: calc(12 * var(--u)); line-height: 1; margin: 0; letter-spacing: 0.01em; }
 .chapter-title .w { display: inline-block; opacity: 0; transform: translateY(0.35em); animation: rise 0.55s cubic-bezier(.2,.7,.2,1) forwards; margin-right: 0.25em; }
 .chapter-title .w:last-child { margin-right: 0; }
-.chapter-rule { width: calc(14 * var(--u)); height: calc(0.7 * var(--u)); margin: calc(2.6 * var(--u)) auto; background: var(--pink); transform: scaleX(0); animation: rule 0.6s ease 0.45s forwards; }
+.chapter-rule { width: calc(14 * var(--u)); height: calc(0.7 * var(--u)); margin: calc(2.6 * var(--u)) auto; background: var(--pink); transform: scaleX(0); animation: rule 0.6s ease 0.75s forwards; }
 @keyframes rule { to { transform: scaleX(1); } }
-.chapter-sub { font-family: var(--body); font-weight: 500; font-size: calc(2.9 * var(--u)); color: rgba(255,255,255,0.8); letter-spacing: 0.02em; opacity: 0; animation: rise 0.5s ease 0.65s forwards; }
+.chapter-sub { font-family: var(--body); font-weight: 500; font-size: calc(2.9 * var(--u)); color: rgba(255,255,255,0.8); letter-spacing: 0.02em; opacity: 0; animation: rise 0.5s ease 0.95s forwards; }
 body[data-layout="tall"] .chapter-title { font-size: calc(13 * var(--u)); }
 
 /* ---------- end card ---------- */
@@ -154,15 +171,91 @@ body[data-layout="tall"] .chapter-title { font-size: calc(13 * var(--u)); }
 #end::before { content: ""; position: absolute; inset: 0; background: radial-gradient(70% 60% at 50% 40%, rgba(0,172,230,0.16) 0%, transparent 70%); }
 .end-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: calc(6 * var(--u)); }
 .lockup { width: calc(46 * var(--u)); height: auto; margin-bottom: calc(6 * var(--u)); opacity: 0; animation: rise 0.7s ease 0.1s forwards; }
-.strap { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 0.35em; font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; font-size: calc(6.6 * var(--u)); line-height: 1.08; letter-spacing: 0.01em; }
+/* 5.6u keeps all three phrases on one line at 1920 wide (about 1670 px). */
+.strap { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 0.35em; font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; font-size: calc(5.6 * var(--u)); line-height: 1.08; letter-spacing: 0.01em; white-space: nowrap; }
 .strap span { opacity: 0; animation: rise 0.55s cubic-bezier(.2,.7,.2,1) forwards; }
 .strap .s1 { color: var(--pink); animation-delay: 0.5s; }
 .strap .s2 { color: var(--white); animation-delay: 0.85s; }
 .strap .s3 { color: var(--pink); animation-delay: 1.2s; }
 .url { margin-top: calc(4 * var(--u)); font-family: var(--body); font-weight: 600; font-size: calc(3.6 * var(--u)); color: var(--cyan); letter-spacing: 0.02em; opacity: 0; animation: rise 0.6s ease 1.9s forwards; }
-.mascot { position: absolute; right: calc(5 * var(--u)); bottom: 0; width: calc(22 * var(--u)); height: auto; transform: translateY(100%); animation: mascot 0.9s cubic-bezier(.2,.8,.2,1) 1.4s forwards; filter: drop-shadow(0 10px 24px rgba(0,0,0,0.4)); }
-@keyframes mascot { to { transform: translateY(4%); } }
-body[data-layout="tall"] .strap { flex-direction: column; font-size: calc(8.2 * var(--u)); }
+/* Lands with its shoes inside the frame (bottom 2u), not clipped by the edge. */
+.mascot { position: absolute; right: calc(5 * var(--u)); bottom: calc(2 * var(--u)); width: calc(22 * var(--u)); height: auto; transform: translateY(110%); animation: mascot 0.9s cubic-bezier(.2,.8,.2,1) 1.4s forwards; filter: drop-shadow(0 10px 24px rgba(0,0,0,0.4)); }
+@keyframes mascot { to { transform: translateY(0); } }
+body[data-layout="tall"] .strap { flex-direction: column; font-size: calc(8.2 * var(--u)); white-space: normal; }
 body[data-layout="tall"] .lockup { width: calc(62 * var(--u)); }
 body[data-layout="tall"] .mascot { width: calc(30 * var(--u)); }
 body[data-layout="tall"] .end-inner { padding-bottom: calc(18 * var(--u)); }
+
+/* ---------- 16:9 devices: desktop primary, phone in front ---------- */
+/* v2. The wide frame is always exactly 1920x1080, so the device cluster is
+   laid out in frame pixels rather than --u. Everything stays clear of the
+   caption band: captions.mjs centres the wide pill inside x 90-1270 along the
+   bottom (its top edge reaches y ~886), so the desktop's bottom edge sits at
+   y 823 and the phone never comes further left than x 1530.
+
+   Both devices are scaled with transform only (no filter, no blur): a CSS
+   filter over a cross-origin app iframe forces a surface copy every frame and
+   starves the screencast. "Forward" is scale + full opacity, "back" is a
+   smaller scale + lower opacity. */
+/* The text zone gives up the right half of the frame to the device cluster,
+   so the wide title steps down from 7.4u to 5.6u: measured, that is the
+   largest size at which every scene title in stage.js still clears the
+   desktop's left edge (the widest, "End session. Reports sent.", lands 41 px
+   short of it). */
+/* Scoped to .text-zone: body[data-layout] + .title would otherwise outrank
+   .hero-text .title and shrink the scene 1 hero title too. */
+body[data-layout="wide"] .text-zone { width: calc(54 * var(--u)); }
+body[data-layout="wide"] .text-zone .title { font-size: calc(5.6 * var(--u)); }
+body[data-layout="wide"] .text-zone .lines li { font-size: calc(3 * var(--u)); }
+body[data-layout="wide"] .text-zone .lines { margin-top: calc(2.8 * var(--u)); }
+
+.desk-zone { position: absolute; }
+body[data-layout="wide"] .desk-zone { left: 688px; top: 106px; width: 1094px; height: 718px; }
+body[data-layout="wide"] .phone-zone { left: 1530px; top: 297px; width: 320px; height: 700px; right: auto; bottom: auto; }
+
+.dev { will-change: transform, opacity; }
+body[data-layout="wide"] .dev {
+  position: absolute; left: 50%; top: 50%; transform-origin: center center;
+  transform: translate(-50%, -50%) scale(var(--s));
+  transition: transform 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.6s ease;
+}
+body[data-layout="wide"] .desk  { --s: 0.700; z-index: 1; }
+body[data-layout="wide"] .phone { --s: 0.600; z-index: 2; }
+body[data-layout="wide"] .desk.lead  { --s: 0.760; }
+body[data-layout="wide"] .phone.lead { --s: 0.760; }
+body[data-layout="wide"] .dev.back { opacity: 0.55; }
+/* The phone slides up into the cluster in scene 2 (was phoneIn, which assumed
+   the old full-height phone zone and --phone-scale). */
+body[data-layout="wide"] .phone.enter { animation: devIn 0.9s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes devIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 70px)) scale(calc(var(--s) * 0.96)); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--s)); }
+}
+
+/* ---------- desktop browser window ---------- */
+/* Laid out at 1440x900 CSS px (the iframe's own viewport) plus a 44 px chrome
+   bar, then scaled as a whole by .dev. */
+.desk {
+  width: 1440px; height: 944px; border-radius: 20px; overflow: clip; background: #11151d;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55), 0 12px 26px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+.desk-chrome {
+  position: relative; height: 44px; display: flex; align-items: center; padding: 0 18px;
+  background: linear-gradient(180deg, #2b3343 0%, #1a2130 100%);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+}
+.desk-chrome .lights { display: flex; gap: 9px; }
+.desk-chrome .lights i { display: block; width: 13px; height: 13px; border-radius: 50%; }
+.desk-chrome .lights .r { background: #FF5F57; }
+.desk-chrome .lights .y { background: #FEBC2E; }
+.desk-chrome .lights .g { background: #28C840; }
+.url-pill {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; height: 27px; padding: 0 20px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.10);
+  font-family: var(--body); font-weight: 500; font-size: 14px; letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.80);
+}
+.url-pill .lock { width: 11px; height: auto; fill: rgba(255, 255, 255, 0.62); }
+.desk-viewport { width: 1440px; height: 900px; overflow: clip; background: #fff; }
+#deskFrame { display: block; width: 1440px; height: 900px; border: 0; background: #fff; }
