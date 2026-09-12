@@ -10,7 +10,7 @@
 // into out/fonts/, Liberation Sans / Arial fallback), white on a 60% navy
 // rounded pill, two lines max, along the bottom of the wide cut (centred on
 // the text zone so it never touches the phone on the right third) and below
-// the phone (around y = 1640 of 1920) in the tall cut.
+// the phone (around y = 1795 of 1920) in the tall cut.
 //
 // A caption that cannot fit in two lines at the layout's size is split into
 // sequential chunks at sentence / clause boundaries; each chunk is timed from
@@ -53,11 +53,14 @@ const SYSTEM_FALLBACKS = [
 // Wide: the phone frame occupies x ~1365-1755 down to y ~940, so a pill
 // centred on the full frame would clip its bottom-left corner. The pill is
 // therefore centred on the text zone left of the phone (x 90-1270 at most),
-// bottom-aligned with a 64 px safe margin. Tall: the phone sits in the middle
-// band, the pill is centred on y = 1640 beneath it.
+// bottom-aligned with a 64 px safe margin. Tall: the phone bezel runs from
+// y ~442 to ~1682 (stage.css phone-zone: top 41u, bottom 22u), so the pill is
+// centred on y = 1795 in the band below it (a two-line pill spans 1727-1863,
+// clear of the phone and 57 px above the frame edge). The hero title in
+// scene 1 is kept above both bands by stage.css (.hero-text bottom).
 export const LAYOUTS = {
   wide: { w: 1920, h: 1080, fontPx: 40, maxPillW: 1180, padX: 34, padY: 16, radius: 24, centreX: 680, bottomY: 1080 - 64 },
-  tall: { w: 1080, h: 1920, fontPx: 40, maxPillW: 960, padX: 30, padY: 16, radius: 24, centreY: 1640 },
+  tall: { w: 1080, h: 1920, fontPx: 40, maxPillW: 960, padX: 30, padY: 16, radius: 24, centreY: 1795 },
 };
 
 /* ------------------------------------------------------------------ */

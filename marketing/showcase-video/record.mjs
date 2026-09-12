@@ -346,14 +346,16 @@ export function drivers({ page, frame, ctx, stage, human, clock }) {
       await installMock(ctx, { user: "coach" });
       await F.goto(`${APP}/coach`, { waitUntil: "domcontentloaded" });
       await text(VENUE, 15000);
-      await until(3, 2.3);
+      // Card holds 1.9 s; three taps at ~1 s intervals so the register (the
+      // shot the scene is about) is on screen from ~4.5 s of the 9 s scene.
+      await until(3, 2.2);
       await page.locator("#chapter.on").waitFor({ state: "detached", timeout: 5000 });
       await human.tap(F.getByText(VENUE, { exact: false }));
       await text(PROGRAMME_TITLE);
-      await until(3, 3.7);
+      await until(3, 3.2);
       await human.tap(F.getByText(PROGRAMME_TITLE, { exact: false }));
       await text("Upcoming");
-      await until(3, 5.1);
+      await until(3, 4.1);
       await human.tap(F.getByRole("button", { name: /Today/ }));
       await text("Alfie Barker");
       await text("Isla Fraser");
@@ -382,6 +384,10 @@ export function drivers({ page, frame, ctx, stage, human, clock }) {
       await human.type(ta, COMMENT, 40);
       await sleep(250);
       await human.tap(F.getByRole("button", { name: "Save report" }), { block: "nearest" });
+      // Park the pointer: sonner pauses a toast's 4 s timer while it is
+      // hovered, and the "Report complete" toast pops up right under the Save
+      // button, so a parked mouse lets it clear before the End session sheet.
+      await human.parkMouse();
       await text("Session report · Complete");
     },
 

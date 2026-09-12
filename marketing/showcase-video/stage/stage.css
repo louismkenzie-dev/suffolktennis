@@ -92,10 +92,13 @@ body[data-layout="tall"] .glow { --glow-x: 50%; background: radial-gradient(60% 
 .hero-shade { position: absolute; inset: 0; background:
   linear-gradient(180deg, rgba(14,29,57,0.35) 0%, rgba(14,29,57,0.15) 40%, rgba(14,29,57,0.82) 100%),
   linear-gradient(90deg, rgba(14,29,57,0.72) 0%, rgba(14,29,57,0.25) 55%, rgba(14,29,57,0.1) 100%); }
-.hero-text { position: absolute; left: calc(7 * var(--u)); right: calc(7 * var(--u)); bottom: calc(11 * var(--u)); }
+/* The hero title sits above the caption band: the wide pill (captions.mjs
+   LAYOUTS) reaches up to y ~880 of 1080 and the tall pill starts at y ~1727
+   of 1920, so the title's bottom edge stays at 22u / 24u from the frame edge. */
+.hero-text { position: absolute; left: calc(7 * var(--u)); right: calc(7 * var(--u)); bottom: calc(22 * var(--u)); }
 .hero-text .title { font-size: calc(10.5 * var(--u)); max-width: 12em; text-shadow: 0 calc(0.4 * var(--u)) calc(2 * var(--u)) rgba(0,0,0,0.35); }
 .hero-text .kicker { font-size: calc(2.6 * var(--u)); }
-body[data-layout="tall"] .hero-text { bottom: calc(18 * var(--u)); }
+body[data-layout="tall"] .hero-text { bottom: calc(24 * var(--u)); }
 body[data-layout="tall"] .hero-text .title { font-size: calc(9 * var(--u)); max-width: 9em; }
 
 /* ---------- app scenes: text zone + phone ---------- */

@@ -102,8 +102,10 @@ Generated per layout as `out/wide.ass` / `out/tall.ass` and burned in with the
 SemiBold, white on a 60 % navy rounded pill, two lines maximum. In the wide
 cut the pill sits along the bottom with a 64 px safe margin, centred on the
 text zone left of the phone (x 90-1270 at most) so it never clips the phone
-frame on the right third; in the tall cut it is centred on y = 1640, below
-the phone band. If the stage layout in `record.mjs` moves, adjust `LAYOUTS`.
+frame on the right third; in the tall cut it is centred on y = 1795, in the
+band below the phone (bezel bottom ~1682). The hero title in scene 1 is kept
+above both caption bands by `.hero-text` in `stage/stage.css`. If the stage
+layout moves, adjust `LAYOUTS` and that rule together.
 
 A line that cannot fit two lines is split into consecutive chunks at sentence
 or clause boundaries; each chunk is timed from the alignment's per-character
