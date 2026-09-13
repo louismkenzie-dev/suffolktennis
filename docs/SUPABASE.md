@@ -979,3 +979,40 @@ the minute. Every Resend-derived insert must filter on
 `from ilike '%suffolktennis.online%'` — the Dance Exclusive sends as
 `bookings@nullshift.co.uk`. `email-delivery-sync` is safe by construction: it
 only ever updates rows already keyed to a message this project sent.
+
+### The false "payment failed" alert, 13 Sep 2026
+
+Both monthly sign-ups tonight sent Ollie a "Monthly payment failed" alert
+reading "Paid so far: 0 of 12 months" — while the payment was in fact fine.
+
+A subscription created with `payment_behavior: "default_incomplete"` has its
+first invoice raised before any card is attached, so Stripe's own opening
+attempt fails and fires `invoice.payment_failed` about twenty seconds before
+the parent has confirmed anything. The sequence in the logs is identical both
+times:
+
+```
+17:58:57Z  subscription created (membership incomplete)
+17:59:50Z  invoice.payment_failed     <- Stripe's opening attempt, no card yet
+18:01:04Z  invoice.payment_succeeded  <- the parent confirms; membership active
+```
+
+`handleInvoiceFailed` treated that as dunning: it marked the membership
+`past_due`, emailed the admins, and was then overwritten by the success a
+minute later. Both memberships ended up correct (`active`, 1 of 12 paid) — but
+only because the events arrived in that order. Reversed, a paid-up child's QR
+code would have refused to admit them.
+
+The handler now ignores a failure when `billing_reason` is
+`subscription_create` or the membership is still `incomplete`, ignores one for
+an invoice already in `paid_invoice_ids`, and only ever demotes a membership
+that is `active` or already `past_due`. A genuine decline at sign-up needs no
+alert either: the parent sees it in the payment form, no place is created and
+nothing is owed. Only months two to twelve are the club's to chase. Deployed
+as booking-payments-webhook **v21**, deployed source read back to confirm.
+
+Unrelated but worth knowing: the platform webhook endpoint has `connect=true`,
+so it receives events from **every** connected account on the Nullshift
+platform — The Dance Exclusive's included. Those log as "invoice for unknown
+subscription" and are correctly ignored, because every handler resolves the
+membership by subscription id first.

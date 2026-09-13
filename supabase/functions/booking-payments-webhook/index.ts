@@ -16,7 +16,8 @@
 //    thirteenth month is impossible even if this handler never runs.
 //  - invoice.payment_failed     -> membership past_due + flagged for admins
 //    to chase (Ollie's call: no automatic cancellation, but the QR ticket
-//    stops admitting until it's resolved).
+//    stops admitting until it's resolved). The sign-up invoice is exempt:
+//    see handleInvoiceFailed for why every monthly sign-up raises one.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   type StripeEnv,
@@ -203,10 +204,42 @@ async function handleInvoiceFailed(invoice: any) {
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("id, parent_email, child_name, event_id, months_paid, months_total, monthly_amount_pence")
+    .select("id, parent_email, child_name, event_id, months_paid, months_total, monthly_amount_pence, status, paid_invoice_ids")
     .eq("stripe_subscription_id", subId)
     .maybeSingle();
   if (!membership) return;
+
+  // A subscription created with payment_behavior: "default_incomplete" raises
+  // its first invoice with no payment method attached, so Stripe's own opening
+  // attempt fails and fires this event about twenty seconds BEFORE the parent
+  // has even confirmed the card on our page. Treating that as dunning sent the
+  // admins a "payment failed" alert for every single monthly sign-up, and
+  // briefly marked a membership past due — which, had the two events arrived
+  // the other way round, would have left a paid-up child's QR code refusing to
+  // admit them.
+  //
+  // A genuine decline at sign-up needs no alert either: the parent is looking
+  // at the error in the payment form, no place was created, and nothing is
+  // owed. Only a card that fails LATER — months two to twelve — is the
+  // club's problem to chase.
+  if (invoice.billing_reason === "subscription_create" || membership.status === "incomplete") {
+    console.log("ignoring the opening invoice attempt for", subId, "- nothing is owed yet");
+    return;
+  }
+
+  // A redelivered failure must never undo a payment that has since succeeded.
+  const invoiceId = typeof invoice.id === "string" ? invoice.id : null;
+  if (invoiceId && (membership.paid_invoice_ids ?? []).includes(invoiceId)) {
+    console.log("ignoring a failure for an invoice already paid:", invoiceId);
+    return;
+  }
+
+  // Only a running membership can fall behind. One already cancelled or
+  // completed stays as it is.
+  if (membership.status !== "active" && membership.status !== "past_due") {
+    console.log("ignoring a failure for a membership that is", membership.status);
+    return;
+  }
 
   await supabase
     .from("memberships")
