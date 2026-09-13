@@ -915,3 +915,40 @@ Stripe expires it within a day.
 Lesson recorded because it cost parents their time: a fix is not live until
 the function that serves parents has been redeployed and the deployed source
 has been read back.
+
+### Signup confirmation: the localhost link, 13 Sep 2026
+
+A parent (Brad Warwick) reported that confirming his account was impossible:
+the button in the email went to `localhost`, typing the code gave "Token has
+expired or is invalid", and asking for a new code produced no email. All
+three symptoms, one cause chain — and his account was confirmed the whole
+time (`auth.users.email_confirmed_at` 20:09:36, four seconds after the link
+was tapped).
+
+1. `auth-email-hook` builds the button as
+   `<SUPABASE_URL>/auth/v1/verify?...&redirect_to=<email_data.redirect_to || SITE_URL>`.
+   The client never passed `emailRedirectTo`, so GoTrue filled `redirect_to`
+   from the project's **Site URL**, which is still `http://localhost:3000`.
+   The verify endpoint confirmed him and then bounced him to localhost, where
+   Safari said it could not connect. The confirmation had already happened;
+   the failure was only the landing.
+2. The code was then spent. A signup token is consumed by whichever route is
+   used first, so typing it after tapping the button always says expired.
+3. `supabase.auth.resend({ type: "signup" })` will not resend to an address
+   GoTrue has already confirmed, so nothing arrived.
+
+`Auth.tsx` now passes `emailRedirectTo` explicitly
+(`<origin>/auth?confirmed=1`, carrying any `redirect` target through), so the
+button's destination no longer depends on a dashboard setting. That page says
+"Your email is confirmed — sign in with the password you chose". A spent code
+and a refused resend both now say the same thing rather than reading as dead
+ends.
+
+Still worth doing in the dashboard: Authentication → URL Configuration → set
+**Site URL** to `https://suffolktennis.online` and keep
+`https://suffolktennis.online/**` in the redirect allow-list. Every auth email
+sent before this deploy still carries a localhost landing.
+
+Note for later: auth emails are sent through `auth-email-hook`, which does not
+yet call `recordDelivery`, so signup and reset mail is absent from
+`email_deliveries`. Invitations and reminders are covered; account mail is not.

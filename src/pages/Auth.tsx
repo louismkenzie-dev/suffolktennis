@@ -11,10 +11,19 @@ import { roleHomePath } from "@/lib/roleHome";
 import logoAsset from "@/assets/suffolk-tennis-logo-landscape-v2.png";
 const logo = logoAsset;
 
+/** GoTrue's wording for a code that has been used, or has run out of time. */
+const expiredOrUsed = (error: { message?: string } | null) =>
+  /expired|invalid|already/i.test(error?.message ?? "");
+
 const Auth = () => {
+  // Someone arriving back from the "Confirm my email" button in their signup
+  // email. Their address is already confirmed by the time they land here, so
+  // say so and show the sign-in form rather than the code box they left.
+  const justConfirmed = new URLSearchParams(window.location.search).get("confirmed") === "1";
   // A coach invitation's "Create free account" lands on the sign-up form
   // rather than on "Welcome back" with a link to find.
-  const [isLogin, setIsLogin] = useState(() => new URLSearchParams(window.location.search).get("mode") !== "signup");
+  const [isLogin, setIsLogin] = useState(() =>
+    justConfirmed || new URLSearchParams(window.location.search).get("mode") !== "signup");
   // Invitation links (/coach/join/<token>) pass the invited address along so
   // the account is created under the email the invitation was sent to.
   const [email, setEmail] = useState(() => new URLSearchParams(window.location.search).get("email")?.trim() ?? "");
@@ -93,6 +102,13 @@ const Auth = () => {
           email,
           password,
           options: {
+            // Without this, the confirm button in the email sends people to
+            // whatever Site URL the Supabase project happens to hold — which
+            // was localhost, so a parent tapped Confirm, was confirmed, and
+            // then met "Safari can't open the page" and assumed it had
+            // failed. Name the destination ourselves and it cannot drift.
+            emailRedirectTo: `${window.location.origin}/auth?confirmed=1` +
+              (redirectTarget ? `&redirect=${encodeURIComponent(redirectTarget)}` : ""),
             data: { first_name: firstName, last_name: lastName, player_name: playerName, player_age_group: playerAgeGroup },
           },
         });
@@ -135,7 +151,17 @@ const Auth = () => {
       toast({ title: "Email verified", description: "Welcome to Suffolk Tennis!" });
       navigate(redirectTarget ?? (data.user ? await roleHomePath(data.user.id) : "/parent-hub"));
     } catch (error: any) {
-      toast({ title: "Invalid code", description: error.message ?? "Please check the code and try again.", variant: "destructive" });
+      // A code is spent the moment it is used — including by the button in
+      // the same email. Someone who tapped the button and then typed the code
+      // is already confirmed, and "invalid or expired" reads like a dead end
+      // unless we say which of the two it is likely to be.
+      toast({
+        title: "That code didn't work",
+        description: expiredOrUsed(error)
+          ? "If you already tapped the button in that email, your address is confirmed — sign in below with your password. Otherwise ask for a new code."
+          : error.message ?? "Please check the code and try again.",
+        variant: "destructive",
+      });
     } finally {
       setVerifying(false);
     }
@@ -148,7 +174,18 @@ const Auth = () => {
       if (error) throw error;
       toast({ title: "Code resent", description: `We've emailed a new code to ${email}.` });
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      // GoTrue refuses to resend to an address it has already confirmed, and
+      // says so obliquely. Nothing arrives, and without this the parent is
+      // left waiting on an email that is never coming.
+      const already = /already|confirmed|registered/i.test(error?.message ?? "");
+      toast({
+        title: already ? "You're already confirmed" : "Couldn't resend the code",
+        description: already
+          ? "That email address is confirmed — sign in below with the password you chose."
+          : error.message,
+        variant: already ? "default" : "destructive",
+      });
+      if (already) { setVerifyStep(false); setIsLogin(true); }
     } finally {
       setResending(false);
     }
@@ -218,6 +255,15 @@ const Auth = () => {
                 ? (isLogin ? "Sign in and we'll take you straight back to your invitation." : "One Suffolk Tennis account for everything. Once your email is verified we'll take you straight back to your invitation.")
                 : isLogin ? "Sign in to access your Parent Hub" : "Join the Suffolk Tennis community"}
           </p>
+
+          {justConfirmed && !verifyStep && (
+            <div className="mb-6 rounded-xl border border-emerald-400/40 bg-emerald-400/10 p-4">
+              <p className="font-body text-sm text-emerald-100">
+                <span className="font-bold">Your email is confirmed.</span> Sign in below with the
+                password you chose and you're in.
+              </p>
+            </div>
+          )}
 
           {verifyStep ? (
             <form onSubmit={handleVerifyCode} className="space-y-4">
