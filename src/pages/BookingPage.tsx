@@ -393,7 +393,7 @@ const BookingPage = () => {
                   {isProgramme && !noCharge && (
                     <p className="text-xs text-muted-foreground">
                       {choosePlan && pricing
-                        ? `paid in full — or ${monthlyPlanLabel(pricing)}`
+                        ? `paid in full — or, newly, ${monthlyPlanLabel(pricing)}`
                         : "for the full programme, paid once"}
                     </p>
                   )}
@@ -567,6 +567,13 @@ const BookingPage = () => {
               {choosePlan && pricing && (
                 <fieldset className="space-y-2">
                   <legend className="mb-1.5 text-sm font-semibold">How would you like to pay?</legend>
+                  {/* Parents asked for a way to spread the cost, and the
+                      invitations that went out before it existed quote only the
+                      up-front price — so the page says plainly that this is new. */}
+                  <p className="mb-2 text-sm text-muted-foreground">
+                    Spreading the cost is a <strong className="text-foreground">new financing option</strong>, added
+                    because parents asked for it. Paying in full is unchanged.
+                  </p>
 
                   <label className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 text-sm ${plan === "full" ? "border-primary bg-primary/[0.06]" : "border-border"}`}>
                     <input
@@ -592,7 +599,10 @@ const BookingPage = () => {
                       onChange={() => setPlan("monthly")} className="mt-1 accent-[hsl(var(--primary))]"
                     />
                     <span className="min-w-0 flex-1">
-                      <strong className="text-base">Pay monthly — {gbp(pricing.monthlyPence)} a month</strong>
+                      <span className="flex flex-wrap items-baseline gap-x-2">
+                        <strong className="text-base">Pay monthly — {gbp(pricing.monthlyPence)} a month</strong>
+                        <StatusBadge tone="info" dot={false}>New</StatusBadge>
+                      </span>
                       <span className="mt-0.5 block text-muted-foreground">
                         {pricing.months} payments, {gbp(pricing.monthlyTotalPence)} in total
                         {pricing.savingPence > 0 ? ` — ${gbp(pricing.savingPence)} more than paying in full` : ""}.
