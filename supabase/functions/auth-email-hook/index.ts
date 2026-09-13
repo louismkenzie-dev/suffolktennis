@@ -17,6 +17,7 @@ import { sendEmail } from "../_shared/resend.ts";
 import { brandedEmail, emailButton, emailCode, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
+import { recordDelivery } from "../_shared/emailDeliveries.ts";
 
 const codeEmail = (title: string, intro: string, code: string, unsubscribeUrl?: string) =>
   brandedEmail({
@@ -161,10 +162,20 @@ Deno.serve(async (req) => {
   }
 
   try {
-    await sendEmail(
+    const sent = await sendEmail(
       { to: user.email, subject, html, unsubscribe_token: unsubToken ?? undefined },
       { apiKey: resendKey, unsubscribeBaseUrl: unsubscribeBaseUrl() },
     );
+    // Account mail was the one kind whose fate nothing recorded, so "did the
+    // confirmation email reach them?" could only be answered by reading
+    // Resend's dashboard by hand — which is exactly the question a parent
+    // stuck on sign-up makes someone ask.
+    await recordDelivery(admin, {
+      resendId: sent.id,
+      recipient: user.email,
+      subject,
+      purpose: `auth_${action}`,
+    });
   } catch (e) {
     console.error("auth email send failed:", e);
     return new Response(JSON.stringify({ error: "Email send failed" }), { status: 500 });

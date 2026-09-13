@@ -78,3 +78,41 @@ export function deliveryDetail(d: Delivery): string {
   const when = new Date(d.status_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   return `${deliveryLabel(d.status).label} ${when}`;
 }
+
+/**
+ * What a message was for, in words an admin recognises. `purpose` is written
+ * by the sending function, and auth mail arrives as `auth_<action>` straight
+ * from GoTrue, so unknown values are tidied rather than hidden — a new kind of
+ * email should still be readable here the day it is added.
+ */
+export function purposeLabel(purpose: string | null): string {
+  switch (purpose) {
+    case "booking_invitation": return "Invitation";
+    case "booking_reminder": return "Reminder";
+    case "booking_confirmation": return "Booking confirmed";
+    case "coach_invitation": return "Coach invitation";
+    case "coach_reminder": return "Coach reminder";
+    case "session_reminder": return "Session reminder";
+    case "session_report": return "Session report";
+    case "transactional":
+    case "other": return "Other";
+    case "auth_signup": return "Confirm your account";
+    case "auth_recovery": return "Password reset";
+    case "auth_magic_link":
+    case "auth_magiclink": return "Sign-in link";
+    case "auth_email_change": return "Email change";
+    case "auth_reauthentication": return "Verification code";
+    case "auth_invite": return "Account invitation";
+    case null:
+    case undefined:
+    case "": return "Email";
+    default:
+      return purpose.replace(/^auth_/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  }
+}
+
+/** Anything an admin would want to act on: rejected, delayed, or complained. */
+export function isProblem(status: string): boolean {
+  return status === "bounced" || status === "complained"
+    || status === "failed" || status === "delivery_delayed";
+}

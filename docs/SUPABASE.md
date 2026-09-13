@@ -952,3 +952,30 @@ sent before this deploy still carries a localhost landing.
 Note for later: auth emails are sent through `auth-email-hook`, which does not
 yet call `recordDelivery`, so signup and reset mail is absent from
 `email_deliveries`. Invitations and reminders are covered; account mail is not.
+
+### Account emails join the delivery record
+
+`auth-email-hook` now calls `recordDelivery` with `purpose: auth_<action>`
+(`auth_signup`, `auth_recovery`, `auth_magic_link`, …), so confirmations and
+password resets sit in `email_deliveries` beside invitations and reminders and
+are picked up by `email-delivery-sync` like anything else. Deployed as v13;
+the live function still answers an unsigned request with 401, which is the
+check that its imports resolve.
+
+The admin Email panel gains a **Delivery** tab: search any address and see
+every message sent to it with Resend's verdict, or leave the box empty for the
+sixty most recent. "Problems only" narrows to bounces, delays and spam
+reports. `purposeLabel()` in `src/lib/emailDelivery.ts` turns the stored code
+into words — a purpose it has never seen is tidied rather than hidden, so a
+new kind of email is readable the day it is added.
+
+Existing rows were reclassified from `other` by subject (20 signup
+confirmations, 3 password resets, 12 booking confirmations).
+
+**Careful with any backfill from Resend: the Resend account is shared with
+The Dance Exclusive.** A pass over `/emails` pulled 29 of their messages into
+this project's table before the mistake was spotted; they were deleted within
+the minute. Every Resend-derived insert must filter on
+`from ilike '%suffolktennis.online%'` — the Dance Exclusive sends as
+`bookings@nullshift.co.uk`. `email-delivery-sync` is safe by construction: it
+only ever updates rows already keyed to a message this project sent.

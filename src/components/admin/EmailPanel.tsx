@@ -16,8 +16,9 @@ import { toast } from "sonner";
 import {
   Loader2, Plus, Trash2, Send, Eye, Image as ImageIcon, Type, Heading1,
   List as ListIcon, MousePointerClick, Square, ArrowUp, ArrowDown, Users,
-  Mail, UserMinus, UserPlus, Upload, Save, RefreshCcw,
+  Mail, MailSearch, UserMinus, UserPlus, Upload, Save, RefreshCcw, Search,
 } from "lucide-react";
+import { deliveryLabel, isProblem, purposeLabel, type Delivery } from "@/lib/emailDelivery";
 
 const db = supabase as any;
 
@@ -89,14 +90,16 @@ export default function EmailPanel({ initialGroupId }: { initialGroupId?: string
   return (
     <div className="space-y-6">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid w-full grid-cols-3 md:inline-flex md:w-auto">
+        <TabsList className="grid w-full grid-cols-4 md:inline-flex md:w-auto">
           <TabsTrigger value="compose" className="gap-2"><Mail className="w-4 h-4" /><span className="md:hidden">Compose</span><span className="hidden md:inline">Compose &amp; send</span></TabsTrigger>
           <TabsTrigger value="groups" className="gap-2"><Users className="w-4 h-4" />Groups</TabsTrigger>
           <TabsTrigger value="recipients" className="gap-2"><UserMinus className="w-4 h-4" />Recipients</TabsTrigger>
+          <TabsTrigger value="delivery" className="gap-2"><MailSearch className="w-4 h-4" />Delivery</TabsTrigger>
         </TabsList>
         <TabsContent value="compose" className="mt-6"><Composer initialGroupId={initialGroupId} /></TabsContent>
         <TabsContent value="groups" className="mt-6"><GroupsTab /></TabsContent>
         <TabsContent value="recipients" className="mt-6"><RecipientsTab /></TabsContent>
+        <TabsContent value="delivery" className="mt-6"><DeliveryTab /></TabsContent>
       </Tabs>
     </div>
   );
@@ -131,8 +134,10 @@ function Composer({ initialGroupId }: { initialGroupId?: string | null }) {
         api<{ campaigns: CampaignRow[] }>({ action: "campaigns" }),
         api<{ groups: Group[] }>({ action: "groups" }),
       ]);
-      setCampaigns(c.campaigns);
-      setGroups(g.groups);
+      // Defaulting matters: a response missing either list used to white-screen
+      // the whole Email section rather than showing an empty one.
+      setCampaigns(c.campaigns ?? []);
+      setGroups(g.groups ?? []);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load campaigns"); }
   }, []);
 
@@ -768,6 +773,133 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
         <DialogFooter><Button onClick={onClose}>Done</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Delivery                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * "Did they get it?", answerable for any address.
+ *
+ * Every message the system sends is stamped in email_deliveries with Resend's
+ * own verdict, refreshed every ten minutes. The invitation screens already
+ * show that verdict per parent, but the question usually arrives the other way
+ * round — someone says they never received something — so this looks up an
+ * address and shows everything ever sent to it, account confirmations
+ * included.
+ */
+function DeliveryTab() {
+  const [query, setQuery] = useState("");
+  const [problemsOnly, setProblemsOnly] = useState(false);
+  const [rows, setRows] = useState<Delivery[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Typing an address searches the whole history; an empty box shows the most
+  // recent messages, which is where a fresh problem shows up first.
+  const term = query.trim();
+  const load = useCallback(async () => {
+    setLoading(true);
+    let q = db
+      .from("email_deliveries")
+      .select("id, invitation_id, coach_invitation_id, recipient, subject, purpose, status, status_at, detail, sent_at")
+      .order("sent_at", { ascending: false })
+      .limit(term ? 200 : 60);
+    if (term) q = q.ilike("recipient", `%${term}%`);
+    const { data, error } = await q;
+    if (error) toast.error(error.message);
+    setRows((data ?? []) as Delivery[]);
+    setLoading(false);
+  }, [term]);
+
+  useEffect(() => {
+    const t = setTimeout(load, term ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [load, term]);
+
+  const shown = useMemo(
+    () => (rows ?? []).filter((r) => !problemsOnly || isProblem(r.status)),
+    [rows, problemsOnly],
+  );
+  const problemCount = useMemo(() => (rows ?? []).filter((r) => isProblem(r.status)).length, [rows]);
+
+  return (
+    <Card>
+      <CardHeader className="gap-1">
+        <CardTitle className="flex items-center gap-2"><MailSearch className="w-4 h-4" /> Email delivery</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          What happened to every message we sent — invitations, reminders and account emails.
+          "Delivered" means their provider accepted it; it can still be sitting in their junk folder.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Search an email address"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search an email address"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={problemsOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setProblemsOnly((v) => !v)}
+            >
+              Problems only{problemCount > 0 && ` (${problemCount})`}
+            </Button>
+            <Button variant="outline" size="sm" onClick={load} disabled={loading} aria-label="Refresh">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+
+        {rows === null ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+        ) : shown.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {term
+              ? `Nothing has been sent to an address matching "${term}".`
+              : problemsOnly
+                ? "No bounces, delays or spam reports. Every message has been accepted."
+                : "No emails recorded yet."}
+          </p>
+        ) : (
+          <>
+            <ListGroup>
+              {shown.map((d) => {
+                const verdict = deliveryLabel(d.status);
+                return (
+                  <ListRow
+                    key={d.id}
+                    size="sm"
+                    wrapTitle
+                    // An address is the point of the row, so it must survive a
+                    // narrow screen whole: break it rather than cut it off
+                    // mid-domain, where two parents can look like one.
+                    title={<span className="break-all">{d.recipient}</span>}
+                    subtitle={d.subject ?? purposeLabel(d.purpose)}
+                    detail={`${purposeLabel(d.purpose)} · ${new Date(d.sent_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${d.detail ? ` · ${d.detail}` : ""}`}
+                    trailing={<StatusBadge tone={verdict.tone}>{verdict.label}</StatusBadge>}
+                  />
+                );
+              })}
+            </ListGroup>
+            {problemCount > 0 && !problemsOnly && (
+              <p className="text-xs text-muted-foreground">
+                {problemCount === 1 ? "One message" : `${problemCount} messages`} here needs attention —
+                a bounce almost always means the address is wrong.
+              </p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
