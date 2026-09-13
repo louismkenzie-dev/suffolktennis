@@ -766,3 +766,102 @@ TXT  _dmarc  v=DMARC1; p=none; rua=mailto:enquiries@suffolktennis.online; adkim=
 
 Monitor-only, so it cannot block anything — it just tells the big providers we
 are an authenticated sender.
+
+---
+
+## Monthly programme payments (13 Sep 2026)
+
+Ollie's model, confirmed deliberate: a programme costs **£275 paid in full**, or
+**£25 a month for 12 months — £300**. The monthly total is higher on purpose,
+so paying up front carries a £25 discount and spreading the cost carries a
+small premium for the flexibility. Every screen states that difference rather
+than presenting two prices as if they were equal.
+
+Monthly is a **commitment**, not a rolling subscription.
+
+### Where the numbers live
+
+`events.price_pence` (up front), `events.monthly_amount_pence` and
+`events.programme_months`. Leave the monthly price blank and the programme is
+pay-in-full only — nothing else changes. One module computes and words all of
+it: `src/lib/programmePricing.ts`, mirrored for Deno at
+`supabase/functions/_shared/programmePricing.ts`. Keep the two in step.
+
+`commitmentSentence()` is used verbatim on the booking page, in the invitation
+email and in the confirmation email, so a parent reads the same sentence
+everywhere.
+
+### Making Stripe charge twelve times, and only twelve
+
+`create-booking-checkout` creates a subscription on the connected account:
+
+| parameter | why |
+| --- | --- |
+| `payment_behavior: "default_incomplete"` | nothing is charged until the parent confirms the first invoice on our own page |
+| `save_default_payment_method: "on_subscription"` | the card is kept, so months 2–12 are taken automatically with nothing for the parent to do |
+| `cancel_at` = start + N months − 1 hour | pinned just inside the final billing period: after the twelfth invoice is raised, before a thirteenth ever could be |
+| `application_fee_percent` | the platform's 2.5%, same as one-off charges |
+| `price_data.product` | a real Product id. **`product_data` is a Checkout-Session convenience and the Subscriptions API rejects it** — one product per programme, addressed by the deterministic id `suffolk_prog_<eventId>` |
+
+The month arithmetic (`addMonthsClamped`) reproduces Stripe's own rule —
+same day of month, clamped to the target month's length — so the cancel date
+lands on Stripe's schedule to the hour. 31 Jan walks 28 Feb, 31 Mar, 30 Apr …
+and back to 31 Jan.
+
+Two independent guarantees against a thirteenth charge: `cancel_at` on the
+subscription, and the webhook cancelling once `months_paid` reaches
+`months_total`. Either alone is sufficient.
+
+`memberships.paid_invoice_ids` makes `invoice.payment_succeeded` idempotent.
+Stripe can redeliver an event, and counting one month twice would end a
+twelve-month commitment after eleven real payments.
+
+The membership row is written by the checkout function, not a webhook: the
+embedded Payment Element flow has no Checkout Session to hang it off.
+
+### Recording the parent's consent
+
+`bookings.payment_plan` ('full' | 'monthly') and
+`bookings.commitment_accepted_at`, with a CHECK constraint that a monthly
+booking cannot exist without an acceptance timestamp. The server refuses
+`payment_plan: "monthly"` unless the programme offers it **and**
+`commitment_accepted: true` came with the request — a client that skips either
+gets the up-front price, never a silent subscription.
+
+### What the parent sees
+
+Two radio options with the saving on one and the total on the other; choosing
+monthly opens an amber panel (charged today then the same date each month, 12
+payments, £300, card saved, payments due whether or not every session is
+attended) and a tick box restating it, which the Continue button is disabled
+until they accept. The commitment is repeated above the card form and in the
+confirmation email.
+
+### Verified, 13 Sep 2026
+
+`stripe-selftest` (guard-token protected, sandbox only, creates and destroys
+its own objects) built a subscription with the production parameters and read
+back what Stripe actually stored:
+
+```
+interval month · unit_amount 2500 · collection_method charge_automatically
+save_default_payment_method on_subscription · application_fee_percent 2.5
+start 2026-09-13T12:49:27Z · first period end 2026-10-13 · cancel_at 2027-09-13T11:49:26Z
+cancel_at_matches_requested true · first invoice £25 with a client secret · status incomplete
+```
+
+It also caught the `product_data` rejection before any parent could hit it.
+
+Webhook endpoints, both environments, checked the same way: enabled, pinned to
+`2025-02-24.acacia`, subscribed to `payment_intent.succeeded`,
+`checkout.session.completed`, `invoice.payment_succeeded`,
+`invoice.payment_failed`. Live is `we_1UE9jS2QyV8RYLwsxENhbH4Q`, sandbox
+`we_1U6qmgE0aLvInrlqpuWFwsap`.
+
+### Before parents use it
+
+`app_settings.payments_mode` is **live**, and 12 one-off live payments have
+already settled through this webhook. The monthly path has been proved against
+Stripe's API but never with a real card end to end. Run one real monthly
+booking (or flip to sandbox for a run with 4242 4242 4242 4242) before
+offering it. Then delete `stripe-selftest`.

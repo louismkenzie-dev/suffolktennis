@@ -63,7 +63,9 @@ export function paymentLabel(b: LedgerEntry): { text: string; tone: StatusTone }
   if (b.event?.is_free || b.amount_pence === 0) return { text: "Free", tone: "neutral" };
   if (b.membership) {
     const m = b.membership;
-    const base = `${gbp(m.monthly_amount_pence)}/month · ${m.months_paid} of ${m.months_total} paid`;
+    // The committed total matters as much as the monthly figure: a £25/month
+    // row is £300 of income once the twelve months are through.
+    const base = `${gbp(m.monthly_amount_pence)}/month · ${m.months_paid} of ${m.months_total} paid of ${gbp(m.monthly_amount_pence * m.months_total)}`;
     if (m.status === "past_due") return { text: `${base} · payment failed`, tone: "danger" };
     if (m.status === "cancelled") return { text: `${base} · cancelled`, tone: "danger" };
     return { text: base, tone: m.months_paid >= m.months_total ? "success" : "info" };

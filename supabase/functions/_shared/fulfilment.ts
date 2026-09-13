@@ -6,6 +6,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendEmail } from "./resend.ts";
 import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "./emailLayout.ts";
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "./emailPrefs.ts";
+import { programmePricing } from "./programmePricing.ts";
 
 const SITE_URL = () => (Deno.env.get("SITE_URL") ?? "https://suffolktennis.online").replace(/\/$/, "");
 
@@ -23,7 +24,7 @@ export async function settleBooking(
 ): Promise<void> {
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, status, event_id, invitation_id, parent_name, parent_email, child_name, session_slot, amount_pence, complimentary")
+    .select("id, status, event_id, invitation_id, parent_name, parent_email, child_name, session_slot, amount_pence, complimentary, payment_plan, membership_id")
     .eq("id", bookingId)
     .maybeSingle();
   if (!booking) {
@@ -59,14 +60,21 @@ export async function settleBooking(
 
   const { data: eventRow } = await admin
     .from("events")
-    .select("title, location, event_date, programme_type")
+    .select("title, location, event_date, programme_type, price_pence, monthly_amount_pence, programme_months, is_free")
     .eq("id", booking.event_id)
     .maybeSingle();
 
   const isProgramme = eventRow?.programme_type === "programme";
+  // A monthly plan is a committed run of charges, so the confirmation says so
+  // in the same words the parent agreed to rather than quoting one month as
+  // though that were the price.
+  const monthlyPlan = booking.payment_plan === "monthly" && !!booking.membership_id;
+  const pricing = eventRow ? programmePricing(eventRow) : null;
   const costLabel = booking.complimentary
     ? "No extra charge — included with an existing programme place"
-    : booking.amount_pence > 0 ? gbp(booking.amount_pence) : "Free";
+    : monthlyPlan && pricing && pricing.months > 0
+      ? `${gbp(booking.amount_pence)} a month for ${pricing.months} months (${gbp(booking.amount_pence * pricing.months)} in total)`
+      : booking.amount_pence > 0 ? gbp(booking.amount_pence) : "Free";
   const ticketUrl = `${SITE_URL()}/ticket/${ticket.qr_token}`;
   const firstName = (booking.parent_name ?? "there").split(" ")[0];
   const unsubToken = await unsubscribeTokenFor(admin, booking.parent_email, "booking");
@@ -95,6 +103,11 @@ export async function settleBooking(
             ["Venue", eventRow?.location ?? ""],
             ["Cost", costLabel],
           ]) +
+          (monthlyPlan && pricing && pricing.months > 0
+            ? emailParagraph(
+                `Your monthly plan is set up. <strong>${gbp(booking.amount_pence)}</strong> has been taken today, and the same amount will be taken automatically on this date each month until all <strong>${pricing.months}</strong> payments have been made — <strong>${gbp(booking.amount_pence * pricing.months)}</strong> in total. It then stops by itself; there is no rolling subscription and nothing for you to cancel.`,
+              )
+            : "") +
           emailButton(ticketUrl, "View your entry ticket") +
           emailNote(
             "Please have the QR code on that page ready to be scanned when you arrive — a coach will check your child in with it. " +

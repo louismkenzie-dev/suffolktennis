@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
   const { data: event } = await admin
     .from("events")
-    .select("id, title, description, event_date, end_date, location, age_group, capacity, cost, poster_url, session_slots, visibility, programme_type, price_pence, is_free, meeting_cadence, sign_up_enabled, cancelled_at")
+    .select("id, title, description, event_date, end_date, location, age_group, capacity, cost, poster_url, session_slots, visibility, programme_type, price_pence, monthly_amount_pence, programme_months, is_free, meeting_cadence, sign_up_enabled, cancelled_at")
     .eq("id", invitation.event_id)
     .maybeSingle();
   if (!event) return json({ error: "Event not found" }, 404);

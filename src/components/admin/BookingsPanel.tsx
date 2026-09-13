@@ -23,6 +23,7 @@ import {
 type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
 import { deliveryLabel, worstOf, type Delivery } from "@/lib/emailDelivery";
+import { monthlyPlanLabel, programmePricing } from "@/lib/programmePricing";
 
 const db = supabase as any;
 
@@ -30,6 +31,8 @@ type EventRow = {
   id: string; title: string; description: string | null; event_date: string | null;
   location: string | null; capacity: number | null; visibility: string;
   programme_type: string; price_pence: number | null; is_free: boolean;
+  /** The optional monthly plan: monthly_amount_pence × programme_months. */
+  monthly_amount_pence: number | null; programme_months: number | null;
   meeting_cadence: string | null; sign_up_enabled: boolean; cancelled_at?: string | null;
   timetable_category?: string | null; sign_up_deadline?: string | null;
 };
@@ -97,6 +100,8 @@ const emptyForm = {
   id: null as string | null,
   title: "", description: "", event_date: "", location: "", capacity: "",
   visibility: "private", programme_type: "event", price: "", is_free: false,
+  // The monthly plan. Blank monthly_price means the programme is pay-in-full only.
+  monthly_price: "", programme_months: "12",
   meeting_cadence: "weekly", sign_up_enabled: false, timetable_category: "squad_training",
   // A bare London date; stored as the end of that day so "accept by 30 Sep"
   // still holds at 11pm on the 30th.
@@ -446,6 +451,9 @@ const BookingsPanel = () => {
       programme_type: form.programme_type,
       price_pence: !isProgrammeForm && form.is_free ? null : form.price ? Math.round(Number(form.price) * 100) : null,
       is_free: !isProgrammeForm && form.is_free,
+      // Only programmes can be paid monthly, and only when a monthly price is set.
+      monthly_amount_pence: isProgrammeForm && form.monthly_price ? Math.round(Number(form.monthly_price) * 100) : null,
+      programme_months: isProgrammeForm && form.monthly_price ? Math.max(2, Math.round(Number(form.programme_months) || 12)) : null,
       meeting_cadence: isProgrammeForm ? form.meeting_cadence : null,
       sign_up_enabled: form.sign_up_enabled,
       // Squad training is what a programme is unless told otherwise, so the
@@ -645,6 +653,8 @@ const BookingsPanel = () => {
       visibility: ev.visibility,
       programme_type: ev.programme_type,
       price: ev.price_pence != null ? (ev.price_pence / 100).toString() : "",
+      monthly_price: ev.monthly_amount_pence != null ? (ev.monthly_amount_pence / 100).toString() : "",
+      programme_months: ev.programme_months != null ? String(ev.programme_months) : "12",
       is_free: !!ev.is_free,
       meeting_cadence: ev.meeting_cadence ?? "weekly",
       sign_up_enabled: ev.sign_up_enabled,
@@ -763,10 +773,14 @@ const BookingsPanel = () => {
     const st = deliveries[i.id]?.status;
     return st === "bounced" || st === "complained" || st === "failed";
   });
-  const priceLine = (ev: EventRow) =>
-    ev.programme_type === "programme"
-      ? `${gbp(ev.price_pence)} · ${ev.meeting_cadence ?? "regular"} programme`
-      : ev.is_free ? "Free event" : `${gbp(ev.price_pence)} · event`;
+  const priceLine = (ev: EventRow) => {
+    if (ev.programme_type !== "programme") {
+      return ev.is_free ? "Free event" : `${gbp(ev.price_pence)} · event`;
+    }
+    const p = programmePricing(ev);
+    const monthly = p.offersMonthly ? ` or ${monthlyPlanLabel(p)}` : "";
+    return `${gbp(ev.price_pence)}${monthly} · ${ev.meeting_cadence ?? "regular"} programme`;
+  };
   const placesLine = (ev: EventRow) => {
     const st = stats[ev.id] ?? { invited: 0, booked: 0, paid: 0 };
     return `${st.invited} invited · ${ev.capacity ? `${st.paid}/${ev.capacity} places` : `${st.paid} booked`}`;
@@ -1584,8 +1598,48 @@ const BookingsPanel = () => {
                     <Label>Programme fee (£, paid up front)</Label>
                     <Input type="number" inputMode="decimal" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
                   </div>
+                  <div className="sm:col-span-2 space-y-3 rounded-xl border border-border bg-muted/40 p-3.5">
+                    <div>
+                      <p className="text-[15px] font-semibold">Monthly option</p>
+                      <p className="text-xs text-muted-foreground">
+                        Leave the monthly price blank and parents can only pay in full. Fill it in and they choose,
+                        with the saving on paying up front shown to them.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label>Per month (£)</Label>
+                        <Input type="number" inputMode="decimal" min="0" step="0.01" placeholder="e.g. 25" value={form.monthly_price} onChange={(e) => setForm({ ...form, monthly_price: e.target.value })} />
+                      </div>
+                      <div>
+                        <Label>Number of months</Label>
+                        <Input type="number" inputMode="numeric" min="2" max="36" value={form.programme_months} disabled={!form.monthly_price} onChange={(e) => setForm({ ...form, programme_months: e.target.value })} />
+                      </div>
+                    </div>
+                    {(() => {
+                      const p = programmePricing({
+                        programme_type: "programme",
+                        price_pence: form.price ? Math.round(Number(form.price) * 100) : null,
+                        monthly_amount_pence: form.monthly_price ? Math.round(Number(form.monthly_price) * 100) : null,
+                        programme_months: Number(form.programme_months) || 0,
+                      });
+                      if (!p.offersMonthly) return null;
+                      return (
+                        <p className="text-xs">
+                          Parents will see <strong>{gbp(p.upFrontPence)}</strong> in full, or{" "}
+                          <strong>{monthlyPlanLabel(p)}</strong> ({gbp(p.monthlyTotalPence)} in total)
+                          {p.savingPence > 0
+                            ? <> — a <strong>{gbp(p.savingPence)}</strong> saving for paying up front.</>
+                            : p.monthlyTotalPence < p.upFrontPence
+                              ? <span className="text-amber-700"> — the monthly total is <strong>less</strong> than the up-front price, so nobody would pay in full.</span>
+                              : <> — the same either way.</>}
+                          {" "}The card is charged every month until all {p.months} payments are made, then it stops.
+                        </p>
+                      );
+                    })()}
+                  </div>
                   <p className="text-xs text-muted-foreground sm:col-span-2">
-                    One payment for the whole programme, however many sessions it has, and however often it meets. If you invite a child who is already paying for another programme, this place is free for them. That only ever happens through an invitation you send.
+                    One place covers the whole programme, however many sessions it has and however often it meets. If you invite a child who is already paying for another programme, this place is free for them. That only ever happens through an invitation you send.
                   </p>
                 </>
               ) : (

@@ -9,23 +9,39 @@
 //
 // Pricing model (Ollie, 10 Sep 2026):
 //   event      -> one payment of events.price_pence, or free (events.is_free)
-//   programme  -> one up-front payment of events.price_pence (£250) covering
-//                 every session. No subscriptions.
+//   programme  -> either one up-front payment of events.price_pence, or, when
+//                 the programme offers it, a committed run of
+//                 events.programme_months monthly charges of
+//                 events.monthly_amount_pence. The monthly total is higher on
+//                 purpose: paying in full carries a discount.
 //   complimentary invitation -> no charge: a child already paying for a
 //                 programme is included on any other programme, and admins can
 //                 grant a free place by hand.
 // Free and complimentary bookings settle here immediately (ticket + email);
-// paid ones settle when the webhook sees payment_intent.succeeded.
+// one-off card payments settle when the webhook sees
+// payment_intent.succeeded; monthly plans settle on the first
+// invoice.payment_succeeded.
+//
+// A monthly plan is a COMMITMENT, and Stripe is set up to honour exactly that:
+// the subscription is created with the card saved as the default payment
+// method, so every month is charged automatically without the parent doing
+// anything, and with `cancel_at` pinned just inside the final billing period
+// so it can never bill a thirteenth month even if a webhook is missed. The
+// parent must tick the commitment box before we get here; that acceptance is
+// stamped on the booking.
 import { z } from "npm:zod@3.23.8";
 import {
   type StripeEnv,
   bookingApplicationFee,
   connectRequestOptions,
   createStripeClient,
+  getConnectedAccountId,
+  getPlatformFeePercent,
 } from "../_shared/stripe.ts";
 import { getActiveStripeEnv } from "../_shared/paymentsMode.ts";
 import { serviceClient, CORS, json } from "../_shared/adminAuth.ts";
 import { settleBooking } from "../_shared/fulfilment.ts";
+import { commitmentSentence, gbp, programmePricing } from "../_shared/programmePricing.ts";
 
 const Body = z.object({
   invitation_token: z.string().regex(/^[a-f0-9]{16,}$/).optional(),
@@ -36,7 +52,28 @@ const Body = z.object({
   session_slot: z.string().trim().max(200).optional().or(z.literal("")),
   medical_notes: z.string().trim().max(1000).optional().or(z.literal("")),
   photo_consent: z.boolean().optional(),
+  /** "full" = one payment; "monthly" = the committed monthly plan. */
+  payment_plan: z.enum(["full", "monthly"]).optional(),
+  /** The parent ticked the box spelling out the monthly commitment. */
+  commitment_accepted: z.boolean().optional(),
 });
+
+/**
+ * Stripe rolls a billing date forward by keeping the day of the month and
+ * clamping it to the length of the target month (31 Jan + 1 month = 28 Feb).
+ * `setUTCMonth` overflows instead, so do the clamp ourselves — the cancel
+ * date has to line up with Stripe's own schedule to the hour.
+ */
+function addMonthsClamped(from: Date, months: number): Date {
+  const y = from.getUTCFullYear();
+  const m = from.getUTCMonth() + months;
+  const day = from.getUTCDate();
+  const lastOfTarget = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(
+    y, m, Math.min(day, lastOfTarget),
+    from.getUTCHours(), from.getUTCMinutes(), from.getUTCSeconds(),
+  ));
+}
 
 /** Booking requires a signed-in parent: resolve the caller from their JWT. */
 async function requireUser(req: Request): Promise<{ id: string; email: string } | null> {
@@ -112,7 +149,7 @@ Deno.serve(async (req) => {
 
   const { data: event } = await admin
     .from("events")
-    .select("id, title, location, visibility, sign_up_enabled, capacity, programme_type, price_pence, is_free, meeting_cadence, cancelled_at")
+    .select("id, title, location, visibility, sign_up_enabled, capacity, programme_type, price_pence, monthly_amount_pence, programme_months, is_free, meeting_cadence, cancelled_at")
     .eq("id", eventId)
     .maybeSingle();
   if (!event) return json({ error: "Event not found" }, 404);
@@ -153,7 +190,25 @@ Deno.serve(async (req) => {
   // granted for; free events are free for everyone.
   const complimentary = !!invitation?.complimentary;
   const noCharge = event.is_free || complimentary;
-  const amountPence = noCharge ? 0 : (event.price_pence ?? 0);
+
+  // Which of the two ways to pay this is. Monthly is only ever honoured when
+  // the programme offers it AND the parent ticked the commitment box — a
+  // client that skips either gets the up-front price, never a silent
+  // subscription.
+  const pricing = programmePricing(event);
+  const wantsMonthly = body.payment_plan === "monthly" && !noCharge;
+  if (wantsMonthly && !pricing.offersMonthly) {
+    return json({ error: "Monthly payments are not available for this programme." }, 400);
+  }
+  if (wantsMonthly && body.commitment_accepted !== true) {
+    return json({
+      error: `Please confirm the ${pricing.months}-month commitment before paying monthly.`,
+    }, 400);
+  }
+  const monthly = wantsMonthly && pricing.offersMonthly;
+
+  // What the card is charged now: the whole programme, or the first month.
+  const amountPence = noCharge ? 0 : monthly ? pricing.monthlyPence : (event.price_pence ?? 0);
 
   if (!noCharge && amountPence < 30) {
     return json({ error: "This event does not have online payment configured — please contact Suffolk Tennis." }, 400);
@@ -196,6 +251,8 @@ Deno.serve(async (req) => {
       photo_consent: !!body.photo_consent,
       amount_pence: amountPence,
       complimentary,
+      payment_plan: monthly ? "monthly" : "full",
+      commitment_accepted_at: monthly ? new Date().toISOString() : null,
       status: "pending",
       stripe_env: env,
     })
@@ -225,6 +282,117 @@ Deno.serve(async (req) => {
   try {
     const stripe = createStripeClient(env);
     const connectOpts = connectRequestOptions(env);
+
+    // --- Monthly plan: a subscription that charges the card every month for
+    // the committed number of months, then stops of its own accord. ---
+    if (monthly) {
+      // One customer per parent on the connected account, so a second child
+      // does not create a duplicate card on file.
+      const existing = await stripe.customers.list({ email: parentEmail, limit: 1 }, connectOpts);
+      const customer = existing.data[0]
+        ?? await stripe.customers.create({ email: parentEmail, name: body.parent_name }, connectOpts);
+
+      const feePercent = getConnectedAccountId(env) ? getPlatformFeePercent() : null;
+      const startedAt = new Date();
+      // Pinned an hour inside the final billing period: after the last
+      // invoice has been raised, before a further one ever could be. Even if
+      // every webhook were lost, Stripe cannot bill month 13.
+      const cancelAt = Math.floor(
+        (addMonthsClamped(startedAt, pricing.months).getTime() - 60 * 60 * 1000) / 1000,
+      );
+
+      // Subscription items need a real Product; `product_data` is a Checkout
+      // Session convenience that the Subscriptions API rejects. One product
+      // per programme, addressed by a deterministic id so the second parent
+      // to sign up reuses it rather than cluttering Stripe with duplicates.
+      const productId = `suffolk_prog_${event.id.replace(/-/g, "")}`;
+      let product;
+      try {
+        product = await stripe.products.retrieve(productId, connectOpts);
+      } catch {
+        product = await stripe.products.create(
+          { id: productId, name: `${event.title} — monthly plan` },
+          connectOpts,
+        );
+      }
+
+      const subscription = await stripe.subscriptions.create(
+        {
+          customer: customer.id,
+          items: [{
+            price_data: {
+              currency: "gbp",
+              unit_amount: pricing.monthlyPence,
+              recurring: { interval: "month" },
+              product: product.id,
+            },
+          }],
+          // The first payment is confirmed on our own page with the Payment
+          // Element; nothing is charged until the parent confirms it.
+          payment_behavior: "default_incomplete",
+          payment_settings: {
+            payment_method_types: ["card"],
+            // Keeps the card as the default for every later month, so the
+            // remaining payments are taken automatically.
+            save_default_payment_method: "on_subscription",
+          },
+          cancel_at: cancelAt,
+          ...(feePercent != null && feePercent > 0 && { application_fee_percent: feePercent }),
+          description: `${event.title} · ${childName} · ${pricing.months} monthly payments of ${gbp(pricing.monthlyPence)}`,
+          metadata: {
+            bookingId: booking.id,
+            eventId: event.id,
+            checkoutType: "programme_monthly",
+            monthsTotal: String(pricing.months),
+            commitmentTotalPence: String(pricing.monthlyTotalPence),
+          },
+          expand: ["latest_invoice.payment_intent"],
+        },
+        connectOpts,
+      );
+
+      const invoice = subscription.latest_invoice as any;
+      const intent = invoice?.payment_intent;
+      if (!intent?.client_secret) throw new Error("Subscription has no first-invoice client_secret");
+
+      // The membership is written here rather than from a webhook: the
+      // embedded flow has no Checkout Session to hang it off, and
+      // invoice.payment_succeeded needs a row to find by subscription id.
+      const { data: membership } = await admin
+        .from("memberships")
+        .upsert({
+          booking_id: booking.id,
+          event_id: event.id,
+          parent_user_id: user.id,
+          parent_email: parentEmail,
+          child_name: childName,
+          stripe_subscription_id: subscription.id,
+          stripe_customer_id: customer.id,
+          stripe_env: env,
+          monthly_amount_pence: pricing.monthlyPence,
+          months_total: pricing.months,
+          status: "incomplete",
+        }, { onConflict: "stripe_subscription_id" })
+        .select("id")
+        .single();
+      if (membership) {
+        await admin.from("bookings").update({ membership_id: membership.id }).eq("id", booking.id);
+      }
+
+      return json({
+        client_secret: intent.client_secret,
+        payment_intent_id: typeof intent.id === "string" ? intent.id : null,
+        booking_id: booking.id,
+        amount_pence: pricing.monthlyPence,
+        environment: env,
+        mode: "subscription",
+        is_programme: true,
+        months_total: pricing.months,
+        commitment_total_pence: pricing.monthlyTotalPence,
+        commitment: commitmentSentence(pricing),
+      });
+    }
+
     const description = [
       `Player: ${childName}`,
       body.session_slot || null,

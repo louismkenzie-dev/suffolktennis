@@ -10,6 +10,10 @@
 //  - invoice.payment_succeeded  -> months_paid++, membership active; when the
 //    committed months are all paid, cancel the subscription at period end and
 //    mark the membership completed. First invoice also settles the booking.
+//    Counted per invoice id: Stripe can redeliver an event, and counting a
+//    month twice would end a twelve-month commitment after eleven real
+//    payments. The subscription also carries its own `cancel_at`, so the
+//    thirteenth month is impossible even if this handler never runs.
 //  - invoice.payment_failed     -> membership past_due + flagged for admins
 //    to chase (Ollie's call: no automatic cancellation, but the QR ticket
 //    stops admitting until it's resolved).
@@ -142,11 +146,20 @@ async function handleInvoicePaid(invoice: any, env: StripeEnv) {
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("id, booking_id, months_paid, months_total, status")
+    .select("id, booking_id, months_paid, months_total, status, paid_invoice_ids")
     .eq("stripe_subscription_id", subId)
     .maybeSingle();
   if (!membership) {
     console.warn("invoice for unknown subscription:", subId);
+    return;
+  }
+
+  // Already counted (a redelivered event): settle the booking if that step
+  // was what failed last time, but never move the tally.
+  const invoiceId = typeof invoice.id === "string" ? invoice.id : null;
+  const counted: string[] = membership.paid_invoice_ids ?? [];
+  if (invoiceId && counted.includes(invoiceId)) {
+    if (membership.booking_id) await settleBooking(membership.booking_id, {});
     return;
   }
 
@@ -157,6 +170,7 @@ async function handleInvoicePaid(invoice: any, env: StripeEnv) {
     .from("memberships")
     .update({
       months_paid: monthsPaid,
+      paid_invoice_ids: invoiceId ? [...counted, invoiceId] : counted,
       status: completed ? "completed" : "active",
       last_payment_failed_at: null,
       current_period_end: invoice.lines?.data?.[0]?.period?.end
@@ -170,14 +184,15 @@ async function handleInvoicePaid(invoice: any, env: StripeEnv) {
     await settleBooking(membership.booking_id, {});
   }
 
-  // Commitment fulfilled: stop the subscription at the period end so nobody
-  // is charged beyond the programme.
+  // Commitment fulfilled. The subscription's own `cancel_at` already stops it
+  // inside this final period; this is the belt to that pair of braces, and is
+  // allowed to fail (Stripe refuses the update once the run has ended).
   if (completed) {
     try {
       const stripe = createStripeClient(env);
       await stripe.subscriptions.update(subId, { cancel_at_period_end: true }, connectRequestOptions(env));
     } catch (e) {
-      console.error("failed to schedule subscription cancellation:", e);
+      console.log("subscription already ending, no cancellation needed:", e instanceof Error ? e.message : e);
     }
   }
 }
@@ -188,7 +203,7 @@ async function handleInvoiceFailed(invoice: any) {
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("id, parent_email, child_name, event_id")
+    .select("id, parent_email, child_name, event_id, months_paid, months_total, monthly_amount_pence")
     .eq("stripe_subscription_id", subId)
     .maybeSingle();
   if (!membership) return;
@@ -216,6 +231,8 @@ async function handleInvoiceFailed(invoice: any) {
               ["Player", membership.child_name],
               ["Parent", membership.parent_email],
               ["Programme", eventRow?.title ?? membership.event_id],
+              ["Monthly amount", `£${(membership.monthly_amount_pence / 100).toFixed(2)}`],
+              ["Paid so far", `${membership.months_paid} of ${membership.months_total} months`],
             ]) +
             emailParagraph("The membership is now marked <strong>past due</strong> — their entry QR code will not admit them until the payment is resolved. Stripe retries the card automatically for about a week; this needs chasing only if it keeps failing.") +
             emailButton(`${SITE_URL}/admin`, "Open the admin dashboard"),

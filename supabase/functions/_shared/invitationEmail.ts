@@ -6,6 +6,7 @@
 // template can be rendered for a sample or preview without standing up the
 // whole invite flow. send-booking-invitations is its only sender.
 import { FONT, brandedEmail, emailButton, emailDetails, emailHeading, emailNote, emailParagraph } from "./emailLayout.ts";
+import { commitmentSentence, monthlyPlanLabel, programmePricing } from "./programmePricing.ts";
 
 export const SITE_URL = Deno.env.get("SITE_URL") ?? "https://suffolktennis.online";
 const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
@@ -13,6 +14,8 @@ const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 
 export type EventRow = {
   id: string; title: string; location: string | null; event_date: string | null;
   programme_type: string; price_pence: number | null; is_free: boolean; meeting_cadence: string | null;
+  /** The optional monthly plan — see programmePricing.ts. */
+  monthly_amount_pence: number | null; programme_months: number | null;
   description: string | null; sign_up_deadline: string | null;
 };
 
@@ -61,6 +64,10 @@ function costLabel(ev: EventRow, complimentary: boolean): string {
   if (ev.is_free) return "Free";
   if (!ev.price_pence) return "";
   if (ev.programme_type === "programme") {
+    const p = programmePricing(ev);
+    if (p.offersMonthly) {
+      return `${gbp(p.upFrontPence)} paid in full, or ${monthlyPlanLabel(p)}`;
+    }
     return `${gbp(ev.price_pence)} for the complete programme`;
   }
   return gbp(ev.price_pence);
@@ -86,6 +93,27 @@ function nameList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/**
+ * The two ways to pay, when the programme offers both. Ollie's model is
+ * deliberate: the monthly total is higher than the up-front price, so the
+ * saving is stated plainly rather than left for a parent to work out, and the
+ * commitment behind the monthly option is spelled out in the same breath.
+ */
+function payingBlock(ev: EventRow): string {
+  const p = programmePricing(ev);
+  if (!p.offersMonthly) return "";
+  return (
+    emailHeading("Paying for the place", { size: 17, margin: "24px 0 10px" }) +
+    emailParagraph("You can pay whichever way suits you:") +
+    emailList([
+      `<strong>In full — ${gbp(p.upFrontPence)}.</strong> One payment, and nothing else to think about all season.` +
+        (p.savingPence > 0 ? ` This saves <strong>${gbp(p.savingPence)}</strong> against paying monthly.` : ""),
+      `<strong>Monthly — ${gbp(p.monthlyPence)} a month for ${p.months} months</strong> (${gbp(p.monthlyTotalPence)} in total). Spreads the cost across the season.`,
+    ]) +
+    emailParagraph(`If you choose monthly, please note: ${commitmentSentence(p).replace(/^This is a/, "this is a")} Your card is kept securely by Stripe and charged automatically each month, and the plan then stops on its own — there is no rolling subscription and nothing to cancel.`)
+  );
+}
+
 /** A bulleted list in the body voice; emailLayout has no list helper. */
 function emailList(items: string[]): string {
   const li = items.map((i) => `<li style="margin: 0 0 6px;">${i}</li>`).join("");
@@ -106,6 +134,8 @@ export function invitationEmail(opts: {
   const noCharge = opts.complimentary || ev.is_free;
   const deadline = ev.sign_up_deadline ? longDate(ev.sign_up_deadline) : null;
   const seasonLabel = shape.season ? ` for the ${shape.season} season` : "";
+  // Both ways to pay on offer changes how the accept step is described.
+  const offersMonthly = programmePricing(ev).offersMonthly && !noCharge;
 
   // The opening is Ollie's letter, with the facts filled in from the
   // programme rather than typed.
@@ -150,8 +180,9 @@ export function invitationEmail(opts: {
     ]) +
     (shape.venueSentence ? emailParagraph(esc(shape.venueSentence)) : "") +
     (isProgramme && !noCharge
-      ? emailParagraph("One payment covers the complete programme — all the on-court delivery, and the off-court support that goes with it.") +
-        emailParagraph(`That includes a personal performance report after every session, communication between the county coaches, you and ${child}\u2019s home coach and club, and the additional age-group opportunities above. It supports the delivery and continued development of a high-quality, sustainable County Performance Programme.`)
+      ? emailParagraph("One place covers the complete programme — all the on-court delivery, and the off-court support that goes with it.") +
+        emailParagraph(`That includes a personal performance report after every session, communication between the county coaches, you and ${child}’s home coach and club, and the additional age-group opportunities above. It supports the delivery and continued development of a high-quality, sustainable County Performance Programme.`) +
+        payingBlock(ev)
       : "") +
     (opts.complimentary
       ? emailParagraph(`Because ${child} is already on one of our programmes, this place is <strong>included at no extra charge</strong> — you just need to confirm it.`)
@@ -167,10 +198,10 @@ export function invitationEmail(opts: {
     emailParagraph(
       noCharge
         ? `To accept, use the button below. You’ll sign in — or create your free Suffolk Tennis account with this email address — confirm ${child}’s details, and the place is yours.`
-        : `To accept, use the button below. You’ll sign in — or create your free Suffolk Tennis account with this email address — confirm ${child}’s details, and pay securely by card. The place is confirmed the moment the payment goes through; there is no separate form to fill in.`,
+        : `To accept, use the button below. You’ll sign in — or create your free Suffolk Tennis account with this email address — confirm ${child}’s details, and ${offersMonthly ? "choose whether to pay in full or monthly" : "pay securely by card"}. The place is confirmed the moment the ${offersMonthly ? "first payment" : "payment"} goes through; there is no separate form to fill in.`,
     ) +
     (isProgramme
-      ? emailParagraph(`By accepting the place, you agree to be added to ${child}\u2019s age-group WhatsApp group, which we use for day-to-day communication, and to the Suffolk Junior Tennis Hub, where key Suffolk Tennis announcements are posted.`)
+      ? emailParagraph(`By accepting the place, you agree to be added to ${child}’s age-group WhatsApp group, which we use for day-to-day communication, and to the Suffolk Junior Tennis Hub, where key Suffolk Tennis announcements are posted.`)
       : "") +
     emailButton(opts.bookUrl, noCharge ? "Confirm the place" : "Accept &amp; pay") +
     (noCharge
@@ -180,7 +211,7 @@ export function invitationEmail(opts: {
   const updates =
     emailHeading("Programme information and updates", { size: 17, margin: "24px 0 10px" }) +
     emailParagraph(`<a href="${SITE_URL}" style="color: #0B7A9E;">suffolktennis.online</a> is the home of the County Programme: programme information, news and announcements through the season. Once ${child} is booked on, your Parent Hub holds their session tickets, timetable and every performance report.`) +
-    emailParagraph(`After every session, ${child}\u2019s coach writes them a personal performance report — addressed to ${child} by name, scored against the nine LTA development areas, with the coach\u2019s own notes on what went well and what they are working on next. Every one is kept in your Parent Hub, so you can follow the whole season in one place.`) +
+    emailParagraph(`After every session, ${child}’s coach writes them a personal performance report — addressed to ${child} by name, scored against the nine LTA development areas, with the coach’s own notes on what went well and what they are working on next. Every one is kept in your Parent Hub, so you can follow the whole season in one place.`) +
     emailParagraph(`If you have any questions about the programme, training groups, payment or accepting the place, contact us through <a href="${SITE_URL}" style="color: #0B7A9E;">suffolktennis.online</a>.`);
 
   const signoff =

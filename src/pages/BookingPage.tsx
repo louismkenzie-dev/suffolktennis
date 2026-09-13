@@ -14,6 +14,9 @@ import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, Shield
 import { formatTimeRange } from "@/lib/timeFormat";
 import { venueLine, venueRuns, venueRunsSentence } from "@/lib/venueRuns";
 import { FlowShell, Field, StatusBadge, SkeletonBlock } from "@/components/app";
+import {
+  commitmentConsentLabel, commitmentSentence, monthlyPlanLabel, programmePricing,
+} from "@/lib/programmePricing";
 
 type InvitationPayload = {
   invitation: {
@@ -25,6 +28,8 @@ type InvitationPayload = {
     id: string; title: string; description: string | null; event_date: string | null;
     location: string | null; poster_url: string | null; session_slots: string[] | null;
     programme_type: string; price_pence: number | null; is_free: boolean;
+    /** The monthly plan, when this programme offers one (see lib/programmePricing). */
+    monthly_amount_pence: number | null; programme_months: number | null;
     meeting_cadence: string | null; capacity: number | null; cancelled_at?: string | null;
   };
   sessions: Array<{ id: string; session_date: string; start_time: string | null; end_time: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>;
@@ -35,10 +40,15 @@ type PaymentSetup = {
   clientSecret: string;
   bookingId: string;
   environment: PaymentsEnvironment;
-  mode: "payment";
+  mode: "payment" | "subscription";
   amountPence: number;
   isProgramme: boolean;
+  /** Set for a monthly plan: the commitment, restated above the card form. */
+  commitment: string | null;
 };
+
+/** Which of the two ways to pay the parent has chosen. */
+type Plan = "full" | "monthly";
 
 const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 
@@ -126,15 +136,25 @@ const PaymentStep = ({ setup, priceLabel, onBack }: {
           <ArrowLeft size={14} /> Back to details
         </button>
       </div>
-      {setup.isProgramme && (
+      {setup.mode === "subscription" ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+          <p className="font-semibold">You are setting up {gbp(setup.amountPence)} a month.</p>
+          <p className="mt-1 leading-relaxed">{setup.commitment}</p>
+          <p className="mt-1 leading-relaxed">
+            The card you enter below is kept on file and charged automatically each month — you don't need to do anything else.
+          </p>
+        </div>
+      ) : setup.isProgramme ? (
         <p className="text-sm text-muted-foreground">
           One payment of {gbp(setup.amountPence)} covers the whole programme — every session included.
         </p>
-      )}
+      ) : null}
       <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
       <Button type="submit" size="lg" disabled={!stripe || !elements || submitting} className="w-full">
-        {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Pay ${priceLabel}`}
+        {submitting
+          ? <Loader2 className="w-5 h-5 animate-spin" />
+          : setup.mode === "subscription" ? `Pay ${priceLabel} and start the plan` : `Pay ${priceLabel}`}
       </Button>
       <div className="flex items-center justify-center gap-4 text-[11px] uppercase tracking-wider text-muted-foreground">
         <span className="flex items-center gap-1.5"><Lock className="w-3 h-3" /> Secure payment</span>
@@ -163,6 +183,8 @@ const BookingPage = () => {
   const [medicalNotes, setMedicalNotes] = useState("");
   const [photoConsent, setPhotoConsent] = useState(false);
 
+  const [plan, setPlan] = useState<Plan>("full");
+  const [commitmentAccepted, setCommitmentAccepted] = useState(false);
   const [setup, setSetup] = useState<PaymentSetup | null>(null);
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
@@ -230,6 +252,8 @@ const BookingPage = () => {
           session_slot: sessionSlot,
           medical_notes: medicalNotes.trim(),
           photo_consent: photoConsent,
+          payment_plan: plan,
+          commitment_accepted: plan === "monthly" ? commitmentAccepted : undefined,
         },
       });
       if (error || res?.error || (!res?.client_secret && !res?.free)) {
@@ -255,9 +279,10 @@ const BookingPage = () => {
         clientSecret: res.client_secret,
         bookingId: res.booking_id,
         environment: res.environment,
-        mode: "payment",
+        mode: res.mode === "subscription" ? "subscription" : "payment",
         amountPence: res.amount_pence,
         isProgramme: !!res.is_programme,
+        commitment: res.commitment ?? null,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment setup failed — please try again.");
@@ -274,6 +299,11 @@ const BookingPage = () => {
   const runs = data ? venueRuns(data.sessions, data.event.location) : [];
   const venueText = data ? venueLine(runs, data.event.location) : null;
   const venueSentence = venueRunsSentence(runs);
+  const pricing = data ? programmePricing(data.event) : null;
+  // Both ways to pay are only offered when the programme has both prices and
+  // there is actually something to pay.
+  const choosePlan = !!pricing?.offersMonthly && !noCharge;
+  const monthlyChosen = choosePlan && plan === "monthly";
   const priceLabel = data
     ? complimentary
       ? "No extra charge"
@@ -283,7 +313,14 @@ const BookingPage = () => {
           ? `${gbp(data.event.price_pence!)} for the full programme`
           : gbp(data.event.price_pence!)
     : "";
-  const payLabel = data && !noCharge && data.event.price_pence ? gbp(data.event.price_pence) : "";
+  // What the card is charged now: the first month, or the whole thing.
+  const payLabel = !data || noCharge
+    ? ""
+    : monthlyChosen && pricing
+      ? gbp(pricing.monthlyPence)
+      : data.event.price_pence ? gbp(data.event.price_pence) : "";
+  // A monthly plan cannot start until the commitment has been accepted.
+  const blockedOnCommitment = monthlyChosen && !commitmentAccepted;
 
   const elementsOptions: StripeElementsOptions | null = setup
     ? {
@@ -353,9 +390,19 @@ const BookingPage = () => {
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Price</p>
                   <p className="font-display text-2xl font-semibold leading-tight">{complimentary ? "No extra charge" : noCharge ? "Free" : gbp(data.event.price_pence!)}</p>
-                  {isProgramme && !noCharge && <p className="text-xs text-muted-foreground">for the full programme, paid once</p>}
+                  {isProgramme && !noCharge && (
+                    <p className="text-xs text-muted-foreground">
+                      {choosePlan && pricing
+                        ? `paid in full — or ${monthlyPlanLabel(pricing)}`
+                        : "for the full programme, paid once"}
+                    </p>
+                  )}
                 </div>
-                {complimentary && <StatusBadge tone="success">Included</StatusBadge>}
+                {complimentary
+                  ? <StatusBadge tone="success">Included</StatusBadge>
+                  : choosePlan && pricing && pricing.savingPence > 0
+                    ? <StatusBadge tone="success" dot={false}>Save {gbp(pricing.savingPence)} paying in full</StatusBadge>
+                    : null}
               </div>
 
               {complimentary ? (
@@ -365,7 +412,16 @@ const BookingPage = () => {
                 </p>
               ) : isProgramme && (
                 <p className="mt-3 text-sm text-muted-foreground">
-                  One payment covers the <strong className="text-foreground">whole programme</strong> — every session below is included.
+                  {choosePlan && pricing ? (
+                    <>
+                      Every session below is included either way. Pay once and it costs{" "}
+                      <strong className="text-foreground">{gbp(pricing.upFrontPence)}</strong>; spread it and it is{" "}
+                      <strong className="text-foreground">{monthlyPlanLabel(pricing)}</strong>
+                      {pricing.savingPence > 0 ? <> — {gbp(pricing.monthlyTotalPence)} in total, so paying in full saves {gbp(pricing.savingPence)}</> : null}.
+                    </>
+                  ) : (
+                    <>One payment covers the <strong className="text-foreground">whole programme</strong> — every session below is included.</>
+                  )}
                 </p>
               )}
               {data.event.description && (
@@ -506,21 +562,92 @@ const BookingPage = () => {
                 <Checkbox checked={photoConsent} onCheckedChange={(v) => setPhotoConsent(v === true)} className="mt-0.5" />
                 <span>I consent to photos of my child being taken at this event for Suffolk Tennis use.</span>
               </label>
+
+              {/* ---- How they want to pay ---- */}
+              {choosePlan && pricing && (
+                <fieldset className="space-y-2">
+                  <legend className="mb-1.5 text-sm font-semibold">How would you like to pay?</legend>
+
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 text-sm ${plan === "full" ? "border-primary bg-primary/[0.06]" : "border-border"}`}>
+                    <input
+                      type="radio" name="payment-plan" value="full" checked={plan === "full"}
+                      onChange={() => setPlan("full")} className="mt-1 accent-[hsl(var(--primary))]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-baseline gap-x-2">
+                        <strong className="text-base">Pay in full — {gbp(pricing.upFrontPence)}</strong>
+                        {pricing.savingPence > 0 && (
+                          <StatusBadge tone="success" dot={false}>Save {gbp(pricing.savingPence)}</StatusBadge>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-muted-foreground">
+                        One payment today and nothing else to think about.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 text-sm ${plan === "monthly" ? "border-primary bg-primary/[0.06]" : "border-border"}`}>
+                    <input
+                      type="radio" name="payment-plan" value="monthly" checked={plan === "monthly"}
+                      onChange={() => setPlan("monthly")} className="mt-1 accent-[hsl(var(--primary))]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <strong className="text-base">Pay monthly — {gbp(pricing.monthlyPence)} a month</strong>
+                      <span className="mt-0.5 block text-muted-foreground">
+                        {pricing.months} payments, {gbp(pricing.monthlyTotalPence)} in total
+                        {pricing.savingPence > 0 ? ` — ${gbp(pricing.savingPence)} more than paying in full` : ""}.
+                      </span>
+                    </span>
+                  </label>
+
+                  {plan === "monthly" && (
+                    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+                      <p className="font-semibold">A {pricing.months}-month commitment</p>
+                      <ul className="list-disc space-y-1 pl-5 leading-relaxed">
+                        <li>{gbp(pricing.monthlyPence)} is charged today, then on the same date each month.</li>
+                        <li>{pricing.months} payments in all — {gbp(pricing.monthlyTotalPence)}. It then stops by itself; there is no rolling subscription.</li>
+                        <li>Your card is saved so each month is taken automatically.</li>
+                        <li>The place is for the whole programme, so the {pricing.months} payments are due whether or not every session is attended. If something changes, talk to us.</li>
+                      </ul>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-white/70 px-3 py-2.5">
+                        <Checkbox
+                          checked={commitmentAccepted}
+                          onCheckedChange={(v) => setCommitmentAccepted(v === true)}
+                          className="mt-0.5"
+                          aria-label="Accept the monthly commitment"
+                        />
+                        <span className="font-medium">{commitmentConsentLabel(pricing)}</span>
+                      </label>
+                    </div>
+                  )}
+                </fieldset>
+              )}
               {isProgramme && (
                 <p className="text-sm text-muted-foreground">
                   By {noCharge ? "confirming" : "accepting"} this place you agree to be added to the age-group WhatsApp group and the Suffolk Junior Tennis Hub, which we use for key Suffolk Tennis announcements.
                 </p>
               )}
               {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-              <Button onClick={handleContinue} disabled={submitting} size="lg" className="w-full">
+              <Button onClick={handleContinue} disabled={submitting || blockedOnCommitment} size="lg" className="w-full">
                 {submitting
                   ? <Loader2 className="w-5 h-5 animate-spin" />
-                  : noCharge ? "Confirm this place" : `Continue to payment · ${payLabel}`}
+                  : noCharge
+                    ? "Confirm this place"
+                    : monthlyChosen
+                      ? `Continue · ${payLabel} a month`
+                      : `Continue to payment · ${payLabel}`}
               </Button>
+              {blockedOnCommitment && (
+                <p className="text-center text-xs text-amber-700">
+                  Tick the box above to confirm the {pricing?.months}-month commitment, or choose to pay in full.
+                </p>
+              )}
               <p className="text-center text-xs text-muted-foreground">
                 {noCharge
                   ? "No payment needed. Your entry QR ticket is emailed to you as soon as you confirm."
-                  : "Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid."}
+                  : monthlyChosen && pricing
+                    ? `${commitmentSentence(pricing)} Card payments are handled securely by Stripe; your entry QR ticket is emailed as soon as the first payment goes through.`
+                    : "Secure card payment powered by Stripe. You'll receive your entry QR ticket by email once paid."}
               </p>
             </section>
           )}

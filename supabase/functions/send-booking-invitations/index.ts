@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
 
   const { data: eventRow } = await admin
     .from("events")
-    .select("id, title, location, event_date, programme_type, price_pence, is_free, meeting_cadence, description, sign_up_deadline")
+    .select("id, title, location, event_date, programme_type, price_pence, monthly_amount_pence, programme_months, is_free, meeting_cadence, description, sign_up_deadline")
     .eq("id", body.event_id)
     .maybeSingle();
   if (!eventRow) return json({ error: "Event not found" }, 404);
