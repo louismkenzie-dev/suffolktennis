@@ -858,10 +858,22 @@ Webhook endpoints, both environments, checked the same way: enabled, pinned to
 `invoice.payment_failed`. Live is `we_1UE9jS2QyV8RYLwsxENhbH4Q`, sandbox
 `we_1U6qmgE0aLvInrlqpuWFwsap`.
 
-### Before parents use it
+### Live to parents, 13 Sep 2026
 
-`app_settings.payments_mode` is **live**, and 12 one-off live payments have
-already settled through this webhook. The monthly path has been proved against
-Stripe's API but never with a real card end to end. Run one real monthly
-booking (or flip to sandbox for a run with 4242 4242 4242 4242) before
-offering it. Then delete `stripe-selftest`.
+Switched on across all twelve County Training programmes at Louis's
+instruction: `monthly_amount_pence = 2500`, `programme_months = 12` against
+the £275 up-front price. Verified afterwards through the real chain — a live
+invitation token posted to the deployed `get-invitation` came back with
+£275 / £25 / 12 months — with no side effect on the invitation (a row already
+marked `opened`, whose update is guarded on `status = 'invited'`).
+
+Because the invitations already in inboxes quote £275 and nothing else, the
+booking page marks the monthly option **New** and says it is a new financing
+option added because parents asked for it. The invitation email does not yet
+carry that wording; it states both prices plainly, which is enough for anyone
+invited from now on.
+
+`app_settings.payments_mode` is **live**. The monthly path is proved against
+Stripe's API but the first real card through it will be a parent's. If that
+matters, put one £25 booking through and refund it (the refund button cancels
+the plan too). Then delete `stripe-selftest`.
