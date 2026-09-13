@@ -80,6 +80,54 @@ Deno.serve(async (req) => {
   // pending booking away: a row must never be deleted on the assumption that
   // nothing was charged. Retrieve only — nothing here can create or alter a
   // live object.
+  // Read-only subscription lookup: what Stripe itself holds for a monthly
+  // plan, and every invoice raised against it. Retrieve and list only.
+  if (Array.isArray(body?.inspect_subscriptions)) {
+    const env = body?.env === "live" ? "live" as const : "sandbox" as const;
+    const stripe = createStripeClient(env);
+    const connectOpts = connectRequestOptions(env);
+    const out = [];
+    for (const id of body.inspect_subscriptions.slice(0, 10)) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(String(id), {}, connectOpts) as any;
+        const invoices = await stripe.invoices.list(
+          { subscription: String(id), limit: 20, expand: ["data.payment_intent"] }, connectOpts,
+        ) as any;
+        out.push({
+          id: sub.id,
+          status: sub.status,
+          amount: sub.items?.data?.[0]?.price?.unit_amount,
+          interval: sub.items?.data?.[0]?.price?.recurring?.interval,
+          start_date: new Date((sub.start_date as number) * 1000).toISOString(),
+          current_period_end: sub.current_period_end
+            ? new Date(sub.current_period_end * 1000).toISOString() : null,
+          cancel_at: sub.cancel_at ? new Date(sub.cancel_at * 1000).toISOString() : null,
+          default_payment_method: !!sub.default_payment_method,
+          invoices: (invoices.data ?? []).map((inv: any) => ({
+            id: inv.id,
+            status: inv.status,
+            billing_reason: inv.billing_reason,
+            amount_due: inv.amount_due,
+            amount_paid: inv.amount_paid,
+            attempt_count: inv.attempt_count,
+            created: new Date(inv.created * 1000).toISOString(),
+            payment_intent: inv.payment_intent
+              ? {
+                id: inv.payment_intent.id,
+                status: inv.payment_intent.status,
+                amount_received: inv.payment_intent.amount_received,
+                last_error: inv.payment_intent.last_payment_error?.message ?? null,
+              }
+              : null,
+          })),
+        });
+      } catch (e) {
+        out.push({ id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return json({ env, subscriptions: out });
+  }
+
   if (Array.isArray(body?.inspect_payment_intents)) {
     const env = body?.env === "live" ? "live" as const : "sandbox" as const;
     const stripe = createStripeClient(env);
