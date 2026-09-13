@@ -22,6 +22,7 @@ import {
 } from "@/components/app";
 type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
+import { deliveryLabel, worstOf, type Delivery } from "@/lib/emailDelivery";
 
 const db = supabase as any;
 
@@ -110,6 +111,8 @@ const BookingsPanel = () => {
   const [stats, setStats] = useState<Record<string, { invited: number; booked: number; paid: number }>>({});
   const [selected, setSelected] = useState<EventRow | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  // What Resend says happened to each invitation email, by invitation id.
+  const [deliveries, setDeliveries] = useState<Record<string, Delivery>>({});
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [refundTarget, setRefundTarget] = useState<Booking | null>(null);
   const [refunding, setRefunding] = useState(false);
@@ -255,6 +258,31 @@ const BookingsPanel = () => {
     setInvitations(invs ?? []);
     setBookings(bks ?? []);
     setSessions(sess ?? []);
+    setDeliveries(await loadDeliveries((invs ?? []).map((i: Invitation) => i.id)));
+  };
+
+  /**
+   * The delivery outcome per invitation. A parent who was invited and then
+   * reminded has two messages; the worst outcome is the one worth showing,
+   * so a bounce is never hidden behind a later "delivered".
+   */
+  const loadDeliveries = async (invitationIds: string[]): Promise<Record<string, Delivery>> => {
+    if (invitationIds.length === 0) return {};
+    const { data } = await db
+      .from("email_deliveries")
+      .select("id, invitation_id, coach_invitation_id, recipient, subject, purpose, status, status_at, detail, sent_at")
+      .in("invitation_id", invitationIds);
+    const byInvitation: Record<string, Delivery[]> = {};
+    for (const row of (data ?? []) as Delivery[]) {
+      if (!row.invitation_id) continue;
+      (byInvitation[row.invitation_id] ??= []).push(row);
+    }
+    const worst: Record<string, Delivery> = {};
+    for (const [id, rows] of Object.entries(byInvitation)) {
+      const pick = worstOf(rows);
+      if (pick) worst[id] = pick;
+    }
+    return worst;
   };
 
   const loadPlayers = async () => {
@@ -729,6 +757,12 @@ const BookingsPanel = () => {
   const isProgramme = selected?.programme_type === "programme";
   const s0 = selected ? (stats[selected.id] ?? { invited: 0, booked: 0, paid: 0 }) : null;
   const unbooked = invitations.filter((i) => i.status === "invited" || i.status === "opened");
+  // Parents whose invitation email was rejected or reported — they have not
+  // seen it, and nothing else on this page would say so.
+  const undelivered = invitations.filter((i) => {
+    const st = deliveries[i.id]?.status;
+    return st === "bounced" || st === "complained" || st === "failed";
+  });
   const priceLine = (ev: EventRow) =>
     ev.programme_type === "programme"
       ? `${gbp(ev.price_pence)} · ${ev.meeting_cadence ?? "regular"} programme`
@@ -962,9 +996,19 @@ const BookingsPanel = () => {
                   <EmptyState icon={Send} title="Nobody invited yet" description="Invite players and their parents get an email with a personal booking link." compact />
                 ) : (
                   <>
+                    {undelivered.length > 0 && (
+                      <InlineNote tone="danger" icon={AlertTriangle} className="mb-3">
+                        <strong>{undelivered.length} {undelivered.length === 1 ? "parent has" : "parents have"} not received their invitation.</strong>{" "}
+                        Their email provider rejected it, so the address is usually wrong or closed:{" "}
+                        {undelivered.map((i) => `${i.child_name ?? i.parent_email} (${i.parent_email})`).join(", ")}.
+                        {" "}Correct the address on the player, then invite them again.
+                      </InlineNote>
+                    )}
                     <ListGroup className="md:hidden">
                       {invitations.map((i) => {
                         const st = bookingStatus(i.status);
+                        const d = deliveries[i.id];
+                        const del = d ? deliveryLabel(d.status) : null;
                         return (
                           <ListRow
                             key={i.id}
@@ -974,6 +1018,7 @@ const BookingsPanel = () => {
                             detail={`${i.sent_at ? `Sent ${new Date(i.sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "Not sent"}${i.reminded_at ? " · reminded" : ""}`}
                             trailing={
                               <span className="flex items-center gap-2">
+                                {del && <StatusBadge tone={del.tone}>{del.label}</StatusBadge>}
                                 <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                                 {(i.status === "invited" || i.status === "opened") && (
                                   <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" onClick={() => remind([i.id])}><RefreshCw className="w-4 h-4" /></Button>
@@ -987,16 +1032,23 @@ const BookingsPanel = () => {
                     <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
                       <Table>
                         <TableHeader><TableRow>
-                          <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Status</TableHead><TableHead>Sent</TableHead><TableHead />
+                          <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Status</TableHead><TableHead>Email</TableHead><TableHead>Sent</TableHead><TableHead />
                         </TableRow></TableHeader>
                         <TableBody>
                           {invitations.map((i) => {
                             const st = bookingStatus(i.status);
+                            const d = deliveries[i.id];
+                            const del = d ? deliveryLabel(d.status) : null;
                             return (
                               <TableRow key={i.id}>
                                 <TableCell className="font-medium">{i.child_name}</TableCell>
                                 <TableCell className="text-muted-foreground">{i.parent_name || i.parent_email}</TableCell>
                                 <TableCell><StatusBadge tone={st.tone}>{st.label}</StatusBadge></TableCell>
+                                <TableCell>
+                                  {del
+                                    ? <span title={`${del.help}${d?.detail ? ` (${d.detail})` : ""}`}><StatusBadge tone={del.tone}>{del.label}</StatusBadge></span>
+                                    : <span className="text-muted-foreground text-xs">—</span>}
+                                </TableCell>
                                 <TableCell className="text-muted-foreground text-xs">
                                   {i.sent_at ? new Date(i.sent_at).toLocaleDateString("en-GB") : "not sent"}
                                   {i.reminded_at ? " · reminded" : ""}

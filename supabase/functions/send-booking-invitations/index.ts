@@ -8,6 +8,7 @@
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { recordDelivery } from "../_shared/emailDeliveries.ts";
 import { SITE_URL, invitationEmail, seasonOf, type EventRow, type Shape } from "../_shared/invitationEmail.ts";
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
 import { venueLine, venueRuns, venueRunsSentence } from "../_shared/venueRuns.ts";
@@ -208,9 +209,10 @@ Deno.serve(async (req) => {
       if (apiKey) {
         try {
           const unsubToken = await unsubscribeTokenFor(admin, email, "invitation");
-          await sendEmail({
+          const subject = `Invitation: ${ev.title} — ${inv.child_name}`;
+          const { id: resendId } = await sendEmail({
             to: email,
-            subject: `Invitation: ${ev.title} — ${inv.child_name}`,
+            subject,
             unsubscribe_token: unsubToken ?? undefined,
             html: invitationEmail({
               unsubscribeUrl: unsubscribeUrlFor(unsubToken),
@@ -226,6 +228,10 @@ Deno.serve(async (req) => {
             idempotency_key: `invite-${created.id}${isComplimentary ? "-comp" : ""}`,
           }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
           sent = true;
+          await recordDelivery(admin, {
+            resendId, recipient: email, subject, purpose: "booking_invitation",
+            invitationId: created.id, eventId: ev.id,
+          });
         } catch (e) {
           sendError = e instanceof Error ? e.message : String(e);
         }
@@ -260,9 +266,10 @@ Deno.serve(async (req) => {
       }
       try {
         const unsubToken = await unsubscribeTokenFor(admin, inv.parent_email, "invitation");
-        await sendEmail({
+        const subject = `Reminder: ${ev.title} — ${inv.child_name}`;
+        const { id: resendId } = await sendEmail({
           to: inv.parent_email,
-          subject: `Reminder: ${ev.title} — ${inv.child_name}`,
+          subject,
           unsubscribe_token: unsubToken ?? undefined,
           html: invitationEmail({
             unsubscribeUrl: unsubscribeUrlFor(unsubToken),
@@ -276,6 +283,10 @@ Deno.serve(async (req) => {
             reminder: true,
           }),
         }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
+        await recordDelivery(admin, {
+          resendId, recipient: inv.parent_email, subject, purpose: "booking_reminder",
+          invitationId: inv.id, eventId: ev.id,
+        });
         await admin.from("booking_invitations")
           .update({ reminded_at: new Date().toISOString() })
           .eq("id", inv.id);

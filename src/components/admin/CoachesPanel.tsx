@@ -17,6 +17,7 @@ import { Loader2, MoreHorizontal, Plus, Trash2, Upload, UserPlus, X } from "luci
 import CoachDirectory from "./CoachDirectory";
 import CoachInviteSheet from "./CoachInviteSheet";
 import { FormListLayout, PageHeader, Section, ListGroup, ListRow, Avatar, StatusBadge, EmptyState, SkeletonRows } from "@/components/app";
+import { deliveryLabel, worstOf, type Delivery } from "@/lib/emailDelivery";
 
 // coach_invitations and event_coaches are not in the generated types, and
 // the app_role enum there predates "coach".
@@ -101,6 +102,8 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
   // an account, and an account need not be on the website.
   const [accounts, setAccounts] = useState<CoachAccount[]>([]);
   const [invitations, setInvitations] = useState<CoachInvitation[]>([]);
+  /** Resend's verdict per coach invitation, keyed by invitation id. */
+  const [deliveries, setDeliveries] = useState<Record<string, Delivery>>({});
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removing, setRemoving] = useState<CoachAccount | null>(null);
@@ -111,13 +114,30 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
     // address is only reachable through the admin RPC (auth.users is not
     // readable from the browser). Assignments come via the events embed so
     // the subtitle can name the programme rather than quote an id.
-    const [{ data: roles }, { data: profiles }, { data: emails }, { data: assigned }, { data: pending }] = await Promise.all([
+    const [{ data: roles }, { data: profiles }, { data: emails }, { data: assigned }, { data: pending }, { data: sent }] = await Promise.all([
       db.from("user_roles").select("user_id").eq("role", "coach"),
       db.from("profiles").select("user_id, first_name, last_name"),
       db.rpc("get_parent_emails"),
       db.from("event_coaches").select("user_id, events(title)"),
       db.from("coach_invitations").select("id, email, name, token, sent_at, reminded_at").eq("status", "invited").order("created_at"),
+      // What Resend says happened to each coach invitation email.
+      db.from("email_deliveries")
+        .select("id, invitation_id, coach_invitation_id, recipient, subject, purpose, status, status_at, detail, sent_at")
+        .not("coach_invitation_id", "is", null),
     ]);
+    // A coach invited and then reminded has two messages; the worst outcome
+    // is the one worth showing, so a bounce is never hidden by a later send.
+    const deliveryRows: Record<string, Delivery[]> = {};
+    for (const row of (sent ?? []) as Delivery[]) {
+      if (!row.coach_invitation_id) continue;
+      (deliveryRows[row.coach_invitation_id] ??= []).push(row);
+    }
+    const worstDelivery: Record<string, Delivery> = {};
+    for (const [id, rows] of Object.entries(deliveryRows)) {
+      const pick = worstOf(rows);
+      if (pick) worstDelivery[id] = pick;
+    }
+    setDeliveries(worstDelivery);
     const nameOf = new Map<string, string>((profiles ?? []).map((p: any) => [p.user_id, `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim()]));
     const emailOf = new Map<string, string>((emails ?? []).map((e: any) => [e.user_id, e.email]));
     const programmesOf = new Map<string, string[]>();
@@ -314,7 +334,10 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
               }
             />
           ))}
-          {shownInvitations.map((i) => (
+          {shownInvitations.map((i) => {
+            const d = deliveries[i.id];
+            const del = d ? deliveryLabel(d.status) : null;
+            return (
             <ListRow
               key={i.id}
               leading={<Avatar name={i.name || i.email} size="md" />}
@@ -323,6 +346,7 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
               detail={invitationStamp(i)}
               trailing={
                 <span className="flex items-center gap-1">
+                  {del && <span title={del.help}><StatusBadge tone={del.tone}>{del.label}</StatusBadge></span>}
                   <StatusBadge tone="neutral">Invited</StatusBadge>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -339,7 +363,8 @@ const CoachesPanel = ({ onEmailCoaches, search }: {
                 </span>
               }
             />
-          ))}
+            );
+          })}
         </ListGroup>
       )}
     </Section>

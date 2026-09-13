@@ -9,6 +9,7 @@
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { recordDelivery } from "../_shared/emailDeliveries.ts";
 import { FONT, brandedEmail, emailButton, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
 
@@ -202,9 +203,10 @@ Deno.serve(async (req) => {
       if (apiKey) {
         try {
           const unsubToken = await unsubscribeTokenFor(admin, email, "coach-invitation");
-          await sendEmail({
+          const subject = "You're invited to coach with Suffolk Tennis";
+          const { id: resendId } = await sendEmail({
             to: email,
-            subject: "You're invited to coach with Suffolk Tennis",
+            subject,
             unsubscribe_token: unsubToken ?? undefined,
             html: invitationEmail({
               unsubscribeUrl: unsubscribeUrlFor(unsubToken),
@@ -216,6 +218,10 @@ Deno.serve(async (req) => {
             idempotency_key: `coach-invite-${row.id}${reissued ? `-${row.token.slice(0, 8)}` : ""}`,
           }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
           sent = true;
+          await recordDelivery(admin, {
+            resendId, recipient: email, subject,
+            purpose: "coach_invitation", coachInvitationId: row.id,
+          });
         } catch (e) {
           sendError = e instanceof Error ? e.message : String(e);
         }
@@ -258,9 +264,12 @@ Deno.serve(async (req) => {
       const firstSend = !inv.sent_at;
       try {
         const unsubToken = await unsubscribeTokenFor(admin, inv.email, "coach-invitation");
-        await sendEmail({
+        const subject = firstSend
+          ? "You're invited to coach with Suffolk Tennis"
+          : "Reminder: you're invited to coach with Suffolk Tennis";
+        const { id: resendId } = await sendEmail({
           to: inv.email,
-          subject: firstSend ? "You're invited to coach with Suffolk Tennis" : "Reminder: you're invited to coach with Suffolk Tennis",
+          subject,
           unsubscribe_token: unsubToken ?? undefined,
           html: invitationEmail({
             unsubscribeUrl: unsubscribeUrlFor(unsubToken),
@@ -273,6 +282,11 @@ Deno.serve(async (req) => {
           // send (or an earlier reminder) within Resend's 24-hour window.
           idempotency_key: `coach-invite-${inv.id}-r${Date.now()}`,
         }, { apiKey, unsubscribeBaseUrl: unsubscribeBaseUrl() });
+        await recordDelivery(admin, {
+          resendId, recipient: inv.email, subject,
+          purpose: firstSend ? "coach_invitation" : "coach_reminder",
+          coachInvitationId: inv.id,
+        });
         await admin.from("coach_invitations")
           .update(firstSend ? { sent_at: new Date().toISOString() } : { reminded_at: new Date().toISOString() })
           .eq("id", inv.id);

@@ -28,6 +28,9 @@ verify_jwt = false
 [functions.session-reports-dispatch]
 verify_jwt = false
 
+[functions.email-delivery-sync]
+verify_jwt = false
+
 # Admin JWT: the gateway checks the token, requireAdmin checks the role.
 [functions.send-coach-invitations]
 verify_jwt = true

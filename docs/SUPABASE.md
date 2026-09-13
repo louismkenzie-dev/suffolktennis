@@ -666,3 +666,103 @@ select cron.schedule(
 
 `RESEND_API_KEY` and `SITE_URL` are the only secrets involved and already
 exist.
+
+---
+
+## Email delivery tracking (13 Sep 2026)
+
+A parent reported never receiving his invitation. Nothing in the system could
+answer the question: `sendEmail` returned Resend's message id and every caller
+threw it away, and `email_send_log` was never written to. Checking meant
+reading Resend's dashboard by hand.
+
+Now every send is recorded and its outcome is shown next to the parent.
+
+### `public.email_deliveries`
+
+One row per message, keyed by Resend's own id:
+
+| column | meaning |
+| --- | --- |
+| `resend_id` | Resend's message id (unique) — the join key when we poll |
+| `recipient`, `subject`, `purpose` | who, what, and which flow sent it |
+| `invitation_id` | `booking_invitations` row, when it was an invitation |
+| `coach_invitation_id` | `coach_invitations` row, for coach invitations |
+| `event_id` | the programme, for filtering |
+| `status` | Resend's `last_event`: `sent`, `delivered`, `delivery_delayed`, `bounced`, `complained` |
+| `status_at`, `detail` | when that status landed, and the bounce reason if given |
+
+RLS: admins read, service role writes. Verified — admin 160 rows, coach 0,
+anon 0.
+
+`public.email_delivery_rank(status)` orders the states so later news always
+wins: a delivered message that later bounces stays bounced, and a stale
+`sent` never drags a settled row backwards. `email-delivery-sync` and
+`src/lib/emailDelivery.ts` mirror the same ranking.
+
+### Writing the rows
+
+`supabase/functions/_shared/emailDeliveries.ts` exports `recordDelivery`,
+called by `send-booking-invitations` (invitations and reminders) and
+`send-coach-invitations`. It never throws: a bookkeeping failure must not fail
+a send that succeeded.
+
+### `email-delivery-sync`
+
+Guard-token protected, `verify_jwt = false`, run every 10 minutes by pg_cron
+(jobid 4). Two passes, cheapest first:
+
+1. One call to `GET /emails?limit=100` covers the last 100 messages on the
+   account — everything recent in the normal case.
+2. Anything still unsettled after 15 minutes is fetched by id, capped at 25
+   per run.
+
+A hard bounce or spam complaint is also written to `suppressed_emails`.
+
+```sql
+select cron.schedule(
+  'email-delivery-sync',
+  '*/10 * * * *',
+  $$ select net.http_post(
+       url := 'https://twtmkvorzpvwnznqzcrw.supabase.co/functions/v1/email-delivery-sync',
+       headers := '{"Content-Type":"application/json"}'::jsonb,
+       body := '{"guard":"ed_2f7a9c4e1b6d8035af2c7e9b1d4a6f83"}'::jsonb,
+       timeout_milliseconds := 55000
+     ) $$
+);
+```
+
+Note the Resend account is shared across several Nullshift projects, so the
+list pass sees other projects' messages too; matching is by `resend_id`, never
+by position in the list.
+
+### What the admin sees
+
+`BookingsPanel` shows an **Email** column on the invitation list —
+Delivered / Bounced / Marked as spam / Delayed / Sending — plus a red banner
+naming every parent whose invitation was rejected. `CoachesPanel` shows the
+same badge on pending coach invitations. A parent invited and then reminded
+has two messages; the worst outcome is the one shown, so a bounce is never
+hidden behind a later "delivered".
+
+### Backfill, 11–13 Sep 2026
+
+160 messages were reconstructed from the Resend list endpoint, with all 107
+booking invitations linked to their rows. Result: 106 delivered, 1 bounced
+(`msimpson46@googlemail.co.uk` — the domain has no MX record at all, so it is
+a typo and could never receive), plus one bounced coach invitation
+(`conor.mcdonald@culford.co.uk`).
+
+### Still outstanding: DMARC
+
+`_dmarc.suffolktennis.online` returns NXDOMAIN. DKIM, SPF and the return-path
+MX are all correct, but Yahoo (who run BT Internet) and Microsoft have
+required DMARC from bulk senders since early 2024, and 62 of the 107
+invitation addresses are at one of those two. Add at IONOS:
+
+```
+TXT  _dmarc  v=DMARC1; p=none; rua=mailto:enquiries@suffolktennis.online; adkim=r; aspf=r
+```
+
+Monitor-only, so it cannot block anything — it just tells the big providers we
+are an authenticated sender.
