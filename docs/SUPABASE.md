@@ -877,3 +877,41 @@ invited from now on.
 Stripe's API but the first real card through it will be a parent's. If that
 matters, put one £25 booking through and refund it (the refund button cancels
 the plan too). Then delete `stripe-selftest`.
+
+### The `product_data` failure, 13 Sep 2026 — and the fix
+
+Between roughly 14:30 and 17:35 London, **every** attempt to pay monthly
+failed at the last step. The Subscriptions API rejects
+`items[0].price_data.product_data` (a Checkout Session convenience), so
+`subscriptions.create` returned
+
+> Received unknown parameter: items[0][price_data][product_data]. Did you mean product?
+
+and `create-booking-checkout` returned "payment setup failed". Eleven
+attempts were lost this way: eight by one parent across two children, three
+by another. **No money moved** — every one of those bookings is `cancelled`
+with `stripe_payment_intent_id = null`, and no `memberships` row was written
+(the membership is only created after Stripe returns a subscription).
+
+Cause of the outage: the defect was found and fixed in the source, but only
+`stripe-selftest` was redeployed. The live checkout stayed on v23 for three
+hours while the monthly option was switched on for parents.
+
+The fix creates a real Product per programme, addressed by a deterministic id
+(`suffolk_prog_<event id without dashes>`) with retrieve-or-create so the
+second parent on a programme reuses it, and passes `product: product.id`.
+Deployed as `create-booking-checkout` **v24**.
+
+Verified afterwards on the **live** connected account (`acct_1UE6iZE7yIm0GTnR`),
+not just in sandbox: `stripe-selftest` gained an opt-in live build
+(`live_verify: true` plus `env: "live"`) which creates the subscription with
+production's exact parameters and removes everything it made. It returned
+`status: incomplete`, `interval: month`, `unit_amount: 2500`,
+`application_fee_percent: 2.5`, `cancel_at` exactly twelve months less an
+hour, and a client secret on the first invoice. Nothing was charged: an
+incomplete subscription with no payment method attached takes no money and
+Stripe expires it within a day.
+
+Lesson recorded because it cost parents their time: a fix is not live until
+the function that serves parents has been redeployed and the deployed source
+has been read back.

@@ -91,10 +91,24 @@ const Contact = () => {
       return;
     }
     setSubmitting(true);
-    // Open the user's email client with a prefilled enquiry
-    const body = `Name: ${parsed.data.name}%0D%0AEmail: ${parsed.data.email}%0D%0APhone: ${parsed.data.phone || "—"}%0D%0ATopic: ${parsed.data.topic || "General enquiry"}%0D%0A%0D%0A${encodeURIComponent(parsed.data.message)}`;
-    const subject = encodeURIComponent(`Suffolk Tennis enquiry — ${parsed.data.topic || "General"}`);
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
+    // Open the user's email client with a prefilled enquiry.
+    //
+    // Keep the subject plain ASCII. A mailto: subject carrying an em dash has
+    // to travel as %E2%80%94, and several mail clients (Yahoo and Outlook web
+    // among them) hand it back per byte rather than as UTF-8, so the parent
+    // sees "Suffolk Tennis enquiry %2<garbage> Other" in their sent mail. A
+    // hyphen reads the same and survives every client.
+    const body = [
+      `Name: ${parsed.data.name}`,
+      `Email: ${parsed.data.email}`,
+      `Phone: ${parsed.data.phone || "-"}`,
+      `Topic: ${parsed.data.topic || "General enquiry"}`,
+      "",
+      parsed.data.message,
+    ].join("\r\n");
+    const subject = `Suffolk Tennis enquiry - ${parsed.data.topic || "General"}`;
+    window.location.href =
+      `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     toast.success("Opening your email client…");
     setTimeout(() => setSubmitting(false), 800);
   };
@@ -190,7 +204,7 @@ const Contact = () => {
                   </div>
 
                   <a
-                    href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Suffolk Tennis enquiry — ${c.name}, ${c.role}`)}&body=${encodeURIComponent(`Hi ${c.firstName},\n\nI'd like to ask about ${c.programs} for my child.\n\n`)}`}
+                    href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Suffolk Tennis enquiry - ${c.name}, ${c.role}`)}&body=${encodeURIComponent(`Hi ${c.firstName},\r\n\r\nI'd like to ask about ${c.programs} for my child.\r\n\r\n`)}`}
                     className="inline-flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-lta-cyan text-suffolk-navy font-display font-bold text-sm hover:brightness-110 transition-all shadow-[var(--shadow-glow-blue)]"
                   >
                     <Mail size={16} /> Click here

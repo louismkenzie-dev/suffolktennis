@@ -5,8 +5,9 @@
 // is ever charged: `payment_behavior: "default_incomplete"` leaves the first
 // invoice awaiting confirmation, and no payment method is attached.
 //
-// SANDBOX ONLY, and guard-token protected. Delete this function once the
-// monthly plan has been exercised with a real test card.
+// Guard-token protected. Sandbox by default; the live build has to be asked
+// for explicitly (see below) and still charges nobody. Delete this function
+// once the monthly plan has been exercised with a real card.
 import { serviceClient, json } from "../_shared/adminAuth.ts";
 import { connectRequestOptions, createStripeClient, getConnectedAccountId, getPlatformFeePercent } from "../_shared/stripe.ts";
 
@@ -105,12 +106,20 @@ Deno.serve(async (req) => {
   }
 
   if (body?.stripe !== true) return json({ secrets, clampCases, monthlyWalk, webhooks });
-  if (!secrets.STRIPE_SANDBOX_API_KEY) {
-    return json({ secrets, clampCases, monthlyWalk, webhooks, stripe: "STRIPE_SANDBOX_API_KEY not set" });
+
+  // Building in LIVE has to be asked for twice, because it touches the real
+  // connected account. It still charges nobody — an incomplete subscription
+  // with no payment method attached — and everything it creates is removed in
+  // the finally block. It exists because the one thing sandbox cannot prove is
+  // that the live connected account is allowed to bill a subscription at all,
+  // and a parent already met that question the hard way.
+  const env = (body?.live_verify === true && body?.env === "live") ? "live" as const : "sandbox" as const;
+  const buildKeyName = env === "live" ? "STRIPE_LIVE_API_KEY" : "STRIPE_SANDBOX_API_KEY";
+  if (!Deno.env.get(buildKeyName)) {
+    return json({ secrets, clampCases, monthlyWalk, webhooks, stripe: `${buildKeyName} not set` });
   }
 
-  // --- Build the real thing in sandbox, inspect it, delete it. ---
-  const env = "sandbox" as const;
+  // --- Build the real thing, inspect it, delete it. ---
   const stripe = createStripeClient(env);
   const connectOpts = connectRequestOptions(env);
   const feePercent = getConnectedAccountId(env) ? getPlatformFeePercent() : null;
@@ -126,8 +135,23 @@ Deno.serve(async (req) => {
     );
     customerId = customer.id;
 
-    const product = await stripe.products.create({ name: "Self test — monthly plan" }, connectOpts);
+    // Mirrors create-booking-checkout exactly, including the deterministic id
+    // and the retrieve-or-create branch — the part that was never exercised
+    // before it reached a parent.
+    const wantedId = `suffolk_prog_selftest${body?.productSuffix ?? ""}`;
+    let product;
+    let branch;
+    try {
+      product = await stripe.products.retrieve(wantedId, connectOpts);
+      branch = "retrieved";
+    } catch {
+      product = await stripe.products.create(
+        { id: wantedId, name: "Self test — monthly plan (delete me)" }, connectOpts,
+      );
+      branch = "created";
+    }
     productId = product.id;
+    console.log("product branch:", branch, product.id);
 
     const sub = await stripe.subscriptions.create({
       customer: customer.id,
@@ -163,6 +187,7 @@ Deno.serve(async (req) => {
       monthlyWalk,
       webhooks,
       stripe: {
+        env,
         connected_account: getConnectedAccountId(env),
         status: sub.status,
         collection_method: sub.collection_method,
@@ -177,6 +202,8 @@ Deno.serve(async (req) => {
         approx_billed_months: billedMonths,
         first_invoice_amount_due: invoice?.amount_due,
         first_invoice_has_client_secret: !!invoice?.payment_intent?.client_secret,
+        product_id: productId,
+        product_branch: branch,
       },
     });
   } catch (e) {
@@ -185,6 +212,11 @@ Deno.serve(async (req) => {
     // Never leave test objects behind, even on a failure.
     try { if (subscriptionId) await stripe.subscriptions.cancel(subscriptionId, connectOpts); } catch { /* already gone */ }
     try { if (customerId) await stripe.customers.del(customerId, connectOpts); } catch { /* already gone */ }
-    try { if (productId) await stripe.products.update(productId, { active: false }, connectOpts); } catch { /* already gone */ }
+    // A product with a caller-supplied id is reused by the next run, so in
+    // sandbox it is left alone. In live nothing of ours should linger, and a
+    // product carrying a price cannot be deleted — so it is archived.
+    if (env === "live") {
+      try { if (productId) await stripe.products.update(productId, { active: false }, connectOpts); } catch { /* fine */ }
+    }
   }
 });
