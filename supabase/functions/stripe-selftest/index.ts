@@ -75,6 +75,35 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Read-only PaymentIntent lookup, either environment. Used before tidying a
+  // pending booking away: a row must never be deleted on the assumption that
+  // nothing was charged. Retrieve only — nothing here can create or alter a
+  // live object.
+  if (Array.isArray(body?.inspect_payment_intents)) {
+    const env = body?.env === "live" ? "live" as const : "sandbox" as const;
+    const stripe = createStripeClient(env);
+    const connectOpts = connectRequestOptions(env);
+    const out = [];
+    for (const id of body.inspect_payment_intents.slice(0, 20)) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(String(id), { expand: ["latest_charge"] }, connectOpts) as any;
+        out.push({
+          id: pi.id, status: pi.status, amount: pi.amount,
+          amount_received: pi.amount_received, currency: pi.currency,
+          created: new Date(pi.created * 1000).toISOString(),
+          charge: pi.latest_charge
+            ? { id: pi.latest_charge.id, paid: pi.latest_charge.paid, captured: pi.latest_charge.captured, refunded: pi.latest_charge.refunded, amount: pi.latest_charge.amount }
+            : null,
+          last_payment_error: pi.last_payment_error?.message ?? null,
+          metadata: pi.metadata,
+        });
+      } catch (e) {
+        out.push({ id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return json({ env, payment_intents: out });
+  }
+
   if (body?.stripe !== true) return json({ secrets, clampCases, monthlyWalk, webhooks });
   if (!secrets.STRIPE_SANDBOX_API_KEY) {
     return json({ secrets, clampCases, monthlyWalk, webhooks, stripe: "STRIPE_SANDBOX_API_KEY not set" });

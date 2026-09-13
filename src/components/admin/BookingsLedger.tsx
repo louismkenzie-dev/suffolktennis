@@ -41,7 +41,9 @@ export type LedgerEntry = BookingRow & {
   phone: string | null;
 };
 
-type Kind = "all" | "paid" | "pending" | "refunded" | "nocharge" | "issue";
+type Kind = "all" | "paid" | "pending" | "refunded" | "nocharge" | "issue" | "abandoned";
+
+import { isAbandoned } from "@/lib/bookingState";
 
 const gbp = (p: number) => `£${(p / 100).toFixed(p % 100 === 0 ? 0 : 2)}`;
 const shortDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -49,6 +51,9 @@ const dateTime = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-
 
 /** Which of the ledger's money buckets a booking falls into. */
 function kindOf(b: LedgerEntry): Exclude<Kind, "all"> {
+  // Checked before everything else: an abandoned attempt is not a booking, and
+  // must never colour the money or sit in the list looking like a problem.
+  if (isAbandoned(b)) return "abandoned";
   if (b.status === "refunded") return "refunded";
   if (b.status === "payment_failed") return "issue";
   if (b.complimentary || b.amount_pence === 0 || b.event?.is_free) return "nocharge";
@@ -57,8 +62,24 @@ function kindOf(b: LedgerEntry): Exclude<Kind, "all"> {
   return "issue";
 }
 
+/**
+ * The status badge. An unfinished checkout is neither pending nor cancelled to
+ * an admin's eye — it is simply something that never happened — so it says so
+ * plainly instead of borrowing an amber or red state that implies action.
+ */
+function statusBadge(b: LedgerEntry): { tone: StatusTone; label: string } {
+  return isAbandoned(b) ? { tone: "neutral", label: "Unfinished" } : bookingStatus(b.status);
+}
+
+/** The money column: nothing was taken for an unfinished attempt. */
+function amountCell(b: LedgerEntry): string {
+  if (isAbandoned(b)) return "—";
+  return b.complimentary || b.amount_pence === 0 ? "£0" : gbp(b.amount_pence);
+}
+
 /** One line that says how (and whether) this booking was paid. */
 export function paymentLabel(b: LedgerEntry): { text: string; tone: StatusTone } {
+  if (isAbandoned(b)) return { text: "Unfinished checkout · no payment taken", tone: "neutral" };
   if (b.complimentary) return { text: "No charge · included with another programme", tone: "success" };
   if (b.event?.is_free || b.amount_pence === 0) return { text: "Free", tone: "neutral" };
   if (b.membership) {
@@ -147,7 +168,8 @@ export default function BookingsLedger() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (rows ?? []).filter((r) => {
-      if (kind !== "all" && kindOf(r) !== kind) return false;
+      // "All" means all real bookings; abandoned attempts have their own chip.
+      if (kind === "all" ? kindOf(r) === "abandoned" : kindOf(r) !== kind) return false;
       if (eventFilter !== "all" && r.event_id !== eventFilter) return false;
       if (!q) return true;
       return [r.child_name, r.parent_name, r.parent_email, r.phone, r.event?.title].some((v) => (v ?? "").toLowerCase().includes(q));
@@ -156,10 +178,11 @@ export default function BookingsLedger() {
 
   /** The money, over everything (filters narrow the list, not the totals). */
   const totals = useMemo(() => {
-    const t = { count: 0, paid: 0, paidCount: 0, pending: 0, pendingCount: 0, refunded: 0, refundedCount: 0, noCharge: 0, issues: 0, monthly: 0 };
+    const t = { count: 0, paid: 0, paidCount: 0, pending: 0, pendingCount: 0, refunded: 0, refundedCount: 0, noCharge: 0, issues: 0, monthly: 0, abandoned: 0 };
     for (const r of rows ?? []) {
-      t.count += 1;
       const k = kindOf(r);
+      if (k === "abandoned") { t.abandoned += 1; continue; }
+      t.count += 1;
       if (k === "paid") { t.paidCount += 1; t.paid += r.membership ? r.membership.monthly_amount_pence * r.membership.months_paid : r.amount_pence; }
       else if (k === "pending") { t.pendingCount += 1; t.pending += r.amount_pence; }
       else if (k === "refunded") { t.refundedCount += 1; t.refunded += r.amount_pence; }
@@ -175,9 +198,10 @@ export default function BookingsLedger() {
     const m = new Map<string, { title: string; type: string; bookings: number; paid: number; pence: number; pending: number; noCharge: number }>();
     for (const r of rows ?? []) {
       const key = r.event_id;
+      const k = kindOf(r);
+      if (k === "abandoned") continue;
       const row = m.get(key) ?? { title: r.event?.title ?? "Unknown programme", type: r.event?.programme_type ?? "", bookings: 0, paid: 0, pence: 0, pending: 0, noCharge: 0 };
       row.bookings += 1;
-      const k = kindOf(r);
       if (k === "paid") { row.paid += 1; row.pence += r.membership ? r.membership.monthly_amount_pence * r.membership.months_paid : r.amount_pence; }
       else if (k === "pending") row.pending += 1;
       else if (k === "nocharge") row.noCharge += 1;
@@ -202,6 +226,10 @@ export default function BookingsLedger() {
     { value: "pending", label: "Pending", count: totals.pendingCount },
     { value: "refunded", label: "Refunded", count: totals.refundedCount },
     { value: "nocharge", label: "No charge", count: totals.noCharge },
+    // Only offered when there is something to see, so the row stays clean.
+    ...(totals.abandoned > 0
+      ? [{ value: "abandoned" as const, label: "Unfinished", count: totals.abandoned }]
+      : []),
   ];
 
   if (rows === null) {
@@ -321,7 +349,7 @@ export default function BookingsLedger() {
           <ListGroup>
             {filtered.map((b) => {
               const pay = paymentLabel(b);
-              const st = bookingStatus(b.status);
+              const st = statusBadge(b);
               return (
                 <ListRow
                   key={b.id}
@@ -329,7 +357,7 @@ export default function BookingsLedger() {
                   title={b.child_name}
                   subtitle={b.event?.title ?? "Unknown programme"}
                   detail={<>{b.parent_name || b.parent_email}{b.phone ? ` · ${b.phone}` : ""}<span className="block">{pay.text}</span></>}
-                  meta={<span className="font-semibold tabular">{b.complimentary || b.amount_pence === 0 ? "£0" : gbp(b.amount_pence)}</span>}
+                  meta={<span className="font-semibold tabular">{amountCell(b)}</span>}
                   trailing={<StatusBadge tone={st.tone} dot={false}>{st.label}</StatusBadge>}
                   chevron
                   wrapTitle
@@ -354,7 +382,7 @@ export default function BookingsLedger() {
               <TableBody>
                 {filtered.map((b) => {
                   const pay = paymentLabel(b);
-                  const st = bookingStatus(b.status);
+                  const st = statusBadge(b);
                   return (
                     <TableRow key={b.id} className="cursor-pointer" onClick={() => setOpen(b)}>
                       <TableCell className="whitespace-nowrap text-muted-foreground">{shortDate(b.created_at)}</TableCell>
@@ -366,7 +394,7 @@ export default function BookingsLedger() {
                       </TableCell>
                       <TableCell className="min-w-[12rem]">{b.event?.title ?? "Unknown programme"}{b.session_slot ? <div className="text-xs text-muted-foreground">{b.session_slot}</div> : null}</TableCell>
                       <TableCell className="max-w-[16rem]"><StatusBadge tone={pay.tone} dot={false} className="whitespace-normal text-left">{pay.text}</StatusBadge>{b.stripe_env === "sandbox" && <span className="ml-2 text-[11px] text-muted-foreground">sandbox</span>}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-semibold tabular">{b.complimentary || b.amount_pence === 0 ? "£0" : gbp(b.amount_pence)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-semibold tabular">{amountCell(b)}</TableCell>
                       <TableCell className="whitespace-nowrap"><StatusBadge tone={st.tone} dot={false}>{st.label}</StatusBadge></TableCell>
                     </TableRow>
                   );

@@ -24,6 +24,7 @@ type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
 import { deliveryLabel, worstOf, type Delivery } from "@/lib/emailDelivery";
 import { monthlyPlanLabel, programmePricing } from "@/lib/programmePricing";
+import { isAbandoned } from "@/lib/bookingState";
 
 const db = supabase as any;
 
@@ -45,6 +46,8 @@ type Booking = {
   id: string; child_name: string; parent_name: string; parent_email: string;
   status: string; amount_pence: number; session_slot: string | null; paid_at: string | null;
   membership_id: string | null; child_id?: string | null;
+  /** Needed to tell an unfinished checkout from one still in flight. */
+  created_at: string;
 };
 /** An account holding the coach role — what the Coaches checklist offers. */
 type Coach = { user_id: string; name: string };
@@ -120,6 +123,9 @@ const BookingsPanel = () => {
   const [deliveries, setDeliveries] = useState<Record<string, Delivery>>({});
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [refundTarget, setRefundTarget] = useState<Booking | null>(null);
+  /** A programme with nobody on it, queued for deletion. */
+  const [deleteTarget, setDeleteTarget] = useState<EventRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; end_time?: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>>([]);
   // Cancel / move a session, or cancel a whole event — parents are emailed.
@@ -257,7 +263,7 @@ const BookingsPanel = () => {
     setFreePlace(new Set());
     const [{ data: invs }, { data: bks }, { data: sess }] = await Promise.all([
       db.from("booking_invitations").select("id, child_name, parent_email, parent_name, status, sent_at, reminded_at, child_id, roster_id").eq("event_id", ev.id).order("created_at"),
-      db.from("bookings").select("id, child_name, parent_name, parent_email, status, amount_pence, session_slot, paid_at, membership_id, child_id").eq("event_id", ev.id).order("created_at", { ascending: false }),
+      db.from("bookings").select("id, child_name, parent_name, parent_email, status, amount_pence, session_slot, paid_at, membership_id, child_id, created_at").eq("event_id", ev.id).order("created_at", { ascending: false }),
       db.from("event_sessions").select("id, session_date, start_time, end_time, venue, cancelled_at, moved_from_date").eq("event_id", ev.id).order("session_date"),
     ]);
     setInvitations(invs ?? []);
@@ -414,6 +420,26 @@ const BookingsPanel = () => {
     setInviteOpen(false);
     setChecked(new Set());
     openEvent(selected);
+    loadEvents();
+  };
+
+  /**
+   * Delete a programme nobody is on. The button only appears with no
+   * invitations and no bookings, and the events table refuses the delete if a
+   * booking exists, so a paid place can never be erased by this.
+   */
+  const deleteEvent = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await db.from("events").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
+    if (error) {
+      toast.error("Could not delete it — someone is booked on. Cancel it instead.");
+      return;
+    }
+    toast.success(`${deleteTarget.title} deleted`);
+    setDeleteTarget(null);
+    setSelected(null);
     loadEvents();
   };
 
@@ -767,6 +793,10 @@ const BookingsPanel = () => {
   const isProgramme = selected?.programme_type === "programme";
   const s0 = selected ? (stats[selected.id] ?? { invited: 0, booked: 0, paid: 0 }) : null;
   const unbooked = invitations.filter((i) => i.status === "invited" || i.status === "opened");
+  // A checkout that was started and never finished is not a booking: no money
+  // was taken and no place is held. It stays in the database but off this list.
+  const liveBookings = bookings.filter((b) => !isAbandoned(b));
+  const unfinished = bookings.length - liveBookings.length;
   // Parents whose invitation email was rejected or reported — they have not
   // seen it, and nothing else on this page would say so.
   const undelivered = invitations.filter((i) => {
@@ -957,6 +987,14 @@ const BookingsPanel = () => {
                     <Ban className="w-4 h-4" /> Cancel event
                   </Button>
                 )}
+                {/* Nobody invited and nobody booked: it was a false start, so
+                    it can go entirely rather than linger as a cancelled row.
+                    The database refuses the delete if a booking exists. */}
+                {invitations.length === 0 && bookings.length === 0 && (
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(selected)}>
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -1082,13 +1120,21 @@ const BookingsPanel = () => {
                 )}
               </Section>
 
-              <Section title="Bookings" count={bookings.length}>
-                {bookings.length === 0 ? (
+              <Section
+                title="Bookings"
+                count={liveBookings.length}
+                action={unfinished > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {unfinished} unfinished checkout{unfinished === 1 ? "" : "s"} · no payment taken
+                  </span>
+                )}
+              >
+                {liveBookings.length === 0 ? (
                   <EmptyState icon={Ticket} title="No bookings yet" description="Bookings appear here as parents confirm their places." compact />
                 ) : (
                   <>
                     <ListGroup className="md:hidden">
-                      {bookings.map((b) => {
+                      {liveBookings.map((b) => {
                         const st = bookingStatus(b.status);
                         return (
                           <ListRow
@@ -1113,7 +1159,7 @@ const BookingsPanel = () => {
                           <TableHead>Player</TableHead><TableHead>Parent</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Paid</TableHead><TableHead className="text-right">Actions</TableHead>
                         </TableRow></TableHeader>
                         <TableBody>
-                          {bookings.map((b) => {
+                          {liveBookings.map((b) => {
                             const st = bookingStatus(b.status);
                             return (
                               <TableRow key={b.id}>
@@ -1848,6 +1894,32 @@ const BookingsPanel = () => {
       </Dialog>
 
       {/* Refunds are irreversible in Stripe, so they are confirmed explicitly. */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this {deleteTarget?.programme_type === "programme" ? "programme" : "event"}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  <strong>{deleteTarget?.title}</strong> and its session dates are removed for good.
+                </p>
+                <p className="text-muted-foreground">
+                  Nobody has been invited and nobody is booked, so no parent is affected and no
+                  money is involved. This cannot be undone.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); deleteEvent(); }} disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Delete for good
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={!!refundTarget} onOpenChange={(o) => !o && setRefundTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
