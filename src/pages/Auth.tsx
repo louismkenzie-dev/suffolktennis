@@ -15,6 +15,37 @@ const logo = logoAsset;
 const expiredOrUsed = (error: { message?: string } | null) =>
   /expired|invalid|already/i.test(error?.message ?? "");
 
+/**
+ * Turns an auth failure into something a parent can act on.
+ *
+ * The one that matters is the send limit. Supabase caps how many account
+ * emails go out per hour across the whole project, and on a busy sign-up week
+ * a parent asking for a reset is simply refused — with wording ("email rate
+ * limit exceeded") that reads like their address is at fault. They then try
+ * again immediately, which is the one thing that cannot help. Say what has
+ * actually happened, give them a number of minutes, and point at a human.
+ */
+function authErrorToast(error: { message?: string; status?: number } | null, fallbackTitle: string) {
+  const msg = error?.message ?? "";
+  if (/rate limit|too many requests|only request this after/i.test(msg) || error?.status === 429) {
+    return {
+      title: "Too many emails at once",
+      description:
+        "Our email service is busy and won't send another right now — nothing is wrong with your address. " +
+        "Please wait about 15 minutes and try once more, or email enquiries@suffolktennis.online and we'll sort it out for you.",
+      variant: "destructive" as const,
+    };
+  }
+  if (/for security purposes/i.test(msg)) {
+    return {
+      title: "Just a moment",
+      description: "That was sent very recently. Give it a minute and try again.",
+      variant: "destructive" as const,
+    };
+  }
+  return { title: fallbackTitle, description: msg || "Please try again.", variant: "destructive" as const };
+}
+
 const Auth = () => {
   // Someone arriving back from the "Confirm my email" button in their signup
   // email. Their address is already confirmed by the time they land here, so
@@ -78,7 +109,7 @@ const Auth = () => {
       toast({ title: "Check your email", description: "We've sent you a password reset link." });
       setForgotPassword(false);
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast(authErrorToast(error, "We couldn't send the reset link"));
     } finally {
       setLoading(false);
     }
@@ -127,7 +158,7 @@ const Auth = () => {
         }
       }
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast(authErrorToast(error, "We couldn't sign you in"));
     } finally {
       setLoading(false);
     }
@@ -178,13 +209,12 @@ const Auth = () => {
       // says so obliquely. Nothing arrives, and without this the parent is
       // left waiting on an email that is never coming.
       const already = /already|confirmed|registered/i.test(error?.message ?? "");
-      toast({
-        title: already ? "You're already confirmed" : "Couldn't resend the code",
-        description: already
-          ? "That email address is confirmed — sign in below with the password you chose."
-          : error.message,
-        variant: already ? "default" : "destructive",
-      });
+      toast(already
+        ? {
+          title: "You're already confirmed",
+          description: "That email address is confirmed — sign in below with the password you chose.",
+        }
+        : authErrorToast(error, "Couldn't resend the code"));
       if (already) { setVerifyStep(false); setIsLogin(true); }
     } finally {
       setResending(false);

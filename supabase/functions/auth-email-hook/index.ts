@@ -15,9 +15,46 @@
 import { Webhook } from "npm:standardwebhooks@1.0.0";
 import { sendEmail } from "../_shared/resend.ts";
 import { brandedEmail, emailButton, emailCode, emailNote, emailParagraph } from "../_shared/emailLayout.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "../_shared/emailPrefs.ts";
-import { recordDelivery } from "../_shared/emailDeliveries.ts";
+
+/**
+ * GoTrue aborts this hook after FIVE SECONDS and then refuses the whole
+ * request, so a parent asking for a password reset gets an error and no
+ * email. Everything on this path is therefore kept to the minimum: no
+ * supabase-js (its import alone dominates a cold start), no unsubscribe-token
+ * lookup (two more round trips, and account mail is transactional — an
+ * unsubscribe does not apply to it), and one plain REST write to record the
+ * send. What is left is a single Resend call and a single row.
+ */
+async function recordAuthDelivery(rec: { resendId: string; recipient: string; subject: string; purpose: string }) {
+  if (!rec.resendId) return;
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return;
+  try {
+    const now = new Date().toISOString();
+    await fetch(`${url}/rest/v1/email_deliveries?on_conflict=resend_id`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({
+        resend_id: rec.resendId,
+        recipient: rec.recipient,
+        subject: rec.subject,
+        purpose: rec.purpose,
+        status: "sent",
+        status_at: now,
+        sent_at: now,
+      }),
+    });
+  } catch (e) {
+    // Bookkeeping must never cost a parent their email.
+    console.error("recordAuthDelivery failed", e instanceof Error ? e.message : String(e));
+  }
+}
 
 const codeEmail = (title: string, intro: string, code: string, unsubscribeUrl?: string) =>
   brandedEmail({
@@ -85,12 +122,9 @@ Deno.serve(async (req) => {
     `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(hash)}&type=${type}` +
     `&redirect_to=${encodeURIComponent(email_data.redirect_to || siteUrl)}`;
 
-  const admin = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-  const unsubToken = await unsubscribeTokenFor(admin, user.email, "auth");
-  const unsubUrl = unsubscribeUrlFor(unsubToken);
+  // Account mail carries no unsubscribe link: it is the recipient's own
+  // sign-in, not a county update, and unsubscribing has never applied to it.
+  const unsubUrl = undefined;
 
   let subject: string;
   let html: string;
@@ -163,14 +197,14 @@ Deno.serve(async (req) => {
 
   try {
     const sent = await sendEmail(
-      { to: user.email, subject, html, unsubscribe_token: unsubToken ?? undefined },
-      { apiKey: resendKey, unsubscribeBaseUrl: unsubscribeBaseUrl() },
+      { to: user.email, subject, html },
+      { apiKey: resendKey },
     );
     // Account mail was the one kind whose fate nothing recorded, so "did the
     // confirmation email reach them?" could only be answered by reading
     // Resend's dashboard by hand — which is exactly the question a parent
     // stuck on sign-up makes someone ask.
-    await recordDelivery(admin, {
+    await recordAuthDelivery({
       resendId: sent.id,
       recipient: user.email,
       subject,

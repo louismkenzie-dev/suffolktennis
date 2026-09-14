@@ -1016,3 +1016,43 @@ so it receives events from **every** connected account on the Nullshift
 platform — The Dance Exclusive's included. Those log as "invoice for unknown
 subscription" and are correctly ignored, because every handler resolves the
 membership by subscription id first.
+
+### Parents locked out by Supabase's email rate limit, 14 Sep 2026
+
+A parent (Anna Campbell, Archie's mother) wrote that she kept "getting errors
+on the page" and could not reset her password before Wednesday's deadline. The
+auth logs show it was never her:
+
+```
+over_email_send_rate_limit  /signup    11
+over_email_send_rate_limit  /recover    6
+hook_timeout                /recover    1
+```
+
+in 24 hours, across **seven different parents** — aliceowen82@hotmail.com,
+info@suffolkwedding.com, katiewitherley@hotmail.com, peter_biven@hotmail.com,
+handbaghannah@yahoo.co.uk, annaprus2508@gmail.com and m.prus82@gmail.com.
+Supabase Auth caps how many account emails the whole project may send per
+hour, and that cap is enforced BEFORE the Send Email hook runs, so Resend
+never sees the message. The parent is told "email rate limit exceeded", which
+reads as though their address is at fault, so they try again immediately —
+which is the only thing that cannot work.
+
+**Fix, dashboard only:** Authentication → Rate Limits → *Rate limit for sending
+emails*. It must be raised well above the sign-up rate (a sign-up weekend puts
+fifty-plus accounts through in two days, and every confirmation, resend and
+reset counts).
+
+Two code-side fixes shipped alongside:
+
+1. `auth-email-hook` was also timing out. GoTrue abandons the hook after
+   **five seconds** and then refuses the request, so a parent gets an error and
+   no email at all — which is what happened to Anna's 13:00 reset. The hook now
+   does the minimum on that path: no supabase-js import (it dominated the cold
+   start), no unsubscribe-token lookup (two round trips, and account mail is
+   transactional so an unsubscribe never applied to it), and one plain REST
+   write to record the send. Deployed as v14.
+2. The sign-in page no longer shows GoTrue's raw wording. A send-limit refusal
+   now says the email service is busy, that nothing is wrong with their
+   address, to wait about fifteen minutes, and gives them
+   enquiries@suffolktennis.online.
