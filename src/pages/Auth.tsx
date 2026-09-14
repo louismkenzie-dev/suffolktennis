@@ -144,7 +144,22 @@ const Auth = () => {
           },
         });
         if (error) throw error;
-        if (data.session) {
+        // Signing up again with an address that already has an account is a
+        // silent no-op at Supabase's end — it will not say the address is
+        // taken (that would let anyone test which parents are registered), and
+        // it sends nothing at all once that account is confirmed. Telling the
+        // parent "check your email" then leaves them waiting for a message
+        // that is never coming, which is exactly how one parent spent an
+        // afternoon convinced sign-up was broken. The empty identities array
+        // is how that case announces itself.
+        if (!data.session && data.user && (data.user.identities?.length ?? 0) === 0) {
+          toast({
+            title: "You already have an account",
+            description: "There's already an account for that email. Sign in below, or use \"Forgot password?\" if you can't remember it.",
+          });
+          setIsLogin(true);
+          setPassword("");
+        } else if (data.session) {
           // Confirmations disabled — signed straight in.
           navigate(redirectTarget ?? "/parent-hub");
         } else {

@@ -1056,3 +1056,26 @@ Two code-side fixes shipped alongside:
    now says the email service is busy, that nothing is wrong with their
    address, to wait about fifteen minutes, and gives them
    enquiries@suffolktennis.online.
+
+### "Sign up again" is a silent dead end, 14 Sep 2026
+
+Peter Biven reported sign-up still broken after the rate limit was raised. He
+was not hitting the limit: at 12:56:24Z his request logged as
+`user_repeated_signup`. His account has existed since 12 July and is
+confirmed, so Supabase — which will not reveal that an address is already
+registered, since that would let anyone test which parents have accounts —
+accepted the request, sent nothing, and returned success. The page then told
+him to check his email for a message that was never coming.
+
+The tell is in the response: a repeated signup returns a user whose
+`identities` array is empty. `Auth.tsx` now checks for that and says "You
+already have an account", switches to the sign-in form and points at
+"Forgot password?" instead of the code box.
+
+His account was fine throughout — `recovery_sent_at` was null only because
+every earlier reset attempt had been refused by the rate limit. One reset,
+sent once the limit was raised, put him back in.
+
+Worth knowing for the next one: `user_repeated_signup` in the auth logs means
+a parent is trying to create an account they already have. It is not an error
+and never appears as one.
