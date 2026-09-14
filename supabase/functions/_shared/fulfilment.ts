@@ -7,6 +7,7 @@ import { sendEmail } from "./resend.ts";
 import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } from "./emailLayout.ts";
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "./emailPrefs.ts";
 import { programmePricing } from "./programmePricing.ts";
+import { venueLine, venueRuns, venueRunsSentence } from "./venueRuns.ts";
 
 const SITE_URL = () => (Deno.env.get("SITE_URL") ?? "https://suffolktennis.online").replace(/\/$/, "");
 
@@ -64,6 +65,19 @@ export async function settleBooking(
     .eq("id", booking.event_id)
     .maybeSingle();
 
+  // Where it actually happens. A programme's own `location` is a single
+  // venue and a season often is not — the 9U runs its first block at one club
+  // and the rest at another — so the confirmation reads the venue off the
+  // sessions, exactly as the booking page and the invitation already do.
+  const { data: sessionRows } = await admin
+    .from("event_sessions")
+    .select("session_date, start_time, end_time, venue, cancelled_at")
+    .eq("event_id", booking.event_id)
+    .order("session_date");
+  const runs = venueRuns(sessionRows ?? [], eventRow?.location ?? null);
+  const venueText = venueLine(runs, eventRow?.location ?? null);
+  const venueSentence = venueRunsSentence(runs);
+
   const isProgramme = eventRow?.programme_type === "programme";
   // A monthly plan is a committed run of charges, so the confirmation says so
   // in the same words the parent agreed to rather than quoting one month as
@@ -100,9 +114,10 @@ export async function settleBooking(
             ["Player", booking.child_name],
             [isProgramme ? "Programme" : "Event", eventRow?.title ?? ""],
             ["Session", booking.session_slot ?? ""],
-            ["Venue", eventRow?.location ?? ""],
+            ["Venue", venueText ?? ""],
             ["Cost", costLabel],
           ]) +
+          (venueSentence ? emailParagraph(venueSentence) : "") +
           (monthlyPlan && pricing && pricing.months > 0
             ? emailParagraph(
                 `Your monthly plan is set up. <strong>${gbp(booking.amount_pence)}</strong> has been taken today, and the same amount will be taken automatically on this date each month until all <strong>${pricing.months}</strong> payments have been made — <strong>${gbp(booking.amount_pence * pricing.months)}</strong> in total. It then stops by itself; there is no rolling subscription and nothing for you to cancel.`,

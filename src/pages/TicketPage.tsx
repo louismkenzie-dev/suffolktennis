@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertCircle, CalendarPlus } from "lucide-react";
 import { calendarLinks, formatTimeRange } from "@/lib/timeFormat";
+import { venueLine, venueRuns } from "@/lib/venueRuns";
 import { FlowShell, KeyValueList, StatusBadge, SkeletonBlock, EmptyState } from "@/components/app";
 
 type TicketData = {
@@ -62,6 +63,13 @@ const TicketPage = () => {
   const session = data?.ticket?.scope === "session" ? data.session : null;
   const sessionTime = session ? formatTimeRange(session.start_time, session.end_time) : "";
   const sessionVenue = session ? session.venue ?? data?.event?.location ?? null : null;
+  // A whole-programme ticket covers every date, and a season is often split
+  // between clubs — so name them all rather than the one venue stored on the
+  // programme, which may be neither of them.
+  const programmeVenue = venueLine(
+    venueRuns(data?.upcoming_sessions ?? [], data?.event?.location ?? null),
+    data?.event?.location ?? null,
+  );
 
   return (
     <FlowShell maxWidth="max-w-md" back={{ label: "My bookings", to: "/parent-hub?tab=bookings" }}>
@@ -86,7 +94,7 @@ const TicketPage = () => {
                   )}
                 </>
               ) : (
-                data.event?.location && <p className="mt-0.5 text-sm text-primary-foreground/70">{data.event.location}</p>
+                programmeVenue && <p className="mt-0.5 text-sm text-primary-foreground/70">{programmeVenue}</p>
               )}
             </div>
             <div className="relative flex flex-col items-center bg-white px-6 pb-6 pt-7">

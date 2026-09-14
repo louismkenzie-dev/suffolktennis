@@ -15,7 +15,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket, MapPin, ArrowDownToLine } from "lucide-react";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
   SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone, Avatar,
@@ -128,6 +128,14 @@ const BookingsPanel = () => {
   const [deleting, setDeleting] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; end_time?: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>>([]);
+  // Setting the venue of each session in one screen. A programme often runs
+  // the first block at one venue and the rest at another, and until now that
+  // could only be done by adding the sessions in separate runs — there was no
+  // way to change your mind afterwards without "moving" each session, which
+  // emails every parent.
+  const [venueEditor, setVenueEditor] = useState(false);
+  const [venueDraft, setVenueDraft] = useState<Record<string, string>>({});
+  const [savingVenues, setSavingVenues] = useState(false);
   // Cancel / move a session, or cancel a whole event — parents are emailed.
   const [sessionChange, setSessionChange] = useState<{ mode: "cancel_session" | "reschedule_session" | "cancel_event"; session?: { id: string; session_date: string; start_time: string | null; venue: string | null } } | null>(null);
   const [changeReason, setChangeReason] = useState("");
@@ -1002,8 +1010,18 @@ const BookingsPanel = () => {
               <Section
                 title="Session dates"
                 count={sessions.filter((x) => !x.cancelled_at).length}
-                description={isProgramme ? "Every date is included in the programme fee. Parents are emailed when a session is moved or cancelled." : "Optional — add dates if this event runs over more than one day."}
-                action={<Button size="sm" variant={sessions.length === 0 ? "default" : "outline"} onClick={openAddSessions} disabled={!!selected.cancelled_at}><CalendarPlus className="w-4 h-4" /> Add sessions</Button>}
+                description={isProgramme ? "Every date is included in the programme fee. Each session has its own venue — set them under Venues. Parents are emailed when a session is moved or cancelled." : "Optional — add dates if this event runs over more than one day."}
+                action={
+                  <span className="flex items-center gap-2">
+                    {sessions.length > 0 && (
+                      <Button size="sm" variant="outline" disabled={!!selected.cancelled_at} onClick={() => {
+                        setVenueDraft(Object.fromEntries(sessions.map((s) => [s.id, s.venue ?? selected.location ?? ""])));
+                        setVenueEditor(true);
+                      }}><MapPin className="w-4 h-4" /> Venues</Button>
+                    )}
+                    <Button size="sm" variant={sessions.length === 0 ? "default" : "outline"} onClick={openAddSessions} disabled={!!selected.cancelled_at}><CalendarPlus className="w-4 h-4" /> Add sessions</Button>
+                  </span>
+                }
               >
                 {sessions.length === 0 ? (
                   <EmptyState icon={CalendarPlus} title="No dates yet" description="Add a single date, or generate a run of weekly, fortnightly or monthly sessions from a start date." compact />
@@ -1845,6 +1863,76 @@ const BookingsPanel = () => {
       {/* Cancel or move a session / cancel an event. Every parent with a paid
           place is emailed; money never moves from here — refunds stay on the
           per-booking button. */}
+      {/* Where each session is held. A programme is rarely at one venue all
+          season, and parents read the venue off the sessions, not off the
+          programme — so this is where the truth lives. */}
+      <Dialog open={venueEditor} onOpenChange={(o) => !o && setVenueEditor(false)}>
+        <DialogContent className="md:max-w-lg">
+          <DialogHeader><DialogTitle>Venues for {selected?.title}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Set the venue for each date. Use the arrow to copy a venue down to every later
+            session — that's how you split a season between two clubs.
+          </p>
+          <InlineNote tone="info">
+            Saving here does not email anyone. If parents have already been told where a
+            session is, use <strong>Move</strong> on that session instead so they hear about it.
+          </InlineNote>
+          <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+            {sessions.map((s) => (
+              <div key={s.id} className={s.cancelled_at ? "opacity-50" : undefined}>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <Label className="text-xs">
+                    {fmtDate(s.session_date)}{s.start_time ? ` · ${formatTime(s.start_time)}` : ""}
+                    {s.cancelled_at ? " · Cancelled" : ""}
+                  </Label>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Use this venue for every session from ${fmtDate(s.session_date)} onwards`}
+                    title="Use for this and every later session"
+                    onClick={() => {
+                      const from = s.session_date;
+                      const v = venueDraft[s.id] ?? "";
+                      setVenueDraft((d) => {
+                        const next = { ...d };
+                        for (const later of sessions) {
+                          if (later.session_date >= from) next[later.id] = v;
+                        }
+                        return next;
+                      });
+                    }}
+                  ><ArrowDownToLine className="w-4 h-4" /></Button>
+                </div>
+                <VenueSelect
+                  value={venueDraft[s.id] ?? ""}
+                  onChange={(v) => setVenueDraft((d) => ({ ...d, [s.id]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setVenueEditor(false)}>Cancel</Button>
+            <Button
+              disabled={savingVenues}
+              onClick={async () => {
+                setSavingVenues(true);
+                // Only the ones that actually moved, so an untouched session
+                // keeps whatever it had — including a deliberate blank.
+                const changed = sessions.filter((s) => (venueDraft[s.id] ?? "") !== (s.venue ?? ""));
+                for (const s of changed) {
+                  const v = (venueDraft[s.id] ?? "").trim();
+                  await db.from("event_sessions").update({ venue: v || null }).eq("id", s.id);
+                }
+                setSavingVenues(false);
+                setVenueEditor(false);
+                if (selected) await openEvent(selected);
+                toast.success(changed.length === 0 ? "Nothing to change" : `${changed.length} session${changed.length === 1 ? "" : "s"} updated`);
+              }}
+            >{savingVenues ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save venues"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!sessionChange} onOpenChange={(o) => !o && setSessionChange(null)}>
         <DialogContent className="md:max-w-md">
           <DialogHeader>

@@ -1079,3 +1079,31 @@ sent once the limit was raised, put him back in.
 Worth knowing for the next one: `user_repeated_signup` in the auth logs means
 a parent is trying to create an account they already have. It is not an error
 and never appears as one.
+
+### A programme's venue lives on its sessions, 14 Sep 2026
+
+A season is often split between clubs — the 9U runs four Sundays at Culford
+(Sept–Dec, 1.30–3.30pm) and then seven at David Lloyd Ipswich (Jan–Jul,
+1–3pm) — while `events.location` holds one venue. For the 9U it holds
+"Ipswich Sports Club", which is neither of them.
+
+The booking page, the parent's booking detail and the invitation email already
+derived their wording from the sessions via `venueRuns` / `venueLine` /
+`venueRunsSentence`. Two places still quoted `events.location` on its own and
+now do the same: the **booking confirmation email**
+(`_shared/fulfilment.ts` — it also carries the "first 4 are at X, then the
+remaining 7 are at Y" sentence) and the **whole-programme ticket header**
+(`src/pages/TicketPage.tsx`; a per-session ticket already showed its own
+venue).
+
+The gap that remained was editing. Venues could only be set per generator run
+when the sessions were created, or by "moving" a session — which requires a
+new date and emails every parent. The programme screen now has a **Venues**
+button opening one row per date with a venue picker, plus an arrow that copies
+a venue down to every later session, which is how a season gets split in a few
+taps. It saves only the rows that actually changed and is explicit that it
+emails nobody; the Move action remains the route when parents have already
+been told.
+
+`events.location` stays as the default applied to newly generated sessions,
+not as the thing parents read.
