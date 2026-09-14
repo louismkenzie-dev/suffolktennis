@@ -1107,3 +1107,11 @@ been told.
 
 `events.location` stays as the default applied to newly generated sessions,
 not as the thing parents read.
+
+**Still to deploy:** `_shared/fulfilment.ts` is bundled into two functions.
+`booking-payments-webhook` is on the new copy (**v22**, boot-checked), which
+covers every paid booking. `create-booking-checkout` still carries the old
+copy, so a **free or complimentary** booking's confirmation email quotes
+`events.location` rather than the venue list. Narrow and harmless, but it is a
+real divergence between this repo and production: redeploy that function —
+carefully, it is the live payment path — to close it.
