@@ -15,7 +15,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket, MapPin, ArrowDownToLine } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket, MapPin, ArrowDownToLine, Mail } from "lucide-react";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
   SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone, Avatar,
@@ -128,6 +128,12 @@ const BookingsPanel = () => {
   const [deleting, setDeleting] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; end_time?: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>>([]);
+  // Sending an invitation to the other parent. The booking link is personal
+  // to the address it was sent to — a forwarded one is refused — so "use
+  // Mum's email instead" has to change the invitation, not just the envelope.
+  const [readdress, setReaddress] = useState<Invitation | null>(null);
+  const [readdressEmail, setReaddressEmail] = useState("");
+  const [readdressing, setReaddressing] = useState(false);
   // Setting the venue of each session in one screen. A programme often runs
   // the first block at one venue and the rest at another, and until now that
   // could only be done by adding the sessions in separate runs — there was no
@@ -459,6 +465,33 @@ const BookingsPanel = () => {
     if (error || data?.error) toast.error(data?.error ?? "Reminder failed");
     else toast.success(`${data.sent} reminder(s) sent`);
     openEvent(selected);
+  };
+
+  /**
+   * Point an existing invitation at a different parent and send it there.
+   * The place, the child and the link all stay the same; only who it belongs
+   * to changes. parent_user_id is cleared because it may still point at the
+   * first parent's account, which would let them book and lock the other out.
+   */
+  const sendToOtherParent = async () => {
+    const inv = readdress;
+    const email = readdressEmail.trim().toLowerCase();
+    if (!inv || !selected) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast.error("That doesn't look like an email address"); return; }
+    if (email === inv.parent_email.toLowerCase()) { toast.error("That's the address it already goes to"); return; }
+    setReaddressing(true);
+    const { error } = await db.from("booking_invitations")
+      .update({ parent_email: email, parent_user_id: null })
+      .eq("id", inv.id);
+    if (error) {
+      setReaddressing(false);
+      toast.error(error.message);
+      return;
+    }
+    await remind([inv.id]);
+    setReaddressing(false);
+    setReaddress(null);
+    toast.success(`Invitation for ${inv.child_name ?? "this player"} now goes to ${email}`);
   };
 
   const saveEvent = async () => {
@@ -1091,7 +1124,10 @@ const BookingsPanel = () => {
                                 {del && <StatusBadge tone={del.tone}>{del.label}</StatusBadge>}
                                 <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                                 {(i.status === "invited" || i.status === "opened") && (
-                                  <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" onClick={() => remind([i.id])}><RefreshCw className="w-4 h-4" /></Button>
+                                  <>
+                                    <Button variant="ghost" size="icon-sm" aria-label="Send to a different email address" title="Send to a different email address" onClick={() => { setReaddressEmail(""); setReaddress(i); }}><Mail className="w-4 h-4" /></Button>
+                                    <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" onClick={() => remind([i.id])}><RefreshCw className="w-4 h-4" /></Button>
+                                  </>
                                 )}
                               </span>
                             }
@@ -1125,7 +1161,10 @@ const BookingsPanel = () => {
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {(i.status === "invited" || i.status === "opened") && (
-                                    <Button variant="ghost" size="sm" onClick={() => remind([i.id])}>Resend</Button>
+                                    <>
+                                      <Button variant="ghost" size="sm" onClick={() => { setReaddressEmail(""); setReaddress(i); }}>Change email</Button>
+                                      <Button variant="ghost" size="sm" onClick={() => remind([i.id])}>Resend</Button>
+                                    </>
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -1863,6 +1902,42 @@ const BookingsPanel = () => {
       {/* Cancel or move a session / cancel an event. Every parent with a paid
           place is emailed; money never moves from here — refunds stay on the
           per-booking button. */}
+      {/* "Send it to Mum's address instead." The booking link is tied to the
+          invited address — a forwarded one is refused at checkout — so the
+          invitation itself has to move. */}
+      <Dialog open={!!readdress} onOpenChange={(o) => !o && setReaddress(null)}>
+        <DialogContent className="md:max-w-md">
+          <DialogHeader><DialogTitle>Send to a different email address</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            <strong>{readdress?.child_name ?? "This player"}</strong> keeps the same place and the
+            same booking link. It currently goes to {readdress?.parent_email}.
+          </p>
+          <div>
+            <Label htmlFor="readdress-email">New email address</Label>
+            <Input
+              id="readdress-email"
+              type="email"
+              inputMode="email"
+              autoComplete="off"
+              placeholder="the other parent's email"
+              value={readdressEmail}
+              onChange={(e) => setReaddressEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") sendToOtherParent(); }}
+            />
+          </div>
+          <InlineNote tone="info">
+            The invitation moves across and is emailed to the new address straight away. The old
+            address can no longer use the link, so send it to whoever is going to book and pay.
+          </InlineNote>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setReaddress(null)}>Cancel</Button>
+            <Button disabled={readdressing} onClick={sendToOtherParent}>
+              {readdressing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Move and send"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Where each session is held. A programme is rarely at one venue all
           season, and parents read the venue off the sessions, not off the
           programme — so this is where the truth lives. */}

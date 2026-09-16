@@ -1115,3 +1115,28 @@ copy, so a **free or complimentary** booking's confirmation email quotes
 `events.location` rather than the venue list. Narrow and harmless, but it is a
 real divergence between this repo and production: redeploy that function —
 carefully, it is the live payment path — to close it.
+
+### Sending an invitation to the other parent, 16 Sep 2026
+
+Ollie asked whether an invitation could be resent to a different address —
+Mum's rather than Dad's — or whether that meant a second player profile. It
+meant neither, and forwarding the link does not work either: the booking link
+is personal. `create-booking-checkout` refuses it unless the signed-in
+account matches `booking_invitations.parent_email` (or the linked
+`parent_user_id`), with "This invitation was sent to a different email
+address". So the invitation itself has to move.
+
+An invitation row now has **Change email**: it writes the new
+`parent_email`, clears `parent_user_id` — otherwise the first parent's linked
+account still satisfies the ownership check and could book while the other is
+locked out — and then sends through the existing reminder path, whose wording
+("Your invitation is waiting") reads correctly to someone seeing it for the
+first time. The place, the child and the token are untouched, so nothing
+already booked is disturbed.
+
+No edge function changed. Note for later: `send-booking-invitations` reuses an
+existing invitation by `roster_id`/`child_id` and does **not** update
+`parent_email` on reuse, so re-inviting a player at a new address through the
+picker would still email the new address while leaving the row pointing at the
+old one — which then fails at checkout. Changing the address here is the
+supported route until that reuse branch is taught to update it.
