@@ -19,6 +19,7 @@ import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, Cal
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
   SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone, Avatar,
+  KeyValueList,
 } from "@/components/app";
 type Cadence = "weekly" | "fortnightly" | "monthly";
 import { formatTime } from "@/lib/timeFormat";
@@ -128,6 +129,11 @@ const BookingsPanel = () => {
   const [deleting, setDeleting] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; end_time?: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>>([]);
+  // Tapping an invitation opens what you can do with it. The actions used to
+  // live only in the last table column, which on a laptop sat off the right
+  // edge of the window behind a horizontal scrollbar nobody noticed — Ollie
+  // reported the option simply wasn't there.
+  const [manageInv, setManageInv] = useState<Invitation | null>(null);
   // Sending an invitation to the other parent. The booking link is personal
   // to the address it was sent to — a forwarded one is refused — so "use
   // Mum's email instead" has to change the invitation, not just the envelope.
@@ -1119,14 +1125,15 @@ const BookingsPanel = () => {
                             title={i.child_name ?? i.parent_email}
                             subtitle={i.parent_name || i.parent_email}
                             detail={`${i.sent_at ? `Sent ${new Date(i.sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "Not sent"}${i.reminded_at ? " · reminded" : ""}`}
+                            onClick={() => setManageInv(i)}
                             trailing={
                               <span className="flex items-center gap-2">
                                 {del && <StatusBadge tone={del.tone}>{del.label}</StatusBadge>}
                                 <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                                 {(i.status === "invited" || i.status === "opened") && (
                                   <>
-                                    <Button variant="ghost" size="icon-sm" aria-label="Send to a different email address" title="Send to a different email address" onClick={() => { setReaddressEmail(""); setReaddress(i); }}><Mail className="w-4 h-4" /></Button>
-                                    <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" onClick={() => remind([i.id])}><RefreshCw className="w-4 h-4" /></Button>
+                                    <Button variant="ghost" size="icon-sm" aria-label="Send to a different email address" title="Send to a different email address" onClick={(e) => { e.stopPropagation(); setReaddressEmail(""); setReaddress(i); }}><Mail className="w-4 h-4" /></Button>
+                                    <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" onClick={(e) => { e.stopPropagation(); remind([i.id]); }}><RefreshCw className="w-4 h-4" /></Button>
                                   </>
                                 )}
                               </span>
@@ -1146,7 +1153,7 @@ const BookingsPanel = () => {
                             const d = deliveries[i.id];
                             const del = d ? deliveryLabel(d.status) : null;
                             return (
-                              <TableRow key={i.id}>
+                              <TableRow key={i.id} className="cursor-pointer" onClick={() => setManageInv(i)}>
                                 <TableCell className="font-medium">{i.child_name}</TableCell>
                                 <TableCell className="text-muted-foreground">{i.parent_name || i.parent_email}</TableCell>
                                 <TableCell><StatusBadge tone={st.tone}>{st.label}</StatusBadge></TableCell>
@@ -1159,11 +1166,11 @@ const BookingsPanel = () => {
                                   {i.sent_at ? new Date(i.sent_at).toLocaleDateString("en-GB") : "not sent"}
                                   {i.reminded_at ? " · reminded" : ""}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell className="text-right whitespace-nowrap">
                                   {(i.status === "invited" || i.status === "opened") && (
                                     <>
-                                      <Button variant="ghost" size="sm" onClick={() => { setReaddressEmail(""); setReaddress(i); }}>Change email</Button>
-                                      <Button variant="ghost" size="sm" onClick={() => remind([i.id])}>Resend</Button>
+                                      <Button variant="ghost" size="icon-sm" aria-label="Send to a different email address" title="Send to a different email address" onClick={(e) => { e.stopPropagation(); setReaddressEmail(""); setReaddress(i); }}><Mail className="w-4 h-4" /></Button>
+                                      <Button variant="ghost" size="icon-sm" aria-label="Resend invitation" title="Resend invitation" onClick={(e) => { e.stopPropagation(); remind([i.id]); }}><RefreshCw className="w-4 h-4" /></Button>
                                     </>
                                   )}
                                 </TableCell>
@@ -1902,6 +1909,46 @@ const BookingsPanel = () => {
       {/* Cancel or move a session / cancel an event. Every parent with a paid
           place is emailed; money never moves from here — refunds stay on the
           per-booking button. */}
+      {/* What you can do with one invitation. Reached by tapping the row, so
+          the actions are never hidden behind a sideways scroll. */}
+      <Dialog open={!!manageInv} onOpenChange={(o) => !o && setManageInv(null)}>
+        <DialogContent className="md:max-w-md">
+          <DialogHeader><DialogTitle>{manageInv?.child_name ?? "Invitation"}</DialogTitle></DialogHeader>
+          <KeyValueList items={[
+            { label: "Parent", value: manageInv?.parent_name || null, hidden: !manageInv?.parent_name },
+            { label: "Goes to", value: manageInv?.parent_email ?? null },
+            { label: "Status", value: manageInv ? bookingStatus(manageInv.status).label : null },
+            {
+              label: "Email",
+              value: manageInv && deliveries[manageInv.id] ? deliveryLabel(deliveries[manageInv.id].status).label : null,
+              hidden: !manageInv || !deliveries[manageInv.id],
+            },
+            {
+              label: "Sent",
+              value: manageInv?.sent_at ? new Date(manageInv.sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : null,
+              hidden: !manageInv?.sent_at,
+            },
+          ]} />
+          {manageInv && (manageInv.status === "invited" || manageInv.status === "opened") ? (
+            <div className="space-y-2">
+              <Button className="w-full" variant="outline" onClick={() => { const i = manageInv; setManageInv(null); setReaddressEmail(""); setReaddress(i); }}>
+                <Mail className="w-4 h-4" /> Send to a different email address
+              </Button>
+              <Button className="w-full" variant="outline" onClick={() => { const i = manageInv; setManageInv(null); remind([i.id]); }}>
+                <RefreshCw className="w-4 h-4" /> Resend the invitation
+              </Button>
+            </div>
+          ) : (
+            <InlineNote tone="info">
+              {manageInv?.status === "booked"
+                ? "This place is booked and paid for, so the invitation can no longer be resent or moved."
+                : "This invitation is no longer active."}
+            </InlineNote>
+          )}
+          <DialogFooter><Button variant="ghost" onClick={() => setManageInv(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* "Send it to Mum's address instead." The booking link is tied to the
           invited address — a forwarded one is refused at checkout — so the
           invitation itself has to move. */}

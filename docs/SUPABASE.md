@@ -1140,3 +1140,14 @@ existing invitation by `roster_id`/`child_id` and does **not** update
 picker would still email the new address while leaving the row pointing at the
 old one — which then fails at checkout. Changing the address here is the
 supported route until that reuse branch is taught to update it.
+
+**Follow-up, same day:** Ollie couldn't find Change email. He was in the right
+place — the buttons were in the last table column, which on his laptop sat
+beyond the right edge behind a horizontal scrollbar he had no reason to
+notice. Adding a second button to that column is what pushed it off. Two
+fixes: the row actions are compact icon buttons again (the column no longer
+widens the table past the window), and **tapping an invitation row** — his
+first instinct, which previously did nothing — opens a sheet naming the
+player, where the invitation goes, its status and delivery, with both actions
+as full-width buttons. Checked at 1280×720: the table fits its container and
+the actions sit on screen.
