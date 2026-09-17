@@ -47,3 +47,8 @@ verify_jwt = false
 
 [functions.media-relay]
 verify_jwt = false
+
+# Calendar clients (Google, Outlook, Apple) fetch a subscription with a plain
+# GET and no headers, so the token in the query string is the authorization.
+[functions.calendar-feed]
+verify_jwt = false

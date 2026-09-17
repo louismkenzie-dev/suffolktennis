@@ -6,6 +6,7 @@ import { AlertCircle, CalendarPlus } from "lucide-react";
 import { calendarLinks, formatTimeRange } from "@/lib/timeFormat";
 import { venueLine, venueRuns } from "@/lib/venueRuns";
 import { FlowShell, KeyValueList, StatusBadge, SkeletonBlock, EmptyState } from "@/components/app";
+import CalendarSubscribe from "@/components/parent/CalendarSubscribe";
 
 type TicketData = {
   booking: { status: string; child_name: string; parent_name: string; session_slot: string | null };
@@ -138,6 +139,13 @@ const TicketPage = () => {
             { label: "Session", value: data.booking.session_slot, hidden: !data.booking.session_slot },
             { label: "Date", value: data.event?.event_date ? new Date(data.event.event_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : null, hidden: !data.event?.event_date || data.upcoming_sessions.length > 0 || !!session },
           ]} />
+
+          {/* One live subscription beats eleven one-off "add to calendar" taps,
+              and it keeps up when a session moves. Only offered for a ticket
+              that covers the whole programme. */}
+          {!session && valid && !data.event?.cancelled_at && data.upcoming_sessions.length > 0 && qrToken && (
+            <CalendarSubscribe qrToken={qrToken} sessionCount={data.upcoming_sessions.length} />
+          )}
 
           {!session && data.upcoming_sessions.length > 0 && (
             <div>

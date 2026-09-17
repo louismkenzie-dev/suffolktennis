@@ -1151,3 +1151,56 @@ first instinct, which previously did nothing — opens a sheet naming the
 player, where the invitation goes, its status and delivery, with both actions
 as full-width buttons. Checked at 1280×720: the table fits its container and
 the actions sit on screen.
+
+## Calendar subscriptions (17 Sep 2026)
+
+Gillian, a parent, asked: *"Is there a chance the sessions can be added to a
+calendar subscription rather than to a specific Google / Outlook calendar?"*
+The ticket page's per-session "Google / Outlook" links copy one date into a
+diary and then know nothing more — a session that later moves stays wrong
+forever, and an eleven-date programme means eleven taps.
+
+**`supabase/functions/calendar-feed/index.ts`** (deployed v1) serves one
+iCalendar feed per booking. It is deliberately self-contained (only
+`npm:@supabase/supabase-js@2`, no `_shared` imports) so it can be redeployed
+through the MCP without flattening anything.
+
+- **URL**: `/functions/v1/calendar-feed?t=<qr_token>` — the same token that
+  authorises the ticket page. Calendar clients send no headers of their own,
+  so the token travels in the query string and `verify_jwt = false` is set for
+  this function in `supabase/config.toml`.
+- **One VEVENT per `event_sessions` row**, falling back to the event's single
+  `event_date` when a programme has no dated sessions.
+- **`UID: session-<sessionId>-<bookingId>@suffolktennis.online`** with
+  `SEQUENCE` from `moved_at ?? created_at`, so a moved session updates in
+  place instead of arriving as a duplicate.
+- **Cancelled** sessions (or a cancelled event) are emitted as
+  `STATUS:CANCELLED` + `TRANSP:TRANSPARENT` with a `CANCELLED — ` summary,
+  rather than disappearing silently from the diary.
+- **`LOCATION`** is the session's own venue, so a season split between clubs
+  reads correctly date by date.
+- `REFRESH-INTERVAL;VALUE=DURATION:PT12H` and `X-PUBLISHED-TTL:PT12H` (Apple
+  reads the X- spelling), `Cache-Control: public, max-age=900`.
+- Content lines are folded at 75 **octets**, not characters — folding by
+  character would split a multi-byte character (the em dash in every title)
+  across the break.
+
+**Time zones.** Sessions are stored as a bare London date plus a local time;
+the feed asks `Intl.DateTimeFormat` what Europe/London was doing at that
+instant rather than assuming. Verified against Ben Sergent's real 9U season
+ticket: 27 Sep 2026 13:30 BST → `20260927T123000Z`, 22 Nov 2026 13:30 GMT →
+`20261122T133000Z`, and 28 Mar 2027 13:00 BST → `20270328T120000Z` — so the
+clock changes either side of the season are both right.
+
+**Where a parent finds it.** `src/components/parent/CalendarSubscribe.tsx`,
+shown on `TicketPage` and in the parent's booking detail dialog, but only for
+a paid, uncancelled, whole-programme ticket with upcoming dates — a
+single-session code admits them to one date, so a subscription would mislead.
+"Add to my calendar" is a `webcal://` link (iPhone, Mac, Outlook hand it
+straight to the calendar app); "Copy link" gives the `https://` form, which is
+what Google Calendar on a computer wants pasted into Other calendars → From
+URL. `SUPABASE_URL` is now exported from
+`src/integrations/supabase/client.ts` so the component can build the URL.
+
+The feed link is worth the same care as the ticket link: anyone holding it can
+read that booking's dates, player name and venues.

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { MapPin, Ticket, ExternalLink, ClipboardList, ChevronRight } from "lucide-react";
 import { KeyValueList, ListGroup, ListRow, StatusBadge, bookingStatus } from "@/components/app";
 import { isComplete, type Ratings } from "@/lib/lta";
+import CalendarSubscribe from "./CalendarSubscribe";
 
 const db = supabase as any;
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
@@ -185,6 +186,10 @@ const BookingDetailDialog = ({ booking, event, membership, qrToken, open, onOpen
               />
             </ListGroup>
           </div>
+        )}
+
+        {booking.status === "paid" && qrToken && !event?.cancelled_at && upcomingSessions.length > 0 && (
+          <CalendarSubscribe qrToken={qrToken} sessionCount={upcomingSessions.length} />
         )}
 
         {sessions.length > 0 && (
