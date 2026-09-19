@@ -1329,6 +1329,6 @@ voices over merging them into one report):
 The 5-second poll already in place carries all of this between phones; nothing
 new was needed for the "live" part.
 
-**Deployed:** `coach-session` v?, boot-checked. Six Playwright checks cover the
+**Deployed:** `coach-session` v15, boot-checked, and every deployed file verified byte-identical to the repo. Six Playwright checks cover the
 dot, the row, the badge, both warnings, and that an unfinished report by the
 other coach does not count as done.
