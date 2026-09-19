@@ -1267,6 +1267,23 @@ The refund dialog makes the choice explicit — *Keep their place, free of
 charge* or *Give the place up* — defaulting to giving it up, since silently
 dropping a child who only wanted their money back is the worse mistake.
 
-**Deployed:** `refund-booking` v7, `send-booking-invitations` v28. Both
+**Monthly plans could not be refunded at all before this.** A subscription
+booking has no `stripe_payment_intent_id` — each month is a Stripe invoice —
+so the old guard rejected it with "No Stripe payment is recorded against this
+booking". Both 18U Girls monthly bookings (Holly Fisher, Alev Warwick) were in
+exactly that state. `refund-booking` now reads `memberships.paid_invoice_ids`,
+resolves each invoice to its payment intent (which is why `stripe.ts` pins the
+pre-Basil `2025-02-24.acacia` API — `invoice.payment_intent` was removed in
+Basil) and refunds every month that was taken.
+
+That also fixes a latent under-refund: `bookings.amount_pence` on a monthly
+plan is ONE month, so a plan three months in would previously have handed back
+a third of the money and called it a full refund. The invoices are now the
+source of truth, and the response carries `amount_taken_pence` alongside
+`amount_refunded_pence`. A part-refund against a multi-month plan is refused
+rather than guessed at, and a refund that fails half way through reports how
+far it got instead of claiming nothing happened.
+
+**Deployed:** `refund-booking` v8, `send-booking-invitations` v28. Both
 boot-checked (403 "Admin access required" through pg_net, which also proves no
 email can escape the admin gate).

@@ -2208,9 +2208,10 @@ const BookingsPanel = () => {
             <AlertDialogDescription asChild>
               <div className="space-y-3">
                 <p>
-                  {gbp(refundTarget?.amount_pence ?? null)} goes back to{" "}
-                  <strong>{refundTarget?.parent_email}</strong> for{" "}
-                  <strong>{refundTarget?.child_name}</strong>, and our 2.5% fee is returned
+                  {refundTarget?.membership_id
+                    ? <>Every monthly payment made so far goes back to <strong>{refundTarget.parent_email}</strong></>
+                    : <>{gbp(refundTarget?.amount_pence ?? null)} goes back to <strong>{refundTarget?.parent_email}</strong></>}
+                  {" "}for <strong>{refundTarget?.child_name}</strong>, and our 2.5% fee is returned
                   to Suffolk Tennis.
                 </p>
                 {/* The same refund means two different things. Getting this
@@ -2256,7 +2257,8 @@ const BookingsPanel = () => {
             <AlertDialogCancel disabled={refunding}>Keep the booking</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); refund(); }} disabled={refunding}>
               {refunding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              Refund {gbp(refundTarget?.amount_pence ?? null)}{refundKeepsPlace ? " and keep the place" : ""}
+              {refundTarget?.membership_id ? "Refund every payment" : `Refund ${gbp(refundTarget?.amount_pence ?? null)}`}
+              {refundKeepsPlace ? " and keep the place" : ""}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
