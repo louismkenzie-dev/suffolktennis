@@ -30,6 +30,7 @@ type BookingRow = {
   medical_notes: string | null; photo_consent: boolean;
   amount_pence: number; currency: string | null; status: string; stripe_env: string | null;
   membership_id: string | null; paid_at: string | null; created_at: string; complimentary: boolean;
+  refunded_at: string | null; refunded_amount_pence: number | null;
 };
 type EventLite = { id: string; title: string; programme_type: string; event_date: string | null; is_free: boolean; cancelled_at: string | null };
 type Membership = { id: string; monthly_amount_pence: number; months_total: number; months_paid: number; status: string };
@@ -54,7 +55,7 @@ function kindOf(b: LedgerEntry): Exclude<Kind, "all"> {
   // Checked before everything else: an abandoned attempt is not a booking, and
   // must never colour the money or sit in the list looking like a problem.
   if (isAbandoned(b)) return "abandoned";
-  if (b.status === "refunded") return "refunded";
+  if (b.status === "refunded" || b.refunded_at) return "refunded";
   if (b.status === "payment_failed") return "issue";
   if (b.complimentary || b.amount_pence === 0 || b.event?.is_free) return "nocharge";
   if (b.status === "paid") return "paid";
@@ -80,6 +81,15 @@ function amountCell(b: LedgerEntry): string {
 /** One line that says how (and whether) this booking was paid. */
 export function paymentLabel(b: LedgerEntry): { text: string; tone: StatusTone } {
   if (isAbandoned(b)) return { text: "Unfinished checkout · no payment taken", tone: "neutral" };
+  // A refund that kept the place: the child is still on the programme, and the
+  // money still went back. Both halves have to be visible or the books look
+  // like this place was always free.
+  if (b.refunded_at && b.status === "paid") {
+    return {
+      text: `${gbp(b.refunded_amount_pence ?? 0)} refunded · place kept, free of charge`,
+      tone: "warning",
+    };
+  }
   if (b.complimentary) return { text: "No charge · included with another programme", tone: "success" };
   if (b.event?.is_free || b.amount_pence === 0) return { text: "Free", tone: "neutral" };
   if (b.membership) {
@@ -94,7 +104,7 @@ export function paymentLabel(b: LedgerEntry): { text: string; tone: StatusTone }
   switch (b.status) {
     case "paid": return { text: `${gbp(b.amount_pence)} by card${b.paid_at ? ` · ${shortDate(b.paid_at)}` : ""}`, tone: "success" };
     case "pending": return { text: `${gbp(b.amount_pence)} · awaiting payment`, tone: "warning" };
-    case "refunded": return { text: `${gbp(b.amount_pence)} refunded`, tone: "danger" };
+    case "refunded": return { text: `${gbp(b.refunded_amount_pence ?? b.amount_pence)} refunded`, tone: "danger" };
     case "payment_failed": return { text: `${gbp(b.amount_pence)} · payment failed`, tone: "danger" };
     default: return { text: gbp(b.amount_pence), tone: "neutral" };
   }
@@ -128,7 +138,7 @@ export default function BookingsLedger() {
     let cancelled = false;
     (async () => {
       const [{ data: bks, error: e1 }, { data: evs }, { data: mems }] = await Promise.all([
-        db.from("bookings").select("id, event_id, parent_user_id, parent_name, parent_email, parent_phone, child_id, child_name, session_slot, medical_notes, photo_consent, amount_pence, currency, status, stripe_env, membership_id, paid_at, created_at, complimentary").order("created_at", { ascending: false }),
+        db.from("bookings").select("id, event_id, parent_user_id, parent_name, parent_email, parent_phone, child_id, child_name, session_slot, medical_notes, photo_consent, amount_pence, currency, status, stripe_env, membership_id, paid_at, created_at, complimentary, refunded_at, refunded_amount_pence").order("created_at", { ascending: false }),
         db.from("events").select("id, title, programme_type, event_date, is_free, cancelled_at"),
         db.from("memberships").select("id, monthly_amount_pence, months_total, months_paid, status"),
       ]);
@@ -185,7 +195,7 @@ export default function BookingsLedger() {
       t.count += 1;
       if (k === "paid") { t.paidCount += 1; t.paid += r.membership ? r.membership.monthly_amount_pence * r.membership.months_paid : r.amount_pence; }
       else if (k === "pending") { t.pendingCount += 1; t.pending += r.amount_pence; }
-      else if (k === "refunded") { t.refundedCount += 1; t.refunded += r.amount_pence; }
+      else if (k === "refunded") { t.refundedCount += 1; t.refunded += r.refunded_amount_pence ?? r.amount_pence; }
       else if (k === "nocharge") t.noCharge += 1;
       else t.issues += 1;
       if (r.membership && r.membership.status === "active") t.monthly += 1;

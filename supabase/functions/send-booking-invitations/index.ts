@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
       // precedence: roster_id, then child_id, then email + player name.
       let existingQuery = admin
         .from("booking_invitations")
-        .select("id, token, status, complimentary")
+        .select("id, token, status, complimentary, complimentary_reason")
         .eq("event_id", ev.id);
       if (inv.roster_id) existingQuery = existingQuery.eq("roster_id", inv.roster_id);
       else if (inv.child_id) existingQuery = existingQuery.eq("child_id", inv.child_id);
@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
             complimentary,
             complimentary_reason: complimentaryReason,
           })
-          .select("id, token, status, complimentary")
+          .select("id, token, status, complimentary, complimentary_reason")
           .single());
       } else if (complimentary && !existing?.complimentary) {
         // Re-sent after the child qualified (or the admin granted it): upgrade
@@ -191,7 +191,7 @@ Deno.serve(async (req) => {
         await admin.from("booking_invitations")
           .update({ complimentary: true, complimentary_reason: complimentaryReason })
           .eq("id", created.id);
-        created = { ...created, complimentary: true };
+        created = { ...created, complimentary: true, complimentary_reason: complimentaryReason };
       }
 
       if (error || !created) {
@@ -222,6 +222,7 @@ Deno.serve(async (req) => {
               shape,
               dateLabel,
               complimentary: isComplimentary,
+              complimentaryReason: created.complimentary_reason ?? null,
               bookUrl: `${SITE_URL}/book/${created.token}`,
               reminder: false,
             }),
@@ -251,7 +252,7 @@ Deno.serve(async (req) => {
   if (body.remind_invitation_ids) {
     const { data: invitations } = await admin
       .from("booking_invitations")
-      .select("id, token, child_name, parent_email, parent_name, status, complimentary")
+      .select("id, token, child_name, parent_email, parent_name, status, complimentary, complimentary_reason")
       .eq("event_id", ev.id)
       .in("id", body.remind_invitation_ids);
 
@@ -279,6 +280,7 @@ Deno.serve(async (req) => {
             shape,
             dateLabel,
             complimentary: !!inv.complimentary,
+            complimentaryReason: inv.complimentary_reason ?? null,
             bookUrl: `${SITE_URL}/book/${inv.token}`,
             reminder: true,
           }),

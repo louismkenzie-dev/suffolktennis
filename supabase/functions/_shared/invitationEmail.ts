@@ -7,6 +7,7 @@
 // whole invite flow. send-booking-invitations is its only sender.
 import { FONT, brandedEmail, emailButton, emailDetails, emailHeading, emailNote, emailParagraph } from "./emailLayout.ts";
 import { commitmentSentence, monthlyPlanLabel, programmePricing } from "./programmePricing.ts";
+import { complimentaryWords } from "./complimentary.ts";
 
 export const SITE_URL = Deno.env.get("SITE_URL") ?? "https://suffolktennis.online";
 const gbp = (pence: number) => `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
@@ -59,8 +60,8 @@ function hoursLabel(h: number | null): string {
   return `${whole}-hour`;
 }
 
-function costLabel(ev: EventRow, complimentary: boolean): string {
-  if (complimentary) return "No extra charge — included with your existing programme place";
+function costLabel(ev: EventRow, complimentary: boolean, reason: string | null): string {
+  if (complimentary) return complimentaryWords(reason).price;
   if (ev.is_free) return "Free";
   if (!ev.price_pence) return "";
   if (ev.programme_type === "programme") {
@@ -122,13 +123,14 @@ function emailList(items: string[]): string {
 
 export function invitationEmail(opts: {
   parentName: string; childName: string; event: EventRow; shape: Shape;
-  dateLabel: string | null; complimentary: boolean;
+  dateLabel: string | null; complimentary: boolean; complimentaryReason?: string | null;
   bookUrl: string; reminder: boolean; unsubscribeUrl?: string;
 }) {
   const { event: ev, shape } = opts;
   const first = esc(greetingName(opts.parentName));
   const fullName = esc(opts.childName.trim());
-  const child = esc(opts.childName.trim().split(/\s+/)[0] || opts.childName);
+  const childRaw = opts.childName.trim().split(/\s+/)[0] || opts.childName;
+  const child = esc(childRaw);
   const title = esc(ev.title);
   const isProgramme = ev.programme_type === "programme";
   const noCharge = opts.complimentary || ev.is_free;
@@ -176,7 +178,7 @@ export function invitationEmail(opts: {
       ["Sessions", sessionsLabel],
       [isProgramme ? "First session" : "Date", shape.firstDate ? longDate(shape.firstDate) : (opts.dateLabel ?? "")],
       ["Venue", shape.venueLine ? esc(shape.venueLine) : ev.location ? esc(ev.location) : ""],
-      [isProgramme ? "Programme price" : "Cost", costLabel(ev, opts.complimentary)],
+      [isProgramme ? "Programme price" : "Cost", costLabel(ev, opts.complimentary, opts.complimentaryReason ?? null)],
     ]) +
     (shape.venueSentence ? emailParagraph(esc(shape.venueSentence)) : "") +
     (isProgramme && !noCharge
@@ -185,7 +187,7 @@ export function invitationEmail(opts: {
         payingBlock(ev)
       : "") +
     (opts.complimentary
-      ? emailParagraph(`Because ${child} is already on one of our programmes, this place is <strong>included at no extra charge</strong> — you just need to confirm it.`)
+      ? emailParagraph(esc(complimentaryWords(opts.complimentaryReason ?? null).sentence(childRaw)))
       : "");
 
   const accept =

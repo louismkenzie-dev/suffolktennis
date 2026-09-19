@@ -8,6 +8,7 @@ import { brandedEmail, emailButton, emailDetails, emailNote, emailParagraph } fr
 import { unsubscribeBaseUrl, unsubscribeTokenFor, unsubscribeUrlFor } from "./emailPrefs.ts";
 import { programmePricing } from "./programmePricing.ts";
 import { venueLine, venueRuns, venueRunsSentence } from "./venueRuns.ts";
+import { complimentaryWords } from "./complimentary.ts";
 
 const SITE_URL = () => (Deno.env.get("SITE_URL") ?? "https://suffolktennis.online").replace(/\/$/, "");
 
@@ -84,8 +85,20 @@ export async function settleBooking(
   // though that were the price.
   const monthlyPlan = booking.payment_plan === "monthly" && !!booking.membership_id;
   const pricing = eventRow ? programmePricing(eventRow) : null;
+  // A complimentary place is described by the reason it was granted, so a
+  // place Suffolk Tennis simply covered is not called "included with an
+  // existing programme place".
+  let complimentaryReason: string | null = null;
+  if (booking.complimentary && booking.invitation_id) {
+    const { data: inv } = await admin
+      .from("booking_invitations")
+      .select("complimentary_reason")
+      .eq("id", booking.invitation_id)
+      .maybeSingle();
+    complimentaryReason = inv?.complimentary_reason ?? null;
+  }
   const costLabel = booking.complimentary
-    ? "No extra charge — included with an existing programme place"
+    ? complimentaryWords(complimentaryReason).price
     : monthlyPlan && pricing && pricing.months > 0
       ? `${gbp(booking.amount_pence)} a month for ${pricing.months} months (${gbp(booking.amount_pence * pricing.months)} in total)`
       : booking.amount_pence > 0 ? gbp(booking.amount_pence) : "Free";

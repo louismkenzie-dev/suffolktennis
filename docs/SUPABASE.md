@@ -1204,3 +1204,69 @@ URL. `SUPABASE_URL` is now exported from
 
 The feed link is worth the same care as the ticket link: anyone holding it can
 read that booking's dates, player name and venues.
+
+## Making a place free after the invitation has gone (19 Sep 2026)
+
+Ollie: *"any way you can help me send invites to 18U girls who I've already
+sent to but now remove their charges?.. or if I can recall and send again
+FOC.. Need to do this morning if so.."*
+
+**Nothing has to be recalled.** `create-booking-checkout` and the booking page
+both read `booking_invitations.complimentary` at the moment the parent acts,
+not when the email was written, so flipping that flag re-prices the link
+already sitting in their inbox. What was missing was any way to flip it after
+the invitation had been sent: the invite picker's free-place tick box only
+applies to a new send, and `alreadyOn` deliberately hides anyone already
+invited. `is_free` was no help either — the event form only offers it for
+events, not programmes (`src/components/admin/BookingsPanel.tsx`,
+`is_free: !isProgrammeForm && form.is_free`).
+
+**The action.** Tapping an invitation row now offers *Make this place free of
+charge* (and *Charge for this place again*). It writes `complimentary` plus a
+reason and then resends the invitation, because the email they were sent
+quoted a price.
+
+**Why the reason matters.** Every complimentary place used to be described
+with one sentence — "because your child is already on one of our programmes"
+— which was true of the only case that existed: a child already paying for a
+programme gets any other programme free. An admin grant is a different thing,
+and that sentence would have been a plain untruth to ten 18U Girls families.
+`supabase/functions/_shared/complimentary.ts` (mirrored at
+`src/lib/complimentary.ts`) now turns `complimentary_reason` into the words:
+
+| reason | price shown | sentence |
+| --- | --- | --- |
+| `already on a paid programme` | No extra charge | "…already on one of our programmes…" |
+| `granted by admin`, or null | No charge | "Suffolk Tennis is covering the cost" |
+
+Used by the booking page, the invitation email (`invitationEmail.ts`) and the
+confirmation email (`fulfilment.ts`, which looks the reason up through
+`bookings.invitation_id`).
+
+## Refunding without taking the place away (19 Sep 2026)
+
+A refund used to mean one thing: `bookings.status = 'refunded'` and a voided
+ticket — right when a family withdraws, wrong when Suffolk Tennis stops
+charging for a programme people have already paid for. Five 18U Girls
+families had paid £875 between them by the time Ollie asked.
+
+`refund-booking` now takes `keep_place`. With it, the money goes back, the
+booking **stays `paid`** and becomes complimentary with `amount_pence = 0`,
+its invitation is marked complimentary too, and the entry ticket, register
+row and calendar feed are untouched. Without it, the old behaviour stands.
+Either way a monthly plan is cancelled when `cancel_membership` is passed.
+
+Because the status no longer carries the refund, `bookings` gained
+`refunded_at`, `refunded_amount_pence` and `stripe_refund_id`
+(`20260919090000_refund_keeping_the_place.sql`), and every refund writes them.
+The ledger reads `refunded_at`, so a kept place shows "£275 refunded · place
+kept, free of charge" and still counts toward the refunded total rather than
+quietly filing itself under "no charge".
+
+The refund dialog makes the choice explicit — *Keep their place, free of
+charge* or *Give the place up* — defaulting to giving it up, since silently
+dropping a child who only wanted their money back is the worse mistake.
+
+**Deployed:** `refund-booking` v7, `send-booking-invitations` v28. Both
+boot-checked (403 "Admin access required" through pg_net, which also proves no
+email can escape the admin gate).

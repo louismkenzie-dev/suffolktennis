@@ -1,4 +1,11 @@
-// Admin-only: refund a paid booking and void its entry ticket.
+// Admin-only: give a parent their money back.
+//
+// Two shapes, because "refund" means two different things here. By default a
+// family has withdrawn: the booking becomes `refunded` and the entry ticket is
+// voided, so the place goes back. With `keep_place`, Suffolk Tennis has simply
+// stopped charging for a programme people already paid for — the money goes
+// back, the booking stays paid and becomes complimentary, and the child keeps
+// their ticket, their place on the register and their calendar dates.
 //
 // Refunds are issued on the CONNECTED account (direct charges), with
 // `refund_application_fee: true` so the Nullshift platform fee returns to
@@ -12,6 +19,7 @@
 import { z } from "npm:zod@3.23.8";
 import { serviceClient, requireAdmin, CORS, json } from "../_shared/adminAuth.ts";
 import { createStripeClient, connectRequestOptions, type StripeEnv } from "../_shared/stripe.ts";
+import { ADMIN_REASON } from "../_shared/complimentary.ts";
 
 const Body = z.object({
   booking_id: z.string().uuid(),
@@ -21,6 +29,11 @@ const Body = z.object({
   // Programme bookings: also cancel the Stripe subscription so no further
   // monthly payments are taken.
   cancel_membership: z.boolean().optional(),
+  // Give the money back but leave the child on the programme: the booking
+  // stays paid, becomes complimentary, and the entry ticket stays valid.
+  // Used when Suffolk Tennis decides to stop charging for a programme people
+  // have already paid for, rather than when a family withdraws.
+  keep_place: z.boolean().optional(),
 });
 
 Deno.serve(async (req) => {
@@ -42,7 +55,7 @@ Deno.serve(async (req) => {
 
   const { data: booking } = await admin
     .from("bookings")
-    .select("id, status, amount_pence, stripe_env, stripe_payment_intent_id, membership_id, child_name")
+    .select("id, status, amount_pence, stripe_env, stripe_payment_intent_id, membership_id, child_name, invitation_id")
     .eq("id", body.booking_id)
     .maybeSingle();
 
@@ -87,11 +100,46 @@ Deno.serve(async (req) => {
   // has gone back, so each step is reported rather than thrown.
   const warnings: string[] = [];
   const fullRefund = body.amount_pence == null || body.amount_pence === booking.amount_pence;
+  const refundedPence = body.amount_pence ?? booking.amount_pence;
+  const keepPlace = body.keep_place === true;
 
-  if (fullRefund) {
+  // Every refund is recorded here, because a refund that keeps the place no
+  // longer shows up in the booking's status.
+  const refundRecord = {
+    refunded_at: new Date().toISOString(),
+    refunded_amount_pence: refundedPence,
+    stripe_refund_id: refundId,
+  };
+
+  if (keepPlace) {
+    // The place survives the refund: still paid, now free. The ticket, the
+    // register and the calendar feed all key off this booking, so none of
+    // them are touched.
+    const { error: keepErr } = await admin
+      .from("bookings")
+      .update({
+        ...refundRecord,
+        complimentary: true,
+        // Nothing is owed on this place any more, so the ledger must not go
+        // on quoting a price that was handed back.
+        ...(fullRefund && { amount_pence: 0 }),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", booking.id);
+    if (keepErr) warnings.push(`Refunded in Stripe, but the booking was not marked free: ${keepErr.message}`);
+
+    // The invitation drives what the parent sees if they open their link
+    // again, so it has to agree that the place costs nothing.
+    if (booking.invitation_id) {
+      await admin
+        .from("booking_invitations")
+        .update({ complimentary: true, complimentary_reason: ADMIN_REASON })
+        .eq("id", booking.invitation_id);
+    }
+  } else if (fullRefund) {
     const { error: bookingErr } = await admin
       .from("bookings")
-      .update({ status: "refunded", updated_at: new Date().toISOString() })
+      .update({ status: "refunded", ...refundRecord, updated_at: new Date().toISOString() })
       .eq("id", booking.id);
     if (bookingErr) warnings.push(`Refunded in Stripe, but the booking status did not update: ${bookingErr.message}`);
 
@@ -100,6 +148,10 @@ Deno.serve(async (req) => {
       .update({ status: "void" })
       .eq("booking_id", booking.id);
     if (ticketErr) warnings.push(`Refunded in Stripe, but the entry ticket was not voided: ${ticketErr.message}`);
+  }
+
+  if (!keepPlace && !fullRefund) {
+    await admin.from("bookings").update({ ...refundRecord, updated_at: new Date().toISOString() }).eq("id", booking.id);
   }
 
   if (body.cancel_membership && booking.membership_id) {
@@ -124,8 +176,9 @@ Deno.serve(async (req) => {
     ok: true,
     refund_id: refundId,
     environment: env,
-    amount_refunded_pence: body.amount_pence ?? booking.amount_pence,
+    amount_refunded_pence: refundedPence,
     full_refund: fullRefund,
+    place_kept: keepPlace,
     application_fee_refunded: true,
     warnings,
   });

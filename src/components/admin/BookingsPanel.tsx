@@ -15,7 +15,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket, MapPin, ArrowDownToLine, Mail } from "lucide-react";
+import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket, MapPin, ArrowDownToLine, Mail, BadgePoundSterling } from "lucide-react";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
   SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone, Avatar,
@@ -26,6 +26,7 @@ import { formatTime } from "@/lib/timeFormat";
 import { deliveryLabel, worstOf, type Delivery } from "@/lib/emailDelivery";
 import { monthlyPlanLabel, programmePricing } from "@/lib/programmePricing";
 import { isAbandoned } from "@/lib/bookingState";
+import { ADMIN_REASON, complimentaryWords } from "@/lib/complimentary";
 
 const db = supabase as any;
 
@@ -42,6 +43,7 @@ type Invitation = {
   id: string; child_name: string | null; parent_email: string; parent_name: string | null;
   status: string; sent_at: string | null; reminded_at: string | null;
   child_id?: string | null; roster_id?: string | null;
+  complimentary?: boolean | null; complimentary_reason?: string | null;
 };
 type Booking = {
   id: string; child_name: string; parent_name: string; parent_email: string;
@@ -128,6 +130,12 @@ const BookingsPanel = () => {
   const [deleteTarget, setDeleteTarget] = useState<EventRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  /** The invitation whose charge is being added or removed. */
+  const [freeing, setFreeing] = useState<string | null>(null);
+  // Which kind of refund. Defaults to the safer reading: a family that asks
+  // for money back has usually withdrawn, and dropping a child who has not is
+  // the worse mistake to make silently.
+  const [refundKeepsPlace, setRefundKeepsPlace] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; session_date: string; start_time: string | null; end_time?: string | null; venue: string | null; cancelled_at?: string | null; moved_from_date?: string | null }>>([]);
   // Tapping an invitation opens what you can do with it. The actions used to
   // live only in the last table column, which on a laptop sat off the right
@@ -282,7 +290,7 @@ const BookingsPanel = () => {
     setChecked(new Set());
     setFreePlace(new Set());
     const [{ data: invs }, { data: bks }, { data: sess }] = await Promise.all([
-      db.from("booking_invitations").select("id, child_name, parent_email, parent_name, status, sent_at, reminded_at, child_id, roster_id").eq("event_id", ev.id).order("created_at"),
+      db.from("booking_invitations").select("id, child_name, parent_email, parent_name, status, sent_at, reminded_at, child_id, roster_id, complimentary, complimentary_reason").eq("event_id", ev.id).order("created_at"),
       db.from("bookings").select("id, child_name, parent_name, parent_email, status, amount_pence, session_slot, paid_at, membership_id, child_id, created_at").eq("event_id", ev.id).order("created_at", { ascending: false }),
       db.from("event_sessions").select("id, session_date, start_time, end_time, venue, cancelled_at, moved_from_date").eq("event_id", ev.id).order("session_date"),
     ]);
@@ -740,6 +748,38 @@ const BookingsPanel = () => {
     setFormOpen(true);
   };
 
+  /**
+   * Make a standing invitation free of charge, or put the charge back.
+   *
+   * The booking page and checkout both read `complimentary` off the
+   * invitation at the moment the parent acts, so the link already in their
+   * inbox starts costing nothing the instant this is saved — nothing has to
+   * be recalled. They are emailed again anyway, because the invitation they
+   * were sent quoted a price.
+   */
+  const setInvitationFree = async (inv: Invitation, free: boolean) => {
+    setFreeing(inv.id);
+    const { error } = await db.from("booking_invitations")
+      .update({
+        complimentary: free,
+        // The reason chooses the words the parent reads, so an admin grant
+        // must never be filed as "already on a paid programme".
+        complimentary_reason: free ? ADMIN_REASON : null,
+      })
+      .eq("id", inv.id);
+    if (error) { setFreeing(null); toast.error(error.message); return; }
+    if (selected) await openEvent(selected);
+    setFreeing(null);
+    setManageInv(null);
+    toast.success(
+      free
+        ? `${inv.child_name ?? "This place"} is now free of charge`
+        : `${inv.child_name ?? "This place"} is chargeable again`,
+      { description: "Sending them the invitation again with the new price…" },
+    );
+    await remind([inv.id]);
+  };
+
   const refund = async () => {
     if (!refundTarget) return;
     setRefunding(true);
@@ -749,6 +789,7 @@ const BookingsPanel = () => {
         // Programme bookings: stop the monthly subscription as well, otherwise
         // the parent keeps being charged after their refund.
         ...(refundTarget.membership_id ? { cancel_membership: true } : {}),
+        ...(refundKeepsPlace ? { keep_place: true } : {}),
       },
     });
     setRefunding(false);
@@ -759,6 +800,11 @@ const BookingsPanel = () => {
     toast.success(
       `${gbp(data.amount_refunded_pence)} refunded to ${refundTarget.parent_email}` +
       (refundTarget.membership_id ? " and the monthly plan cancelled" : ""),
+      {
+        description: data.place_kept
+          ? `${refundTarget.child_name} keeps their place free of charge — their entry ticket still works.`
+          : `${refundTarget.child_name}'s place has gone back and their entry ticket is cancelled.`,
+      },
     );
     (data.warnings ?? []).forEach((w: string) => toast.warning(w));
     setRefundTarget(null);
@@ -1210,7 +1256,7 @@ const BookingsPanel = () => {
                             trailing={
                               <span className="flex items-center gap-2">
                                 <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
-                                {b.status === "paid" && <Button variant="ghost" size="icon-sm" aria-label="Refund" onClick={() => setRefundTarget(b)}><Undo2 className="w-4 h-4" /></Button>}
+                                {b.status === "paid" && <Button variant="ghost" size="icon-sm" aria-label="Refund" onClick={() => { setRefundKeepsPlace(false); setRefundTarget(b); }}><Undo2 className="w-4 h-4" /></Button>}
                               </span>
                             }
                           />
@@ -1234,7 +1280,7 @@ const BookingsPanel = () => {
                                 <TableCell className="text-muted-foreground text-xs">{b.paid_at ? new Date(b.paid_at).toLocaleDateString("en-GB") : "—"}</TableCell>
                                 <TableCell className="text-right">
                                   {b.status === "paid" && (
-                                    <Button variant="ghost" size="sm" onClick={() => setRefundTarget(b)}><Undo2 className="w-4 h-4" /> Refund</Button>
+                                    <Button variant="ghost" size="sm" onClick={() => { setRefundKeepsPlace(false); setRefundTarget(b); }}><Undo2 className="w-4 h-4" /> Refund</Button>
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -1919,6 +1965,13 @@ const BookingsPanel = () => {
             { label: "Goes to", value: manageInv?.parent_email ?? null },
             { label: "Status", value: manageInv ? bookingStatus(manageInv.status).label : null },
             {
+              label: "Price",
+              value: manageInv?.complimentary
+                ? complimentaryWords(manageInv.complimentary_reason).shortPrice
+                : selected ? priceLine(selected) : null,
+              hidden: !manageInv,
+            },
+            {
               label: "Email",
               value: manageInv && deliveries[manageInv.id] ? deliveryLabel(deliveries[manageInv.id].status).label : null,
               hidden: !manageInv || !deliveries[manageInv.id],
@@ -1931,12 +1984,30 @@ const BookingsPanel = () => {
           ]} />
           {manageInv && (manageInv.status === "invited" || manageInv.status === "opened") ? (
             <div className="space-y-2">
+              {/* The link already in their inbox is re-priced the moment this
+                  saves — checkout reads the invitation, not the email. */}
+              <Button
+                className="w-full"
+                variant={manageInv.complimentary ? "outline" : "default"}
+                disabled={freeing === manageInv.id}
+                onClick={() => setInvitationFree(manageInv, !manageInv.complimentary)}
+              >
+                <BadgePoundSterling className="w-4 h-4" />
+                {freeing === manageInv.id
+                  ? "Saving…"
+                  : manageInv.complimentary ? "Charge for this place again" : "Make this place free of charge"}
+              </Button>
               <Button className="w-full" variant="outline" onClick={() => { const i = manageInv; setManageInv(null); setReaddressEmail(""); setReaddress(i); }}>
                 <Mail className="w-4 h-4" /> Send to a different email address
               </Button>
               <Button className="w-full" variant="outline" onClick={() => { const i = manageInv; setManageInv(null); remind([i.id]); }}>
                 <RefreshCw className="w-4 h-4" /> Resend the invitation
               </Button>
+              <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
+                {manageInv.complimentary
+                  ? "This place costs nothing. Putting the charge back re-prices the link they already have, and they are emailed again."
+                  : "Making it free re-prices the link they already have — nothing needs recalling — and they are emailed the invitation again at the new price."}
+              </p>
             </div>
           ) : (
             <InlineNote tone="info">
@@ -2135,16 +2206,43 @@ const BookingsPanel = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Refund this booking?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p>
                   {gbp(refundTarget?.amount_pence ?? null)} goes back to{" "}
                   <strong>{refundTarget?.parent_email}</strong> for{" "}
-                  <strong>{refundTarget?.child_name}</strong>. Their entry ticket is
-                  cancelled and our 2.5% fee is returned to Suffolk Tennis.
+                  <strong>{refundTarget?.child_name}</strong>, and our 2.5% fee is returned
+                  to Suffolk Tennis.
                 </p>
+                {/* The same refund means two different things. Getting this
+                    wrong either charges a family for a place Suffolk Tennis
+                    decided to give them, or quietly drops a child who only
+                    wanted their money back. */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setRefundKeepsPlace(true)}
+                    className={`w-full rounded-xl border p-3 text-left ${refundKeepsPlace ? "border-primary bg-primary/5" : "border-border"}`}
+                  >
+                    <span className="block text-sm font-semibold text-foreground">Keep their place, free of charge</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {refundTarget?.child_name} stays on the programme and keeps their entry ticket —
+                      the place simply stops costing anything.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRefundKeepsPlace(false)}
+                    className={`w-full rounded-xl border p-3 text-left ${refundKeepsPlace ? "border-border" : "border-primary bg-primary/5"}`}
+                  >
+                    <span className="block text-sm font-semibold text-foreground">Give the place up</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      They have withdrawn: the entry ticket is cancelled and the place goes back.
+                    </span>
+                  </button>
+                </div>
                 {refundTarget?.membership_id && (
                   <p>
-                    This is a monthly programme — the subscription is cancelled too, so no
+                    This is a monthly plan — the subscription is cancelled either way, so no
                     further payments are taken.
                   </p>
                 )}
@@ -2158,7 +2256,7 @@ const BookingsPanel = () => {
             <AlertDialogCancel disabled={refunding}>Keep the booking</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); refund(); }} disabled={refunding}>
               {refunding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              Refund {gbp(refundTarget?.amount_pence ?? null)}
+              Refund {gbp(refundTarget?.amount_pence ?? null)}{refundKeepsPlace ? " and keep the place" : ""}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

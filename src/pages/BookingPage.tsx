@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar, MapPin, Loader2, Ticket, AlertCircle, ArrowLeft, Lock, ShieldCheck, UserPlus, LogIn, RefreshCcw, ChevronDown, type LucideIcon } from "lucide-react";
 import { formatTimeRange } from "@/lib/timeFormat";
 import { venueLine, venueRuns, venueRunsSentence } from "@/lib/venueRuns";
+import { complimentaryWords, firstNameOf } from "@/lib/complimentary";
 import { FlowShell, Field, StatusBadge, SkeletonBlock } from "@/components/app";
 import {
   commitmentConsentLabel, commitmentSentence, monthlyPlanLabel, programmePricing,
@@ -304,9 +305,10 @@ const BookingPage = () => {
   // there is actually something to pay.
   const choosePlan = !!pricing?.offersMonthly && !noCharge;
   const monthlyChosen = choosePlan && plan === "monthly";
+  const compWords = complimentaryWords(data?.invitation.complimentary_reason ?? null);
   const priceLabel = data
     ? complimentary
-      ? "No extra charge"
+      ? compWords.shortPrice
       : noCharge
         ? "Free"
         : isProgramme
@@ -389,7 +391,7 @@ const BookingPage = () => {
               <div className="mt-4 flex items-end justify-between gap-3 border-t border-border pt-4">
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Price</p>
-                  <p className="font-display text-2xl font-semibold leading-tight">{complimentary ? "No extra charge" : noCharge ? "Free" : gbp(data.event.price_pence!)}</p>
+                  <p className="font-display text-2xl font-semibold leading-tight">{complimentary ? compWords.shortPrice : noCharge ? "Free" : gbp(data.event.price_pence!)}</p>
                   {isProgramme && !noCharge && (
                     <p className="text-xs text-muted-foreground">
                       {choosePlan && pricing
@@ -399,7 +401,7 @@ const BookingPage = () => {
                   )}
                 </div>
                 {complimentary
-                  ? <StatusBadge tone="success">Included</StatusBadge>
+                  ? <StatusBadge tone="success">{compWords.badge}</StatusBadge>
                   : choosePlan && pricing && pricing.savingPence > 0
                     ? <StatusBadge tone="success" dot={false}>Save {gbp(pricing.savingPence)} paying in full</StatusBadge>
                     : null}
@@ -407,8 +409,7 @@ const BookingPage = () => {
 
               {complimentary ? (
                 <p className="mt-3 text-sm text-muted-foreground">
-                  This place is <strong className="text-foreground">included at no extra charge</strong> because{" "}
-                  {data.invitation.child_name ?? "your child"} is already on one of our programmes — just confirm it below.
+                  {compWords.sentence(firstNameOf(data.invitation.child_name))}
                 </p>
               ) : isProgramme && (
                 <p className="mt-3 text-sm text-muted-foreground">
