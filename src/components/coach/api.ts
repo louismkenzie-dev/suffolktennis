@@ -64,6 +64,8 @@ export type Player = {
   attendance: Attendance | null;
   /** This coach's report for this session. */
   report: PlayerReport | null;
+  /** The OTHER coaches' reports on this player for this session. */
+  other_reports: Array<{ coach_name: string | null; complete: boolean; sent_at: string | null; updated_at: string }>;
   /** Latest complete report on the child before this session, any coach. */
   previous: { ratings: Record<string, number> | null; session_date: string | null; created_at: string } | null;
   /** Complete, unsent reports on this booking by any coach — what End session will send. */

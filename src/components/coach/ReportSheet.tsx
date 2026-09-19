@@ -7,10 +7,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/app";
+import { InlineNote, StatusBadge } from "@/components/app";
 import { LTA_AREAS, LTA_LEVELS, isComplete, levelLabel, type Ratings } from "@/lib/lta";
 import { cn } from "@/lib/utils";
 import { coachSession, type Player } from "./api";
+import { reportedBy } from "./PlayerRow";
 import { clock, fmtDay, londonParts } from "./time";
 
 type SavedReport = { id: string; complete: boolean; sent_at: string | null; updated_at: string };
@@ -52,6 +53,9 @@ export function ReportSheet({ player, sessionId, open, onOpenChange, onSaved }: 
   }, [open, player?.booking_id]);
 
   const ratedCount = useMemo(() => LTA_AREAS.filter((a) => VALID.includes(ratings[a.name])).length, [ratings]);
+  // Reports are one per coach, so the other coach's write-up does not replace
+  // this one — both would be sent. Worth saying plainly before they start.
+  const alreadyBy = player ? reportedBy(player).other : null;
   const complete = isComplete(ratings);
   const previous = player?.previous?.ratings ?? null;
 
@@ -105,6 +109,13 @@ export function ReportSheet({ player, sessionId, open, onOpenChange, onSaved }: 
                 {player.report?.sent_at && <span>Sent {fmtDay(londonParts(player.report.sent_at).date)} {clock(player.report.sent_at)}</span>}
               </DialogDescription>
             </DialogHeader>
+
+            {alreadyBy && !player.report && (
+              <InlineNote tone="warning">
+                {alreadyBy} has already written {player.child_name.split(" ")[0]} up for this session. Reports are one
+                per coach, so if you write one too the parent gets both.
+              </InlineNote>
+            )}
 
             <div className="space-y-5">
               {LTA_AREAS.map((area) => {

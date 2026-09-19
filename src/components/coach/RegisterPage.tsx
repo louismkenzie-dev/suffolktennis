@@ -98,7 +98,9 @@ export function RegisterPage({ sessionId, eventId: eventIdProp }: {
     arrived: players.filter((p) => p.attendance?.status === "arrived").length,
     absent: players.filter((p) => p.attendance?.status === "absent").length,
     unmarked: players.filter((p) => !p.attendance).length,
-    complete: players.filter((p) => p.report?.complete).length,
+    // Written up by either coach: the badge is a measure of how much of the
+    // squad is done, not of how much this phone has done.
+    complete: players.filter((p) => p.report?.complete || (p.other_reports ?? []).some((r) => r.complete)).length,
   }), [players]);
 
   const endedAt = session?.ended_at ?? data?.event.register_closed_at ?? localEndedAt;

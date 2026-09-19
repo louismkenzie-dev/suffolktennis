@@ -20,6 +20,13 @@ import { sendDueForSession, upsertAttendance } from "../_shared/reportEmails.ts"
 
 const SITE_URL = (Deno.env.get("SITE_URL") ?? "https://suffolktennis.online").replace(/\/$/, "");
 
+/** One row of session_reports as the register reads it, any coach's. */
+type ReportRow = {
+  id: string; booking_id: string; coach_id: string; coach_name: string | null;
+  complete: boolean; sent_at: string | null;
+  ratings: unknown; area_notes: unknown; comment: string | null; updated_at: string;
+};
+
 // The nine LTA characteristics. These strings are the JSON keys in
 // session_reports.ratings / area_notes and must match src/lib/lta.ts.
 const LTA_AREAS = [
@@ -414,7 +421,7 @@ Deno.serve(async (req) => {
     const childIds = [...new Set((bookings ?? []).map((b) => b.child_id).filter(Boolean))] as string[];
     const parentIds = [...new Set((bookings ?? []).map((b) => b.parent_user_id).filter(Boolean))] as string[];
 
-    const [{ data: children }, { data: parents }, { data: attendance }, { data: myReports }, { data: pendingReports }] = await Promise.all([
+    const [{ data: children }, { data: parents }, { data: attendance }, { data: allReports }] = await Promise.all([
       childIds.length > 0
         ? admin.from("children")
           .select("id, photo_url, date_of_birth, medical_needs, medical_conditions, medical_details")
@@ -432,36 +439,38 @@ Deno.serve(async (req) => {
           return q;
         })()
         : Promise.resolve({ data: [] as Array<{ booking_id: string; status: string; marked_at: string; source: string }> }),
+      // EVERY coach's reports for these bookings, not just the caller's. Two
+      // coaches split a squad between their own phones, and each needs to see
+      // that the other has already written a player up — otherwise they work
+      // blind and the parent can end up with two reports.
       bookingIds.length > 0
         ? (() => {
           let q = admin.from("session_reports")
-            .select("id, booking_id, complete, sent_at, ratings, area_notes, comment, updated_at")
-            .eq("coach_id", staffId)
+            .select("id, booking_id, coach_id, coach_name, complete, sent_at, ratings, area_notes, comment, updated_at")
             .in("booking_id", bookingIds);
           q = body.session_id ? q.eq("session_id", body.session_id) : q.is("session_id", null);
           return q;
         })()
-        : Promise.resolve({ data: [] as Array<{ id: string; booking_id: string; complete: boolean; sent_at: string | null; ratings: unknown; area_notes: unknown; comment: string | null; updated_at: string }> }),
-      // Complete, unsent reports by ANY coach — what End session will send.
-      bookingIds.length > 0
-        ? (() => {
-          let q = admin.from("session_reports")
-            .select("booking_id")
-            .eq("complete", true)
-            .is("sent_at", null)
-            .in("booking_id", bookingIds);
-          q = body.session_id ? q.eq("session_id", body.session_id) : q.is("session_id", null);
-          return q;
-        })()
-        : Promise.resolve({ data: [] as Array<{ booking_id: string }> }),
+        : Promise.resolve({ data: [] as ReportRow[] }),
     ]);
 
     const childById = new Map((children ?? []).map((c) => [c.id, c]));
     const phoneByParent = new Map((parents ?? []).map((p) => [p.user_id, p.primary_phone || p.phone || null]));
     const attendanceByBooking = new Map((attendance ?? []).map((a) => [a.booking_id, a]));
-    const reportByBooking = new Map((myReports ?? []).map((r) => [r.booking_id, r]));
+    const reportByBooking = new Map<string, ReportRow>();
+    const othersByBooking = new Map<string, Array<{ coach_name: string | null; complete: boolean; sent_at: string | null; updated_at: string }>>();
     const pendingByBooking = new Map<string, number>();
-    for (const r of pendingReports ?? []) pendingByBooking.set(r.booking_id, (pendingByBooking.get(r.booking_id) ?? 0) + 1);
+    for (const r of (allReports ?? []) as ReportRow[]) {
+      if (r.coach_id === staffId) {
+        reportByBooking.set(r.booking_id, r);
+      } else {
+        const list = othersByBooking.get(r.booking_id) ?? [];
+        list.push({ coach_name: r.coach_name, complete: r.complete, sent_at: r.sent_at, updated_at: r.updated_at });
+        othersByBooking.set(r.booking_id, list);
+      }
+      // What End session will send: complete and not yet gone, whoever wrote it.
+      if (r.complete && !r.sent_at) pendingByBooking.set(r.booking_id, (pendingByBooking.get(r.booking_id) ?? 0) + 1);
+    }
     const photoByChild = await signPhotos(admin, children ?? []);
 
     // Previous ratings: the latest complete report on the child before this
@@ -542,6 +551,7 @@ Deno.serve(async (req) => {
           ? { id: rep.id, complete: rep.complete, sent_at: rep.sent_at, ratings: rep.ratings, area_notes: rep.area_notes, comment: rep.comment, updated_at: rep.updated_at }
           : null,
         previous: b.child_id ? previousByChild.get(b.child_id) ?? null : null,
+        other_reports: (othersByBooking.get(b.id) ?? []).sort((x, y) => x.updated_at.localeCompare(y.updated_at)),
         pending_reports: pendingByBooking.get(b.id) ?? 0,
       };
     }).sort((a, b) => a.child_name.localeCompare(b.child_name));

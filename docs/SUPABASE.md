@@ -1287,3 +1287,48 @@ far it got instead of claiming nothing happened.
 **Deployed:** `refund-booking` v8, `send-booking-invitations` v28. Both
 boot-checked (403 "Admin access required" through pg_net, which also proves no
 email can escape the admin gate).
+
+## Two coaches, two phones, one register (19 Sep 2026)
+
+Ollie: *"can we get the reports to be live so when someone does one it updates
+on someone else's?.. two coaches working off their own phones syncing… when
+the session ends will it sync then and all reports send?"*
+
+**What already worked.** The register re-reads every 5 seconds while the tab is
+visible (`RegisterPage.tsx`, `POLL_MS`), so attendance marks already crossed
+between phones. End session already sends **every** complete, unsent report for
+the session whoever wrote it — `sendDueForSession` in
+`_shared/reportEmails.ts` filters on `complete` and `sent_at is null`, never on
+coach — and `session-reports-dispatch` (pg_cron, every 10 minutes, verified
+active) sweeps up anything finished later, two hours after the session ended.
+Sending is claim-before-send, so the two can never double-send a report.
+
+**What did not.** A report is unique per `(booking, session, coach)`, and the
+register only ever fetched `.eq("coach_id", staffId)`. So the red/green dot
+meant "*have I* done this one", and a coach could not see that their colleague
+had already written a player up — precisely the blind spot Ollie hit. The
+"x/y reports" badge counted the same way.
+
+**The change** (option (a) of two put to Ollie — he chose keeping both coaching
+voices over merging them into one report):
+
+- `coach-session`'s `register` action now reads every coach's reports for the
+  booking in one query and splits them into `report` (the caller's, unchanged)
+  and **`other_reports`**, replacing the separate `pending_reports` query.
+- The dot is green once **anyone** has finished the player. Someone else's
+  work reads as a green ring rather than a solid dot, so a coach can still see
+  at a glance which ones are theirs, and the row names them: "Written up by
+  Chris Daynes".
+- The squad badge counts both coaches.
+- Opening a player the other coach has already done shows a warning in the
+  profile and again at the top of the report sheet — *"Chris Daynes has
+  already written Cara up for this session. Reports are one per coach, so if
+  you write one too the parent gets both."* It does not block: two coaches
+  giving two views of a player is the point of a two-coach session.
+
+The 5-second poll already in place carries all of this between phones; nothing
+new was needed for the "live" part.
+
+**Deployed:** `coach-session` v?, boot-checked. Six Playwright checks cover the
+dot, the row, the badge, both warnings, and that an unfinished report by the
+other coach does not count as done.

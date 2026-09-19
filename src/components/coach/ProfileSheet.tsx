@@ -7,7 +7,7 @@ import { Avatar, InlineNote, ListGroup, ListRow, SegmentedControl, StatusBadge }
 import { LTA_AREAS, LTA_LEVELS, levelLabel } from "@/lib/lta";
 import { cn } from "@/lib/utils";
 import type { Player, RegisterSession } from "./api";
-import { ArrivalTime, type AttendanceAction } from "./PlayerRow";
+import { ArrivalTime, reportedBy, type AttendanceAction } from "./PlayerRow";
 import { clock, fmtDay, londonParts } from "./time";
 
 type Segment = "arrived" | "absent" | "clear";
@@ -24,6 +24,8 @@ export function ProfileSheet({ player, session, isProgramme, open, onOpenChange,
 }) {
   const ratedCount = LTA_AREAS.filter((a) => [1, 2, 3, 4].includes(player?.report?.ratings?.[a.name] as number)).length;
   const complete = !!player?.report?.complete;
+  // The other coach's write-up, when this coach has not done their own.
+  const writtenByOther = player && !complete ? reportedBy(player).other : null;
   const prev = player?.previous;
   const prevRatings = prev?.ratings ?? null;
   const segment: Segment = player?.attendance?.status ?? "clear";
@@ -82,7 +84,9 @@ export function ProfileSheet({ player, session, isProgramme, open, onOpenChange,
                     ? `Sent ${fmtDay(londonParts(player.report.sent_at).date)} ${clock(player.report.sent_at)} — edits are saved quietly and the parent sees “Updated”.`
                     : complete
                       ? "Goes to the parent when you end the session."
-                      : "Rate all nine areas to complete it."}
+                      : writtenByOther
+                        ? `${writtenByOther} has already written this one up — theirs goes to the parent whether or not you write yours.`
+                        : "Rate all nine areas to complete it."}
                 </p>
               </div>
             )}
