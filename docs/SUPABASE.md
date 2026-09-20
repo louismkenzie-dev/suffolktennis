@@ -1332,3 +1332,43 @@ new was needed for the "live" part.
 **Deployed:** `coach-session` v15, boot-checked, and every deployed file verified byte-identical to the repo. Six Playwright checks cover the
 dot, the row, the badge, both warnings, and that an unfinished report by the
 other coach does not count as done.
+
+## DMARC aggregate reports flooding the enquiries inbox (20 Sep 2026)
+
+Ollie: *"How do I stop all these reports coming in?.."* — a screenshot of
+`noreply@dmarc.yahoo.com` and friends arriving several times an hour.
+
+**Nothing in the platform sends these.** They are DMARC aggregate reports, and
+they arrive because of one DNS record. Current state, read live via DoH
+(the sandbox proxy blocks DNS hosts, so the queries go out through pg_net):
+
+| record | value |
+| --- | --- |
+| `_dmarc.suffolktennis.online` TXT | `v=DMARC1; p=none; rua=mailto:enquiries@suffolktennis.online; adkim=r; aspf=r` |
+| `suffolktennis.online` TXT | `v=spf1 include:_spf-eu.ionos.com ~all` |
+| `send.suffolktennis.online` TXT | `v=spf1 include:amazonses.com ~all` (Resend's return path) |
+| `resend._domainkey.suffolktennis.online` TXT | DKIM public key, present |
+
+`rua=` is the reporting address: every mailbox provider that receives mail
+claiming to be from the domain posts it a daily XML report. It points at
+`enquiries@`, which is Ollie's inbox.
+
+**The mail itself is fine.** Resend signs as `d=suffolktennis.online` (DKIM
+aligned) and its return path has its own SPF, so with `aspf=r`/`adkim=r` the
+platform's mail passes DMARC on both counts. The reports are confirming that,
+not warning about it.
+
+**To stop them, edit the `_dmarc` TXT record at IONOS:**
+
+- Silence: `v=DMARC1; p=none; adkim=r; aspf=r` — drop `rua` entirely.
+- Keep them, elsewhere: `rua=mailto:dmarc@suffolktennis.online`. **Must be an
+  address on the same domain** — RFC 7489 §7.1 requires the receiving domain
+  to publish an authorisation record for an external one, so pointing `rua` at
+  a gmail.com address would simply be ignored by most reporters.
+- Digest: a free DMARC service (Postmark, dmarcian, URIports) issues an
+  address it has already authorised and sends one readable weekly summary.
+
+`p=none` means DMARC is currently monitoring only and enforcing nothing. Since
+alignment is already good, the domain could move to `p=quarantine` and stop
+anyone spoofing suffolktennis.online at parents — that is the reason to keep
+some form of reporting rather than deleting it outright.
