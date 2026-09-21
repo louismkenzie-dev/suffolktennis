@@ -1372,3 +1372,39 @@ not warning about it.
 alignment is already good, the domain could move to `p=quarantine` and stop
 anyone spoofing suffolktennis.online at parents — that is the reason to keep
 some form of reporting rather than deleting it outright.
+
+## "I have done 4 but it says only 2 parents will get reports" (20 Sep 2026)
+
+Ollie, ending the 14U Boys (B) session of 19 Sep a day late: the register said
+**4/6 reports**, End session said **2 complete reports will be sent**. He asked
+whether it was an error or something he had done wrong.
+
+**Neither. All four parents got their report.** What the dialog counted was
+reports still *waiting to be sent*, and by then two had already gone on their
+own. The session's scheduled end was 13:00 on 19 Sep, so every report he wrote
+the next afternoon was more than two hours past it and
+`session-reports-dispatch` (every 10 minutes) picked each one up almost as soon
+as he finished it:
+
+| London time, 20 Sep | what happened |
+| --- | --- |
+| 17:30 | Archie Hatch's report sent automatically |
+| 17:40 | George Armstrong's sent automatically |
+| **17:47** | **Ollie's screenshot: 4/6 written, 2 still to send** |
+| 17:50 | Hugo Hetherington's and Leon Prus's sent automatically |
+| 17:51 | Ollie pressed End session — nothing left to do |
+
+Verified after the fact: 4 complete reports on that session, 0 still unsent.
+
+**The wording was the bug.** "2 complete reports will be sent to parents" is
+true but reads as "two of your four didn't count". `EndSessionDialog` now keeps
+the two numbers apart — what it has written versus what is left to send:
+
+- none sent yet → unchanged: "4 complete reports will be sent to parents."
+- some sent → "2 reports go to parents now; 2 have already gone."
+- all sent → "Nothing left to send — 4 reports have already gone to parents,"
+  with a line explaining that reports finished after a session go on their own.
+
+Front-end only: `pending_reports` was already counted across both coaches, and
+`other_reports` arrived with the 19 Sep register change, so the dialog can work
+out both figures without another `coach-session` deploy.
