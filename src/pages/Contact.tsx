@@ -26,6 +26,7 @@ const uniformTrio = uniformTrioAsset;
  * subject line, which names the coach it was meant for.
  */
 const CONTACT_EMAIL = "enquiries@suffolktennis.online";
+const LTA_SECRETARY_EMAIL = "secretary@suffolklta.uk";
 
 const leadCoaches = [
   {
@@ -251,11 +252,22 @@ const Contact = () => {
               </p>
               <a
                 href={`mailto:${CONTACT_EMAIL}`}
-                className="inline-flex items-center gap-3 rounded-2xl bg-primary-foreground/5 border border-lta-cyan/30 px-6 py-4 font-display font-black text-lta-cyan text-xl sm:text-3xl tracking-tight hover:bg-primary-foreground/10 hover:border-lta-cyan transition-all break-all"
+                className="inline-flex items-center gap-2.5 sm:gap-3 rounded-2xl bg-primary-foreground/5 border border-lta-cyan/30 px-3.5 min-[380px]:px-4 sm:px-6 py-4 font-display font-black text-lta-cyan text-sm min-[380px]:text-base sm:text-3xl tracking-tight hover:bg-primary-foreground/10 hover:border-lta-cyan transition-all break-all"
               >
                 <Mail className="shrink-0" size={28} />
                 {CONTACT_EMAIL}
               </a>
+              {/* Suffolk Tennis runs the county pathway; everything else about
+                  the county association goes to the LTA secretary. */}
+              <p className="mt-5 text-primary-foreground/70 font-body">
+                For all other Suffolk LTA tennis related queries contact{" "}
+                <a
+                  href={`mailto:${LTA_SECRETARY_EMAIL}`}
+                  className="font-semibold text-lta-cyan underline-offset-4 hover:underline whitespace-nowrap"
+                >
+                  {LTA_SECRETARY_EMAIL}
+                </a>
+              </p>
             </div>
 
 
