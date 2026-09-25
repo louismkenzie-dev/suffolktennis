@@ -4,6 +4,7 @@ import { ArrowLeft, Star, Heart, Users, Trophy, Target, Smile, Clock, MapPin } f
 import { Link, useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { ProgrammeLead, OLLIE_FALLBACK } from "@/components/ProgrammeLead";
 import GrandSlamSlider from "@/components/GrandSlamSlider";
 import redBadgeAsset from "@/assets/punchy-red-ball-v2.png";
 import orangeBadgeAsset from "@/assets/punchy-orange-ball-v2.png";
@@ -84,6 +85,14 @@ const TourRed = () => {
           </div>
         </div>
       </section>
+
+      {/* Lead Coach */}
+      <ProgrammeLead
+        fallback={OLLIE_FALLBACK}
+        title="10U County Lead Coach"
+        focus="Red, Orange & Green Ball"
+        accent="red"
+      />
 
       {/* Key Features */}
       <section className="py-20 bg-background">

@@ -1437,3 +1437,13 @@ Publish the corrected version when it arrives — this page is the "here".
 
 The footer's Safeguarding link previously pointed at `#`; it now goes here, and
 the Contact page links to it too.
+
+## 10U County Lead Coach on the Red, Orange and Green pages
+
+The Red, Orange and Green Ball pathway pages show Ollie Sutton as **10U County
+Lead Coach** in a "Programme Lead" section (the same layout as Chris on Yellow
+Ball). `src/components/ProgrammeLead.tsx` reads Ollie's published row from the
+`coaches` table (photo, qualification, experience, quote, bio), so edits made
+to his coach profile in the admin show on these pages too. The role title and
+the "Red, Orange & Green Ball" pill are set on each page. A bundled fallback is
+used only if the read fails.

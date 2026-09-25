@@ -4,6 +4,7 @@ import { ArrowLeft, Star, Zap, Users, Trophy, Target, TrendingUp, BarChart3, Map
 import { Link, useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { ProgrammeLead, OLLIE_FALLBACK } from "@/components/ProgrammeLead";
 import GrandSlamSlider from "@/components/GrandSlamSlider";
 import greenBadgeAsset from "@/assets/punchy-green-ball.png";
 const greenBadge = greenBadgeAsset;
@@ -83,6 +84,14 @@ const TourGreen = () => {
           </div>
         </div>
       </section>
+
+      {/* Lead Coach */}
+      <ProgrammeLead
+        fallback={OLLIE_FALLBACK}
+        title="10U County Lead Coach"
+        focus="Red, Orange & Green Ball"
+        accent="green"
+      />
 
       {/* Key Features */}
       <section className="py-20 bg-background">
