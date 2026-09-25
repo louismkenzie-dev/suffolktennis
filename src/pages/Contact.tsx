@@ -268,6 +268,12 @@ const Contact = () => {
                   {LTA_SECRETARY_EMAIL}
                 </a>
               </p>
+              <p className="mt-3 text-primary-foreground/70 font-body">
+                Worried about a child's safety or welfare?{" "}
+                <Link to="/safeguarding" className="font-semibold text-lta-cyan underline-offset-4 hover:underline whitespace-nowrap">
+                  Safeguarding &amp; Welfare
+                </Link>
+              </p>
             </div>
 
 

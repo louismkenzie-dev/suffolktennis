@@ -1408,3 +1408,32 @@ the two numbers apart — what it has written versus what is left to send:
 Front-end only: `pending_reports` was already counted across both coaches, and
 `other_reports` arrived with the 19 Sep register change, so the dialog can work
 out both figures without another `coach-session` deploy.
+
+## Safeguarding & Welfare page (25 Sep 2026)
+
+`/safeguarding` (`src/pages/Safeguarding.tsx`), written from the Suffolk LTA
+Safeguarding Policy and Procedures (approved 6 Oct 2025), which is hosted at
+`public/documents/suffolk-lta-safeguarding-policy-2025.pdf`.
+
+**The reporting route is the one thing that must never drift.** The policy says
+twice (pp.4 and 9) that concerns about county activities go straight to the LTA
+Safeguarding Team via https://safeguardingconcern.lta.org.uk/, and that the
+County Safeguarding Officer is *not* part of the reporting pathway — the LTA
+shares concerns with her. So the page's primary action is the LTA form, and
+Beth Hamilton (CSO) is shown as the person for questions, not for reports. A
+first draft from ChatGPT got this backwards and named a "Sean Collier" who
+appears in neither document; he is left off until his role is confirmed.
+
+Order is deliberate: what to do (999 → LTA form → Suffolk Customer First
+0808 800 4005 → NSPCC / Childline) comes first, then who's who, what parents
+should know at county training (including the under-13 hand-over rule, p.6),
+documents, and whistleblowing (NSPCC 0800 028 0285, Safecall 0800 915 1571).
+Only documents that exist are linked; the policy's other "related policies"
+get cards as they are supplied.
+
+The summary statement PDF was deliberately **not** published: it still carries
+template text ("available online here:" with no link, "[name of county]").
+Publish the corrected version when it arrives — this page is the "here".
+
+The footer's Safeguarding link previously pointed at `#`; it now goes here, and
+the Contact page links to it too.

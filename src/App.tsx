@@ -37,6 +37,7 @@ const ClubFelixstowe = lazyWithRetry(() => import("./pages/ClubFelixstowe"));
 const ClubWoodbridge = lazyWithRetry(() => import("./pages/ClubWoodbridge"));
 const ClubFramlingham = lazyWithRetry(() => import("./pages/ClubFramlingham"));
 const Contact = lazyWithRetry(() => import("./pages/Contact"));
+const Safeguarding = lazyWithRetry(() => import("./pages/Safeguarding"));
 const Events = lazyWithRetry(() => import("./pages/Events"));
 const RisingStars = lazyWithRetry(() => import("./pages/RisingStars"));
 const Programs = lazyWithRetry(() => import("./pages/Programs"));
@@ -102,6 +103,7 @@ const App = () => (
             <Route path="/programs/green-tour" element={<TourGreen />} />
             <Route path="/programs/yellow-tour" element={<TourYellow />} />
             <Route path="/contact" element={<Contact />} />
+            <Route path="/safeguarding" element={<Safeguarding />} />
             <Route path="/events" element={<Events />} />
             <Route path="/events/rising-stars" element={<RisingStars />} />
             <Route path="/events/workshops" element={<Workshops />} />

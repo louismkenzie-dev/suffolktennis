@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import logoAsset from "@/assets/suffolk-tennis-logo-v7.png";
 import davidLloydLogo from "@/assets/david-lloyd-logo.png";
 import ipswichSportsWhite from "@/assets/ipswich-sports-white.png";
@@ -38,7 +39,7 @@ const Footer = () => (
           <a href="#" className="hover:text-lta-cyan transition-colors">Privacy</a>
           <a href="#" className="hover:text-lta-cyan transition-colors">Terms</a>
           <a href="#" className="hover:text-lta-cyan transition-colors">Accessibility</a>
-          <a href="#" className="hover:text-lta-cyan transition-colors">Safeguarding</a>
+          <Link to="/safeguarding" className="font-semibold text-primary-foreground/75 hover:text-lta-cyan transition-colors">Safeguarding &amp; Welfare</Link>
         </div>
       </div>
       <div className="mt-8 pt-6 border-t border-primary-foreground/10 text-center text-xs text-primary-foreground/30 font-body">
