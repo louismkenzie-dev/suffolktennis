@@ -1447,3 +1447,8 @@ Ball). `src/components/ProgrammeLead.tsx` reads Ollie's published row from the
 to his coach profile in the admin show on these pages too. The role title and
 the "Red, Orange & Green Ball" pill are set on each page. A bundled fallback is
 used only if the read fails.
+
+Danny Wyatt's profile was reworded at the same time so it no longer reads as a
+second 10U lead: he runs the 10U Enhanced Performance Programme at Culford,
+part of the Culford RPDC (live `coaches` row: bio, specialty, achievements;
+the bundled fallback in `CoachesSection.tsx` matches).
