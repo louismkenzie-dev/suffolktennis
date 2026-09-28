@@ -52,3 +52,6 @@ verify_jwt = false
 # GET and no headers, so the token in the query string is the authorization.
 [functions.calendar-feed]
 verify_jwt = false
+
+[functions.send-coach-outreach]
+verify_jwt = false

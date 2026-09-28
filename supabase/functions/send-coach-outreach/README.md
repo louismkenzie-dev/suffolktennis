@@ -14,6 +14,14 @@ The Talent ID dates and the nomination deadline are constants at the top of
 `content.ts`. Nominations go to enquiries@suffolktennis.online (the
 "Nominate a player" button opens a pre-filled email).
 
-There is no sender yet: the recipient list is clubs, coaches and schools
-rather than platform accounts, so it is sent by hand from the rendered HTML
-or via a one-off send once the list is agreed.
+Sending: `index.ts` is the `send-coach-outreach` edge function.
+
+    { "action": "test", "to": "someone@example.com" }   one copy, subject [TEST] …
+    { "action": "send", "to": ["a@…", "b@…"] }           the real send (max 200 per call)
+
+Both need an admin session; a test may instead carry `guard`, matched against
+`app_settings.coach_outreach_guard` (random, generated in the DB, never
+committed) so a proof can be sent from SQL via pg_net. Delete that row when
+it is not in use. Every send skips unsubscribed addresses, carries a
+per-recipient unsubscribe link, and is recorded in `email_deliveries` with
+purpose `coach_outreach`.
