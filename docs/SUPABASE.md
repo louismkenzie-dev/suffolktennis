@@ -1452,3 +1452,13 @@ Danny Wyatt's profile was reworded at the same time so it no longer reads as a
 second 10U lead: he runs the 10U Enhanced Performance Programme at Culford,
 part of the Culford RPDC (live `coaches` row: bio, specialty, achievements;
 the bundled fallback in `CoachesSection.tsx` matches).
+
+## Email to clubs, coaches and schools ("Connecting Suffolk's 10U Pathway")
+
+`supabase/functions/send-coach-outreach/content.ts` builds Ollie's outreach
+email in the branded shell; the rendered copy is served at
+`https://suffolktennis.online/email/coach-outreach.html` with its Punchy
+images alongside. Talent ID dates and the nomination deadline are constants at
+the top of `content.ts`. `brandedEmail` gained an `audienceNote` option for the
+"why you're receiving this" footer line, since the default account wording is
+wrong for this audience. There is no sender function yet (see its README).

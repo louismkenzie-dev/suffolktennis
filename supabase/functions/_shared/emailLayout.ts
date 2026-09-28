@@ -149,8 +149,17 @@ export function brandedEmail(opts: {
    * public.campaign_recipients.
    */
   unsubscribeUrl?: string;
+  /**
+   * The "why you're receiving this" line under the card. Defaults to the
+   * account/competing-junior wording, which is right for parents but not for
+   * an email to clubs, coaches and schools.
+   */
+  audienceNote?: string;
 }): string {
-  const { title, preheader = "", body, sections, hero, unsubscribeUrl } = opts;
+  const {
+    title, preheader = "", body, sections, hero, unsubscribeUrl,
+    audienceNote = "You're receiving this because you have a Suffolk Tennis Partnership account or are a regularly competing Suffolk junior.",
+  } = opts;
 
   const heroRow = hero
     ? `<tr><td style="padding: 0; font-size: 0; line-height: 0;">
@@ -178,7 +187,7 @@ export function brandedEmail(opts: {
   a { color: ${CYAN}; }
   @media only screen and (max-width: 620px) {
     .pad { padding: 26px 22px !important; }
-    .half { display: block !important; width: 100% !important; }
+    .half { display: block !important; width: 100% !important; box-sizing: border-box !important; }
   }
 </style>
 </head>
@@ -228,7 +237,7 @@ export function brandedEmail(opts: {
       </table>
 
       <div style="font-family: ${FONT}; font-size: 11px; line-height: 1.7; color: ${MUTED}; padding: 14px 8px 0; max-width: 600px;">
-        You're receiving this because you have a Suffolk Tennis Partnership account or are a regularly competing Suffolk junior.${
+        ${audienceNote}${
           unsubscribeUrl
             ? `<br><a href="${unsubscribeUrl}" style="color: ${MUTED}; text-decoration: underline;">Unsubscribe from county programme updates</a>`
             : ""
