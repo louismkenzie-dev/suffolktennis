@@ -1462,3 +1462,23 @@ images alongside. Talent ID dates and the nomination deadline are constants at
 the top of `content.ts`. `brandedEmail` gained an `audienceNote` option for the
 "why you're receiving this" footer line, since the default account wording is
 wrong for this audience. There is no sender function yet (see its README).
+
+## Uploading a list of players (added 28 Sep 2026)
+
+The Player database page (and the Bookings tab's actions) has **Upload a
+file**: a CSV or Excel sheet of players — an LTA RCP export, a club list, a
+coach's Talent ID nominations. `src/lib/rosterImport.ts` finds the header row
+(skipping the RCP preamble), recognises columns by their usual names (First
+name/Last name or one Name column; LTA number; gender; age group, age or date
+of birth; parent name; parent email; mobile; tags; the WTN/RCP fields), and
+compares every row with `player_roster`: matched on LTA number, then on name
+(case- and accent-insensitive). A name match with a *different* parent email
+is put in a "Check" list, unticked, for the admin to judge. Rows without a
+name and duplicates within the file are listed as skipped.
+
+`RosterImportDialog.tsx` shows those lists before anything is saved; the admin
+unticks anyone they don't want and confirms. It only ever **inserts**
+(`source = 'admin_upload'`, in batches of 100) — it never updates or deletes a
+row, which replaced the old Bookings-tab CSV import that upserted on LTA
+number with no preview. Excel files are read with SheetJS (`xlsx`), loaded on
+demand so it isn't in the main bundle. Unit tests: `src/test/rosterImport.test.ts`.

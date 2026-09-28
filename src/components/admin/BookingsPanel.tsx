@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Loader2, Plus, Send, QrCode, Lock, Globe, RefreshCw, AlertTriangle, CalendarPlus, CalendarDays, Repeat, Trash2, Pencil, Upload, Undo2, Ban, CalendarClock, MoreHorizontal, ChevronLeft, Users, X, Ticket, MapPin, ArrowDownToLine, Mail, BadgePoundSterling } from "lucide-react";
+import { RosterImportDialog } from "@/components/admin/RosterImportDialog";
 import {
   PageHeader, Section, ListGroup, ListRow, StatusBadge, bookingStatus, EmptyState, SkeletonRows,
   SearchField, Chip, ChipRow, InlineNote, SegmentedControl, VenueSelect, useIsPhone, Avatar,
@@ -175,7 +176,7 @@ const BookingsPanel = () => {
   const [playerFilter, setPlayerFilter] = useState("all");
   const [genderFilter, setGenderFilter] = useState("all");
   const [playerSearch, setPlayerSearch] = useState("");
-  const [importing, setImporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [addPlayerOpen, setAddPlayerOpen] = useState(false);
   const [savingPlayer, setSavingPlayer] = useState(false);
   const [newPlayer, setNewPlayer] = useState({
@@ -609,79 +610,6 @@ const BookingsPanel = () => {
     openEvent(selected);
   };
 
-  // Re-import the LTA RCP report, exported as CSV. Handles the report's
-  // preamble (real header is the row containing "First Name") and quoted
-  // fields; upserts on LTA Number so reloading a newer export just updates.
-  const importRosterCsv = async (file: File) => {
-    setImporting(true);
-    try {
-      const text = await file.text();
-      const parseLine = (line: string): string[] => {
-        const out: string[] = [];
-        let cur = "", inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i];
-          if (inQ) {
-            if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
-            else if (ch === '"') inQ = false;
-            else cur += ch;
-          } else if (ch === '"') inQ = true;
-          else if (ch === ",") { out.push(cur); cur = ""; }
-          else cur += ch;
-        }
-        out.push(cur);
-        return out.map((s) => s.trim());
-      };
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      const headerIdx = lines.findIndex((l) => l.includes("First Name") && l.includes("Last Name"));
-      if (headerIdx === -1) throw new Error('No header row found — export the RCP report as CSV with its normal columns.');
-      const header = parseLine(lines[headerIdx]);
-      const col = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
-      const ix = {
-        lta: col("LTA Number"), first: col("First Name"), last: col("Last Name"),
-        gender: col("Gender"), mobile: col("Mobile"), email: col("Email"),
-        optin: col("LTA Marketing Opt-In"), age: col("Age Group"),
-        swtn: col("Singles WTN"), dwtn: col("Doubles WTN"),
-        matches: col("RCP Match Count"), type: col("RCP Type"),
-      };
-      if (ix.first === -1 || ix.last === -1) throw new Error("CSV is missing First Name / Last Name columns");
-
-      const num = (v: string) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-      const seen = new Set<string>();
-      const rows = lines.slice(headerIdx + 1).map(parseLine)
-        .filter((r) => r[ix.first] && r[ix.last])
-        .filter((r) => { const l = ix.lta >= 0 ? r[ix.lta] : ""; if (l && seen.has(l)) return false; if (l) seen.add(l); return true; })
-        .map((r) => ({
-          lta_number: ix.lta >= 0 ? r[ix.lta] || null : null,
-          first_name: r[ix.first], last_name: r[ix.last],
-          gender: ix.gender >= 0 ? r[ix.gender] || null : null,
-          age_group: ix.age >= 0 ? r[ix.age] || null : null,
-          contact_email: ix.email >= 0 && r[ix.email] ? r[ix.email].toLowerCase() : null,
-          mobile: ix.mobile >= 0 ? r[ix.mobile] || null : null,
-          marketing_opt_in: ix.optin >= 0 ? { Yes: true, No: false }[r[ix.optin]] ?? null : null,
-          singles_wtn: ix.swtn >= 0 ? num(r[ix.swtn]) : null,
-          doubles_wtn: ix.dwtn >= 0 ? num(r[ix.dwtn]) : null,
-          rcp_match_count: ix.matches >= 0 ? (num(r[ix.matches]) != null ? Math.round(num(r[ix.matches])!) : null) : null,
-          rcp_type: ix.type >= 0 ? r[ix.type] || null : null,
-        }));
-      if (rows.length === 0) throw new Error("No player rows found in the file");
-
-      let done = 0;
-      for (let i = 0; i < rows.length; i += 100) {
-        const { error } = await db.from("player_roster")
-          .upsert(rows.slice(i, i + 100), { onConflict: "lta_number" });
-        if (error) throw new Error(error.message);
-        done += Math.min(100, rows.length - i);
-      }
-      toast.success(`Imported ${done} players (existing LTA numbers updated)`);
-      loadPlayers();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Import failed");
-    } finally {
-      setImporting(false);
-    }
-  };
-
   /**
    * Add a player the LTA export does not cover — a new joiner, or someone who
    * competes outside the county programme. Same table as the CSV import, so
@@ -941,14 +869,10 @@ const BookingsPanel = () => {
               <>
                 <div className="hidden gap-2 md:flex">
                   <Button asChild variant="outline" size="sm"><Link to="/admin/scan"><QrCode className="w-4 h-4" /> Scanner</Link></Button>
-                  <Button variant="outline" size="sm" disabled={importing} onClick={() => document.getElementById("roster-csv-input")?.click()}>
-                    {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Import CSV
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}><Upload className="w-4 h-4" /> Upload a file</Button>
                   <Button variant="outline" size="sm" onClick={() => setAddPlayerOpen(true)}><Plus className="w-4 h-4" /> Add player</Button>
                 </div>
                 <Button variant="outline" size="icon" className="md:hidden" aria-label="More actions" onClick={() => setActionsOpen(true)}><MoreHorizontal className="w-4 h-4" /></Button>
-                <input id="roster-csv-input" type="file" accept=".csv,text/csv" className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importRosterCsv(f); e.target.value = ""; }} />
               </>
             }
           />
@@ -1297,13 +1221,15 @@ const BookingsPanel = () => {
         </div>
       )}
 
+      <RosterImportDialog open={importOpen} onOpenChange={setImportOpen} onAdded={loadPlayers} />
+
       {/* Secondary actions (phone) */}
       <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
         <DialogContent className="gap-3 md:max-w-sm">
           <DialogHeader><DialogTitle>Actions</DialogTitle></DialogHeader>
           <ListGroup>
             <ListRow size="sm" href="/admin/scan" leading={<QrCode className="w-5 h-5 text-muted-foreground" />} title="Ticket scanner" chevron />
-            <ListRow size="sm" onClick={() => { setActionsOpen(false); document.getElementById("roster-csv-input")?.click(); }} leading={<Upload className="w-5 h-5 text-muted-foreground" />} title="Import players (CSV)" subtitle="LTA RCP report export" />
+            <ListRow size="sm" onClick={() => { setActionsOpen(false); setImportOpen(true); }} leading={<Upload className="w-5 h-5 text-muted-foreground" />} title="Upload a list of players" subtitle="CSV or Excel — new players only" />
             <ListRow size="sm" onClick={() => { setActionsOpen(false); setAddPlayerOpen(true); }} leading={<Plus className="w-5 h-5 text-muted-foreground" />} title="Add a player by hand" />
           </ListGroup>
         </DialogContent>

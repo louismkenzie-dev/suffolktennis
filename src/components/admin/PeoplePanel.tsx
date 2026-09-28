@@ -21,7 +21,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { ChevronRight, Link2, Loader2, Pencil, Plus, RefreshCw, Trash2, Unlink, UserPlus, Users } from "lucide-react";
+import { ChevronRight, Link2, Loader2, Pencil, Plus, RefreshCw, Trash2, Unlink, Upload, UserPlus, Users } from "lucide-react";
+import { RosterImportDialog } from "@/components/admin/RosterImportDialog";
+import { AGE_GROUPS, ageGroupOf } from "@/lib/ageGroup";
 import {
   PageHeader, SegmentedControl, SearchField, Chip, ChipRow, ListGroup, ListRow, EmptyState, SkeletonRows,
   ActionBar, FilterButton, FilterSheet,
@@ -41,13 +43,6 @@ type Child = {
 };
 type Group = { id: string; name: string; member_count: number };
 
-const AGE_GROUPS = [8, 9, 10, 11, 12, 14, 16, 18];
-const ageGroupOf = (dob: string | null): string | null => {
-  if (!dob) return null;
-  const ageAtYearEnd = new Date().getFullYear() - new Date(dob).getFullYear();
-  const g = AGE_GROUPS.find((n) => ageAtYearEnd <= n);
-  return g ? `${g}U` : "Open";
-};
 const fullName = (r: RosterRow) => `${r.first_name} ${r.last_name}`.trim();
 const norm = (e: string | null | undefined) => (e ?? "").trim().toLowerCase();
 
@@ -100,6 +95,7 @@ const PeoplePanel = ({ search: searchProp, onSearchChange }: {
   const [rosterForChild, setRosterForChild] = useState<Child | null>(null);
   const [rosterSearch, setRosterSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<RosterRow | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -363,6 +359,7 @@ const PeoplePanel = ({ search: searchProp, onSearchChange }: {
         actions={
           <>
             <Button variant="outline" size="icon" aria-label="Refresh" onClick={load} disabled={loading}><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /></Button>
+            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}><Upload className="w-4 h-4" /> Upload a file</Button>
             <Button size="sm" onClick={() => openEdit("new")}><Plus className="w-4 h-4" /> Add a player</Button>
           </>
         }
@@ -554,6 +551,9 @@ const PeoplePanel = ({ search: searchProp, onSearchChange }: {
           )}
         </div>
       )}
+
+      {/* Upload a spreadsheet of players: preview, then additions only */}
+      <RosterImportDialog open={importOpen} onOpenChange={setImportOpen} onAdded={load} />
 
       {/* Filters (phone) */}
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} onReset={resetFilters}>
