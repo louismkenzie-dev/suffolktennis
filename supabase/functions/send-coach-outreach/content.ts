@@ -192,7 +192,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     html: brandedEmail({
       title: "Connecting Suffolk’s 10U Pathway",
       preheader: "A new 10U County Lead, a new digital home for Suffolk Tennis, and County Rising Stars Talent ID days in October. Is there a child we should know about?",
-      hero: { file: "punchy-pathway.jpg", alt: "Suffolk Tennis: your 10U tennis pathway. Punchy in red, orange and green for 8U, 9U and 10U" },
+      hero: { file: "punchy-pathway-v2.jpg", alt: "Suffolk Tennis: your 10U tennis pathway. Punchy in red, orange and green for 8U, 9U and 10U" },
       sections,
       unsubscribeUrl,
       audienceNote: "You're receiving this because you coach, run a club or teach tennis in Suffolk, and we would like to work more closely with you.",
