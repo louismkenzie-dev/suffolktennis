@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { extractEmails } from "@/lib/emailList";
 import { coachLabel, loadCoachContacts, type CoachContact } from "@/lib/coachLookup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ListGroup, ListRow, StatusBadge } from "@/components/app";
@@ -49,9 +50,12 @@ type CampaignRow = {
 async function api<T = any>(payload: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke("admin-email", { body: payload });
   if (error) {
-    // Supabase wraps non-2xx as FunctionsHttpError; surface the real message.
-    const detail = (data as any)?.error ?? error.message;
-    throw new Error(detail);
+    // A non-2xx arrives as FunctionsHttpError with the body on error.context,
+    // not in data — read it so the admin sees why, not "non-2xx status code".
+    let detail: string | undefined = (data as any)?.error;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { detail ??= (await (error as any).context?.json?.())?.error; } catch { /* body wasn't JSON */ }
+    throw new Error(detail ?? error.message);
   }
   if ((data as any)?.error) throw new Error((data as any).error);
   return data as T;
@@ -671,10 +675,8 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
    * line, or a block of spreadsheet cells copied straight from Excel. Ollie was
    * adding squad lists one click at a time; this is the same job in one paste.
    */
-  const pastedEmails = useMemo(() => {
-    const found = bulk.match(/[^\s,;<>()"']+@[^\s,;<>()"']+\.[a-z]{2,}/gi) ?? [];
-    return [...new Set(found.map((e) => e.trim().toLowerCase().replace(/[.,;]+$/, "")))];
-  }, [bulk]);
+  const pasted = useMemo(() => extractEmails(bulk), [bulk]);
+  const pastedEmails = pasted.valid;
   const pastedNew = useMemo(
     () => pastedEmails.filter((e) => !memberSet.has(e)),
     [pastedEmails, memberSet],
@@ -682,7 +684,11 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
 
   async function add(emails: string[]) {
     setSaving(true);
-    try { await api({ action: "group_add", group_id: group.id, emails }); await load(); toast.success(`Added ${emails.length}`); }
+    try {
+      const res = await api<{ added: number; skipped?: string[] }>({ action: "group_add", group_id: group.id, emails });
+      await load();
+      toast.success(res.skipped?.length ? `Added ${res.added} · ${res.skipped.length} invalid left out` : `Added ${res.added}`);
+    }
     catch (e) { toast.error(e instanceof Error ? e.message : "Could not add"); }
     finally { setSaving(false); }
   }
@@ -740,6 +746,11 @@ function GroupMembersDialog({ group, onClose }: { group: Group; onClose: () => v
                   Add {pastedNew.length || ""}
                 </Button>
               </div>
+              {pasted.invalid.length > 0 && (
+                <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                  {pasted.invalid.length === 1 ? "1 address isn't valid and will be left out" : `${pasted.invalid.length} addresses aren't valid and will be left out`}: {pasted.invalid.slice(0, 5).join(", ")}{pasted.invalid.length > 5 ? "…" : ""}
+                </p>
+              )}
 
               <Label className="text-xs uppercase tracking-wide text-muted-foreground pt-2 block">
                 Or search the database

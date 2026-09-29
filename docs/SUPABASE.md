@@ -1482,3 +1482,44 @@ unticks anyone they don't want and confirms. It only ever **inserts**
 row, which replaced the old Bookings-tab CSV import that upserted on LTA
 number with no preview. Excel files are read with SheetJS (`xlsx`), loaded on
 demand so it isn't in the main bundle. Unit tests: `src/test/rosterImport.test.ts`.
+
+## Talent ID nominations (added 29 Sep 2026)
+
+`suffolktennis.online/nominate` (`src/pages/Nominate.tsx`) lets a coach, club
+or school nominate a child for the Suffolk Rising Stars Talent ID days: the
+child's name, year of birth, club/school, preferred day and session (read from
+the `events` rows with `event_type = 'rising-stars'`), why, the nominator's
+details, and the parent's only if they have them and permission. It calls the
+public `submit-nomination` function (verify_jwt off; validated, honeypot, one
+nomination per nominator+child per day), which:
+
+- saves a `talent_nominations` row (migration `20260929120000`, admin-only RLS);
+- adds the child to `player_roster` (source `nomination`, tag "Rising Stars
+  nomination 2026") unless they are already there — same matching rule as the
+  spreadsheet upload; a same-name child with a different parent email is
+  recorded as `roster_match = 'review'` and nothing is created;
+- emails the nominator a confirmation and enquiries@ a notification (sent
+  directly via Resend and recorded in `email_deliveries`).
+
+Admins work the list under People → Nominations (`NominationsPanel.tsx`):
+New / Invited / Declined, a note per nomination, and "Add to the database" for
+a review case judged to be a different child. The outreach email's "Nominate a
+player" button now links here, and the nomination deadline is Sunday 11
+October. The Culford Rising Stars event was re-typed from `general` to
+`rising-stars` so it appears on the form.
+
+## Contact lists and pasted addresses (29 Sep 2026)
+
+- The Player database upload now reads every sheet of a workbook. A file with
+  no player names but email addresses (the county schools mail-merge list,
+  clubs, coaches) is treated as a contact list (`readContactList` in
+  `rosterImport.ts`, `ContactListImport.tsx`): the admin ticks which sheets to
+  take and adds the addresses to a new or existing email group. Nothing goes on
+  the player database.
+- `src/lib/emailList.ts` cleans addresses on the way in (`mailto:`, a
+  web-encoded `%20`, trailing punctuation) and separates the ones that still
+  can't be used. The group paste box uses it and names the leftovers.
+- `admin-email` `group_add` now skips invalid addresses and reports them
+  (`skipped`) instead of rejecting the whole batch — one `%20office@…` cell in
+  the schools list had been failing Ollie's whole paste with "non-2xx". The
+  Email panel's error helper now shows the server's own message.

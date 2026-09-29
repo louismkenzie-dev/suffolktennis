@@ -20,7 +20,9 @@ const Body = z.object({
   campaign_id: z.string().uuid().optional(),
   name: z.string().trim().max(120).optional(),
   description: z.string().trim().max(500).optional(),
-  emails: z.array(z.string().trim().email()).max(2000).optional(),
+  // Checked per address in the actions that use them, so one bad address
+  // in a pasted list is skipped and reported rather than failing the lot.
+  emails: z.array(z.string().trim().max(320)).max(5000).optional(),
   email: z.string().trim().email().optional(),
   search: z.string().trim().max(200).optional(),
   subject: z.string().trim().max(200).optional(),
@@ -120,12 +122,18 @@ Deno.serve(async (req) => {
 
     case "group_add": {
       if (!body.group_id || !body.emails?.length) return json({ error: "group_id and emails required" }, 400);
-      const emails: string[] = [...new Set((body.emails as string[]).map(norm))];
+      const all: string[] = [...new Set((body.emails as string[]).map(norm))];
+      const isEmail = (e: string) => z.string().email().safeParse(e).success;
+      const emails = all.filter(isEmail);
+      const skipped = all.filter((e) => !isEmail(e));
+      if (!emails.length) return json({ error: `None of those are valid email addresses (${skipped.slice(0, 3).join(", ")})`, skipped }, 400);
       await ensurePrefs(emails, "group");
-      const { error } = await admin.from("email_group_members")
-        .upsert(emails.map((email) => ({ group_id: body.group_id!, email })), { onConflict: "group_id,email", ignoreDuplicates: true });
-      if (error) return json({ error: error.message }, 400);
-      return json({ added: emails.length });
+      for (let i = 0; i < emails.length; i += 500) {
+        const { error } = await admin.from("email_group_members")
+          .upsert(emails.slice(i, i + 500).map((email) => ({ group_id: body.group_id!, email })), { onConflict: "group_id,email", ignoreDuplicates: true });
+        if (error) return json({ error: error.message }, 400);
+      }
+      return json({ added: emails.length, skipped });
     }
 
     case "group_remove": {

@@ -186,3 +186,34 @@ describe("readSpreadsheet", () => {
     expect(rows).toEqual([["Name", "Email"], ["Ava Brown", "brown@example.com"]]);
   });
 });
+
+describe("contact lists", () => {
+  it("reads a schools list across sheets, cleaning a %20 address and skipping blanks", async () => {
+    const { readContactList } = await import("../lib/rosterImport");
+    const list = readContactList([
+      { sheet: "Primary", rows: [["School", "Email"], ["Abbots Green Academy", "office@abbotsgreenacademy.co.uk"], ["St Felix", "%20office@sfstm.suffolk.sch.uk"], ["", ""], ["No Email School", ""]] },
+      { sheet: "PRU", rows: [["PRU", "Email"], ["Alderwood", "adminalderwood@raedwaldtrust.org"], ["Dup", "OFFICE@abbotsgreenacademy.co.uk"]] },
+      { sheet: "Notes", rows: [["Nothing here"]] },
+    ]);
+    expect(list).not.toBeNull();
+    expect(list!.sheets.map((s) => [s.sheet, s.contacts.length])).toEqual([["Primary", 2], ["PRU", 1]]);
+    expect(list!.sheets[0].contacts[1]).toMatchObject({ name: "St Felix", email: "office@sfstm.suffolk.sch.uk", line: 3 });
+    expect(list!.fixed).toEqual([{ from: "%20office@sfstm.suffolk.sch.uk", to: "office@sfstm.suffolk.sch.uk", sheet: "Primary", line: 3 }]);
+    expect(list!.missing).toEqual([{ name: "No Email School", sheet: "Primary", line: 5 }]);
+    expect(list!.duplicates).toBe(1);
+  });
+
+  it("is not a contact list when there are no addresses", async () => {
+    const { readContactList } = await import("../lib/rosterImport");
+    expect(readContactList([{ sheet: "S", rows: [["Club"], ["Culford"]] }])).toBeNull();
+  });
+});
+
+describe("extractEmails", () => {
+  it("cleans mailto:, %20 and trailing punctuation, and reports what it can't use", async () => {
+    const { extractEmails } = await import("../lib/emailList");
+    const r = extractEmails("mailto:A@B.com, %20office@x.sch.uk; c@d.org. bad@nodot, e@f.co.uk?subject=hi");
+    expect(r.valid).toEqual(["a@b.com", "office@x.sch.uk", "c@d.org", "e@f.co.uk"]);
+    expect(r.invalid).toEqual(["bad@nodot"]);
+  });
+});

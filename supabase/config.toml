@@ -55,3 +55,7 @@ verify_jwt = false
 
 [functions.send-coach-outreach]
 verify_jwt = false
+
+# Public nomination form: the function validates and writes with the service role.
+[functions.submit-nomination]
+verify_jwt = false

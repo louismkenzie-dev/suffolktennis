@@ -18,9 +18,10 @@ import { toast } from "sonner";
 import { CheckCircle2, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 import { SegmentedControl, ListGroup, EmptyState } from "@/components/app";
 import {
-  analyseRows, readSpreadsheet, FIELD_LABELS,
-  type Classified, type ExistingPlayer, type ImportField, type ImportRow, type ParsedSheet,
+  analyseRows, findHeader, readContactList, readWorkbook, FIELD_LABELS,
+  type Classified, type ContactList, type ExistingPlayer, type ImportField, type ImportRow, type ParsedSheet,
 } from "@/lib/rosterImport";
+import { ContactListImport } from "@/components/admin/ContactListImport";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -33,6 +34,7 @@ type Stage =
   | { name: "pick" }
   | { name: "reading" }
   | { name: "preview"; file: string; sheet: ParsedSheet; rowsRead: number }
+  | { name: "contacts"; file: string; list: ContactList }
   | { name: "saving"; done: number; total: number }
   | { name: "done"; added: number; failed: number };
 
@@ -89,8 +91,18 @@ export function RosterImportDialog({ open, onOpenChange, onAdded }: {
     if (!existing) return;
     setStage({ name: "reading" });
     try {
-      const rows = await readSpreadsheet(file);
-      if (!rows.some((r) => r.some((c) => c))) throw new Error("The file is empty.");
+      const book = await readWorkbook(file);
+      if (!book.some((s) => s.rows.some((r) => r.some((c) => c)))) throw new Error("The file is empty.");
+      // Players are read from the first sheet that names them. A file with no
+      // player names but email addresses (schools, clubs, coaches) is a
+      // contact list: offer it to an email group instead of refusing it.
+      const playerSheet = book.find((s) => findHeader(s.rows) !== -1);
+      if (!playerSheet) {
+        const list = readContactList(book);
+        if (list) { setStage({ name: "contacts", file: file.name, list }); return; }
+        throw new Error("Couldn't find any players or email addresses in that file. For players it needs a name column (First name and Last name, or Name).");
+      }
+      const rows = playerSheet.rows;
       const sheet = analyseRows(rows, existing);
       setChecked(new Set(sheet.rows.filter((r) => r.kind === "new").map((r) => r.line)));
       setView(sheet.counts.new > 0 ? "add" : sheet.counts.review > 0 ? "review" : "existing");
@@ -156,7 +168,7 @@ export function RosterImportDialog({ open, onOpenChange, onAdded }: {
     <Dialog open={open} onOpenChange={(o) => { if (stage.name !== "saving") onOpenChange(o); }}>
       <DialogContent className="max-h-dialog flex flex-col md:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Upload a list of players</DialogTitle>
+          <DialogTitle>{stage.name === "contacts" ? "Upload a contact list" : "Upload a list of players"}</DialogTitle>
           <DialogDescription>
             A CSV or Excel file — an LTA export, a club list, coach nominations. New players are shown first for you to check; nobody already on the database is changed or removed.
           </DialogDescription>
@@ -260,6 +272,10 @@ export function RosterImportDialog({ open, onOpenChange, onAdded }: {
               </div>
             </DialogFooter>
           </div>
+        )}
+
+        {stage.name === "contacts" && (
+          <ContactListImport file={stage.file} list={stage.list} onBack={() => setStage({ name: "pick" })} onClose={() => onOpenChange(false)} />
         )}
 
         {stage.name === "saving" && (

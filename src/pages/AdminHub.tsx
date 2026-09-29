@@ -34,6 +34,7 @@ import BookingsPanel from "@/components/admin/BookingsPanel";
 import BookingsLedger from "@/components/admin/BookingsLedger";
 import EmailPanel from "@/components/admin/EmailPanel";
 import PeoplePanel from "@/components/admin/PeoplePanel";
+import NominationsPanel from "@/components/admin/NominationsPanel";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 
 
@@ -143,6 +144,7 @@ const SECTION_VIEWS: Record<SectionId, ViewOption[]> = {
     { id: "children", label: "Children" },
     { id: "parents", label: "Parents" },
     { id: "roster", label: "Player database" },
+    { id: "nominations", label: "Nominations" },
     { id: "coaches", label: "Coaches" },
     { id: "admins", label: "Admins" },
   ],
@@ -192,6 +194,7 @@ const PEOPLE_SEARCH_PLACEHOLDER: Record<string, string> = {
   children: "Search children by name, parent or BTM number",
   parents: "Search parents by name, email, phone or child",
   roster: "Search players, parents, emails or LTA numbers",
+  nominations: "Search nominations by player, club, coach or parent",
   coaches: "Search coaches by name, email, mobile or club",
   admins: "Search admins or parents by name",
 };
@@ -345,6 +348,7 @@ const AdminHub = () => {
       {section === "bookings" && view === "ledger" && <BookingsLedger />}
       {isPeople && (view === "children" || view === "parents") && <FamiliesPanel view={view} query={peopleQuery} />}
       {isPeople && view === "roster" && <PeoplePanel search={peopleQuery} onSearchChange={setPeopleQuery} />}
+      {isPeople && view === "nominations" && <NominationsPanel query={peopleQuery} />}
       {isPeople && view === "coaches" && (
         <CoachesPanel search={peopleQuery} onEmailCoaches={(groupId) => { setEmailGroupId(groupId); setSection("email"); }} />
       )}

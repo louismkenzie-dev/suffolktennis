@@ -40,6 +40,7 @@ const Contact = lazyWithRetry(() => import("./pages/Contact"));
 const Safeguarding = lazyWithRetry(() => import("./pages/Safeguarding"));
 const Events = lazyWithRetry(() => import("./pages/Events"));
 const RisingStars = lazyWithRetry(() => import("./pages/RisingStars"));
+const Nominate = lazyWithRetry(() => import("./pages/Nominate"));
 const Programs = lazyWithRetry(() => import("./pages/Programs"));
 const Unsubscribe = lazyWithRetry(() => import("./pages/Unsubscribe"));
 const Workshops = lazyWithRetry(() => import("./pages/Workshops"));
@@ -106,6 +107,7 @@ const App = () => (
             <Route path="/safeguarding" element={<Safeguarding />} />
             <Route path="/events" element={<Events />} />
             <Route path="/events/rising-stars" element={<RisingStars />} />
+            <Route path="/nominate" element={<Nominate />} />
             <Route path="/events/workshops" element={<Workshops />} />
             <Route path="/events/mini-masters" element={<MiniMasters />} />
             <Route path="/events/tennis-gp" element={<TennisGP />} />

@@ -14,6 +14,7 @@
 // lists and confirms, and only additions are ever made — never an update or
 // a delete. That is deliberate: the sheet is a submission, not the truth.
 import { ageGroupOf as ageGroupFromDob } from "@/lib/ageGroup";
+import { cleanEmail, extractEmails } from "@/lib/emailList";
 
 export type ImportRow = {
   first_name: string;
@@ -203,23 +204,89 @@ export function excelSerialToIso(serial: number): string | null {
  * date cells arrive as day counts and are turned into ISO dates here.
  */
 export async function readSpreadsheet(file: File): Promise<string[][]> {
+  return (await readWorkbook(file))[0]?.rows ?? [];
+}
+
+/**
+ * Every sheet of the file as rows of text (a CSV is one sheet). Excel files
+ * come through SheetJS, loaded only when one is opened so the admin bundle
+ * stays small; date cells in a date-of-birth column arrive as day counts and
+ * are turned into ISO dates here.
+ */
+export async function readWorkbook(file: File): Promise<Array<{ sheet: string; rows: string[][] }>> {
   const name = file.name.toLowerCase();
   const isExcel = /\.(xlsx|xlsm|xls|ods)$/.test(name) || /spreadsheet|ms-excel/.test(file.type);
-  if (!isExcel) return parseDelimited(await file.text());
+  if (!isExcel) return [{ sheet: file.name, rows: parseDelimited(await file.text()) }];
 
   const XLSX = await import("xlsx");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: false });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  if (!sheet) return [];
-  const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "" });
-  const header = findHeader(grid.map((r) => r.map((c) => String(c ?? ""))));
-  const dobCol = header >= 0 ? mapColumns(grid[header].map((c) => String(c ?? ""))).columns.dob : undefined;
-  return grid
-    .map((r, ri) => r.map((c, ci) => {
+  return wb.SheetNames.map((sheetName) => {
+    const grid = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
+    const header = findHeader(grid.map((r) => r.map((c) => String(c ?? ""))));
+    const dobCol = header >= 0 ? mapColumns(grid[header].map((c) => String(c ?? ""))).columns.dob : undefined;
+    const rows = grid.map((r, ri) => r.map((c, ci) => {
       if (typeof c === "number" && dobCol !== undefined && ci === dobCol && ri !== header) return excelSerialToIso(c) ?? String(c);
-      if (typeof c === "number") return Number.isInteger(c) ? String(c) : String(c);
+      if (typeof c === "number") return String(c);
       return String(c ?? "").trim();
     }));
+    return { sheet: sheetName, rows };
+  });
+}
+
+// ---------- contact lists (schools, clubs, coaches) ----------
+
+export type Contact = { name: string; email: string; sheet: string; line: number };
+export type ContactSheet = { sheet: string; contacts: Contact[] };
+export type ContactList = {
+  sheets: ContactSheet[];
+  /** Addresses that were cleaned up on the way in (e.g. "%20office@…"). */
+  fixed: Array<{ from: string; to: string; sheet: string; line: number }>;
+  /** Cells with something address-like we still can't send to. */
+  invalid: Array<{ raw: string; name: string; sheet: string; line: number }>;
+  /** Rows with a name but no email at all. */
+  missing: Array<{ name: string; sheet: string; line: number }>;
+  /** The same address listed more than once (kept once). */
+  duplicates: number;
+};
+
+/**
+ * A file of organisations or people with email addresses but no players —
+ * the county schools list, a clubs list, a coaches list. Each sheet's header
+ * is the first row with an email column; the name is the first other column
+ * with text in it ("School", "PRU", "Club", "Name"…). A sheet with no email
+ * header is scanned cell by cell, so a bare column of addresses still works.
+ */
+export function readContactList(sheets: Array<{ sheet: string; rows: string[][] }>): ContactList | null {
+  const out: ContactList = { sheets: [], fixed: [], invalid: [], missing: [], duplicates: 0 };
+  const seen = new Set<string>();
+  for (const { sheet, rows } of sheets) {
+    const contacts: Contact[] = [];
+    const headerIdx = rows.slice(0, 40).findIndex((r) => r.some((c) => fieldForHeader(c) === "email"));
+    const header = headerIdx >= 0 ? rows[headerIdx] : null;
+    const emailCol = header ? header.findIndex((c) => fieldForHeader(c) === "email") : -1;
+    const nameCol = header ? header.findIndex((c, i) => i !== emailCol && String(c).trim() !== "") : -1;
+    const body = rows.slice(headerIdx + 1);
+    body.forEach((r, i) => {
+      const line = headerIdx + i + 2;
+      const name = nameCol >= 0 ? (r[nameCol] ?? "").trim() : "";
+      const cells = emailCol >= 0 ? [r[emailCol] ?? ""] : r;
+      const { valid, invalid } = extractEmails(cells.join(" "));
+      if (!valid.length && !invalid.length) {
+        if (name) out.missing.push({ name, sheet, line });
+        return;
+      }
+      for (const bad of invalid) out.invalid.push({ raw: bad, name, sheet, line });
+      for (const email of valid) {
+        const raw = (cells.join(" ").match(/[^\s,;<>()"']*@[^\s,;<>()"']+/g) ?? []).find((t) => cleanEmail(t) === email);
+        if (raw && raw.trim().toLowerCase() !== email) out.fixed.push({ from: raw.trim(), to: email, sheet, line });
+        if (seen.has(email)) { out.duplicates++; continue; }
+        seen.add(email);
+        contacts.push({ name, email, sheet, line });
+      }
+    });
+    if (contacts.length) out.sheets.push({ sheet, contacts });
+  }
+  return out.sheets.length ? out : null;
 }
 
 // ---------- normalising cells ----------

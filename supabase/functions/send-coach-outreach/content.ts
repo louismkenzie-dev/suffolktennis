@@ -31,22 +31,11 @@ const TALENT_ID_DAYS: TalentDay[] = [
     sessions: [{ who: "Born 2020 or 2021", time: "2.00&ndash;3.30pm" }, { who: "Born 2019", time: "4.00&ndash;5.30pm" }],
   },
 ];
-const NOMINATION_DEADLINE = "Friday 16 October";
+const NOMINATION_DEADLINE = "Sunday 11 October";
 
 // Same rule the shell uses: brand images must be absolute and public.
 const siteUrl = () => (Deno.env.get("SITE_URL") ?? "https://suffolktennis.online").replace(/\/$/, "");
 const asset = (file: string) => `${siteUrl()}/email/${file}`;
-
-/** A pre-filled nomination email so a coach can reply in one tap. */
-const nominateHref = () => {
-  const subject = "Talent ID nomination";
-  const body = [
-    "Player's name:", "Year of birth:", "Club, school or programme:",
-    "Coach / teacher nominating (you) and contact details:", "Why I've nominated them:",
-    "Which session they could attend (if known):",
-  ].join("\n");
-  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-};
 
 /** Sub-heading inside a section, in the display face. */
 const subhead = (text: string, onDark = false) =>
@@ -115,17 +104,18 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         subhead("Our first Talent ID days") +
         dayCards(TALENT_ID_DAYS) +
         emailParagraph("Each session is a fun, positive 90 minutes designed to help young players show their potential through movement, racket skills, learning and competition. We look for potential, not just polished technique. All sessions are free of charge.") +
-        emailParagraph("If there is a child you believe deserves the opportunity to be seen, please send us:") +
+        emailParagraph("If there is a child you believe deserves the opportunity to be seen, nominate them through the link below. It takes about a minute per player and asks for:") +
         bullets([
-          "Player&rsquo;s name",
-          "Year of birth",
+          "Player&rsquo;s name and year of birth",
           "Club, school or programme",
-          "Coach or teacher nominating them, and their contact details",
-          "A brief note on why you&rsquo;ve nominated them",
           "Which day and session they could attend, if known",
+          "A brief note on why you&rsquo;ve nominated them",
+          "Your name and contact details as the nominating coach or teacher",
+          "The parent&rsquo;s details, if you have them and their permission",
         ]) +
-        emailParagraph(`Please send nominations to <a href="mailto:${CONTACT_EMAIL}" style="color: ${CYAN}; font-weight: 600;">${CONTACT_EMAIL}</a> by <strong>${NOMINATION_DEADLINE}</strong>. We will then issue digital invitations and registration details directly to the relevant families.`) +
-        emailButton(nominateHref(), "Nominate a player"),
+        emailParagraph(`Please nominate by <strong>${NOMINATION_DEADLINE}</strong>. Every nominated player goes straight onto the county database, and we will then issue digital invitations and registration details directly to the relevant families.`) +
+        emailButton(`${siteUrl()}/nominate`, "Nominate a player") +
+        emailNote(`Prefer email? Send the same details to <a href="mailto:${CONTACT_EMAIL}" style="color: #64748B;">${CONTACT_EMAIL}</a>.`),
     },
 
     // Coaches — the second ask.
