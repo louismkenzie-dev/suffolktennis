@@ -19,10 +19,17 @@ const INK = "#334155";
 
 const CONTACT_EMAIL = "enquiries@suffolktennis.online";
 
-/** The two Talent ID days and the nomination cut-off. Change here only. */
-const TALENT_ID_DAYS: Array<{ venue: string; when: string }> = [
-  { venue: "Culford School", when: "Sunday 25 October 2026" },
-  { venue: "Ipswich Sports Club", when: "Monday 26 October 2026" },
+/** The two Talent ID days (as on the posters) and the nomination cut-off. Change here only. */
+type TalentDay = { venue: string; address: string; when: string; sessions: Array<{ who: string; time: string }> };
+const TALENT_ID_DAYS: TalentDay[] = [
+  {
+    venue: "Culford School", address: "Bury Road, Culford, Bury St Edmunds, IP28 6TX", when: "Sunday 25 October 2026",
+    sessions: [{ who: "Born 2020 or 2021", time: "1.30&ndash;3.00pm" }, { who: "Born 2019", time: "3.30&ndash;5.00pm" }],
+  },
+  {
+    venue: "Ipswich Sports Club", address: "Henley Road, Ipswich, IP1 4NJ", when: "Monday 26 October 2026",
+    sessions: [{ who: "Born 2020 or 2021", time: "2.00&ndash;3.30pm" }, { who: "Born 2019", time: "4.00&ndash;5.30pm" }],
+  },
 ];
 const NOMINATION_DEADLINE = "Friday 16 October";
 
@@ -54,12 +61,18 @@ function bullets(items: string[], onDark = false): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 16px;">${rows}</table>`;
 }
 
-/** One Talent ID day: venue in the display face, date beneath. */
-function dayCards(days: typeof TALENT_ID_DAYS): string {
-  const cell = (d: { venue: string; when: string }, i: number) => `<td class="half" width="50%" valign="top" style="padding: 0 ${i ? "0 10px 5px" : "5px 10px 0"};">
+/** One Talent ID day: date, venue and address, then a time for each age band. */
+function dayCards(days: TalentDay[]): string {
+  const session = (x: { who: string; time: string }) => `<tr>
+        <td style="padding: 3px 0; font-family: ${FONT}; font-size: 13px; color: ${INK};">${x.who}</td>
+        <td align="right" style="padding: 3px 0 3px 10px; font-family: ${FONT}; font-size: 13px; font-weight: 700; color: ${NAVY}; white-space: nowrap;">${x.time}</td>
+      </tr>`;
+  const cell = (d: TalentDay, i: number) => `<td class="half" width="50%" valign="top" style="padding: 0 ${i ? "0 10px 5px" : "5px 10px 0"};">
       <div style="background: #FFFFFF; border: 1px solid rgba(0,172,230,0.35); border-left: 4px solid ${CYAN}; border-radius: 10px; padding: 14px 16px;">
-        <div style="font-family: ${DISPLAY}; font-size: 16px; font-weight: 700; font-stretch: 112%; text-transform: uppercase; color: ${NAVY};">${d.venue}</div>
-        <div style="margin-top: 4px; font-family: ${FONT}; font-size: 14px; font-weight: 600; color: ${INK};">${d.when}</div>
+        <div style="font-family: ${DISPLAY}; font-size: 12px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.12em; text-transform: uppercase; color: ${CYAN};">${d.when}</div>
+        <div style="margin-top: 4px; font-family: ${DISPLAY}; font-size: 16px; font-weight: 700; font-stretch: 112%; text-transform: uppercase; color: ${NAVY};">${d.venue}</div>
+        <div style="margin-top: 2px; font-family: ${FONT}; font-size: 12px; line-height: 1.5; color: #64748B;">${d.address}</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 10px; border-top: 1px solid #E2E8F0; padding-top: 6px;">${d.sessions.map(session).join("")}</table>
       </div>
     </td>`;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 6px 0 14px;"><tr>${days.map(cell).join("")}</tr></table>`;
@@ -101,14 +114,15 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         </table>` +
         subhead("Our first Talent ID days") +
         dayCards(TALENT_ID_DAYS) +
-        emailParagraph("Both days are free. If there is a child you believe deserves the opportunity to be seen, please send us:") +
+        emailParagraph("Each session is a fun, positive 90 minutes designed to help young players show their potential through movement, racket skills, learning and competition. We look for potential, not just polished technique. Both days are free of charge.") +
+        emailParagraph("If there is a child you believe deserves the opportunity to be seen, please send us:") +
         bullets([
           "Player&rsquo;s name",
           "Year of birth",
           "Club, school or programme",
           "Coach / contact details",
           "A brief note on why you&rsquo;ve nominated them",
-          "Which session they could attend, if known",
+          "Which day and session they could attend, if known",
         ]) +
         emailParagraph(`Please send nominations to <a href="mailto:${CONTACT_EMAIL}" style="color: ${CYAN}; font-weight: 600;">${CONTACT_EMAIL}</a> by <strong>${NOMINATION_DEADLINE}</strong>. We will then issue digital invitations and registration details directly to the relevant families.`) +
         emailButton(nominateHref(), "Nominate a player"),
