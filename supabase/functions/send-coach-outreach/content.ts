@@ -94,7 +94,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
       html:
         emailKicker("Talent ID") +
         emailHeading("Is there someone we should know about?", { size: 26 }) +
-        emailParagraph("Our immediate Talent ID focus is on children born in <strong>2020 and 2021</strong>, and those coming behind them, while continuing to support our 2019 cohort towards 8U County Cup next year.") +
+        emailParagraph("Our immediate Talent ID focus is on children born in <strong>2020 and 2021</strong>, and those coming behind them, while continuing to support our 2019 cohort towards 8U County Cup next year. These days are the start of the <strong>County Rising Stars programme</strong> for 8U players: the first step on the Suffolk pathway, there to support each child&rsquo;s tennis journey from the very beginning.") +
         emailParagraph("We would like every coach, club and school receiving this to look at the children you work with and ask that question. They don&rsquo;t need to be an established county player. We&rsquo;re interested in children who catch your eye through their athletic ability, coordination, competitiveness, character, enthusiasm, love of sport, or simply that little something that makes you think there could be potential.") +
         `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 4px 0 20px;">
           <tr><td style="border-left: 4px solid ${PINK}; padding: 6px 0 6px 18px; font-family: ${DISPLAY}; font-size: 20px; line-height: 1.25; font-weight: 700; font-stretch: 112%; color: ${NAVY};">If you&rsquo;re unsure, nominate them.<br><span style="color: ${PINK};">We&rsquo;d rather see a child than miss one.</span></td></tr>
@@ -139,7 +139,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 6px 0 14px; background: ${NAVY}; border-radius: 14px;">
           <tr>
             <td class="half" width="180" valign="bottom" align="center" style="padding: 18px 18px 0; font-size: 0; line-height: 0;">
-              <img src="${asset("punchy-red.png")}" width="150" alt="Punchy, the Suffolk Tennis 10U mascot, giving a thumbs up" style="display: block; width: 150px; height: auto; border: 0;">
+              <img src="${asset("punchy-pink.png")}" width="150" alt="Punchy, the Suffolk Tennis 10U mascot, giving a thumbs up" style="display: block; width: 150px; height: auto; border: 0;">
             </td>
             <td class="half" valign="middle" style="padding: 22px 22px 22px 18px;">
               <div style="font-family: ${DISPLAY}; font-size: 12px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.16em; text-transform: uppercase; color: ${PINK}; margin: 0 0 6px;">For our youngest players</div>
@@ -177,8 +177,8 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     subject: "Connecting Suffolk’s 10U Pathway – We Want You Involved",
     html: brandedEmail({
       title: "Connecting Suffolk’s 10U Pathway",
-      preheader: "A new 10U County Lead, a new digital home for Suffolk Tennis, and Talent ID days in October. Is there a child we should know about?",
-      hero: { file: "punchy-pathway.jpg", alt: "Punchy in red, orange and green kit: your 10&U tennis pathway" },
+      preheader: "A new 10U County Lead, a new digital home for Suffolk Tennis, and County Rising Stars Talent ID days in October. Is there a child we should know about?",
+      hero: { file: "punchy-pathway.jpg", alt: "Suffolk Tennis: your 10U tennis pathway. Punchy in red, orange and green for 8U, 9U and 10U" },
       sections,
       unsubscribeUrl,
       audienceNote: "You're receiving this because you coach, run a club or teach tennis in Suffolk, and we would like to work more closely with you.",
