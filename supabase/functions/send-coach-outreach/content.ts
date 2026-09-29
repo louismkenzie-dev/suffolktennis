@@ -42,7 +42,7 @@ const nominateHref = () => {
   const subject = "Talent ID nomination";
   const body = [
     "Player's name:", "Year of birth:", "Club, school or programme:",
-    "Coach / contact details:", "Why I've nominated them:",
+    "Coach / teacher nominating (you) and contact details:", "Why I've nominated them:",
     "Which session they could attend (if known):",
   ].join("\n");
   return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -114,13 +114,13 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         </table>` +
         subhead("Our first Talent ID days") +
         dayCards(TALENT_ID_DAYS) +
-        emailParagraph("Each session is a fun, positive 90 minutes designed to help young players show their potential through movement, racket skills, learning and competition. We look for potential, not just polished technique. Both days are free of charge.") +
+        emailParagraph("Each session is a fun, positive 90 minutes designed to help young players show their potential through movement, racket skills, learning and competition. We look for potential, not just polished technique. All sessions are free of charge.") +
         emailParagraph("If there is a child you believe deserves the opportunity to be seen, please send us:") +
         bullets([
           "Player&rsquo;s name",
           "Year of birth",
           "Club, school or programme",
-          "Coach / contact details",
+          "Coach or teacher nominating them, and their contact details",
           "A brief note on why you&rsquo;ve nominated them",
           "Which day and session they could attend, if known",
         ]) +
