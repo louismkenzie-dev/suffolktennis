@@ -31,6 +31,9 @@ async function adminEmail<T>(payload: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+/** Sheet names as written, with the one misspelling we have met put right. */
+const sheetLabel = (sheet: string) => sheet.trim().replace(/^independant$/i, "Independent");
+
 /** "Mail_Merge_ALL_SUFFOLK_SCHOOLS.xlsx" → "Mail Merge All Suffolk Schools". */
 const groupNameFromFile = (file: string) =>
   file.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim()
@@ -47,9 +50,11 @@ export function ContactListImport({ file, list, onBack, onClose }: {
   const [sheets, setSheets] = useState<Set<string>>(() => new Set(list.sheets.map((s) => s.sheet)));
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [target, setTarget] = useState<string>("new");
+  // One group for everything, or a group per sheet ("Suffolk Schools – Primary", …).
+  const [perSheet, setPerSheet] = useState(list.sheets.length > 1);
   const [newName, setNewName] = useState(() => groupNameFromFile(file));
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<{ added: number; skipped: number; group: string } | null>(null);
+  const [done, setDone] = useState<{ added: number; skipped: number; groups: string[] } | null>(null);
 
   useEffect(() => {
     adminEmail<{ groups: Group[] }>({ action: "groups" })
@@ -69,28 +74,44 @@ export function ContactListImport({ file, list, onBack, onClose }: {
     setSheets(next);
   };
 
+  const createGroup = async (name: string, description: string) => {
+    const existing = groups?.find((g) => g.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (existing) return { id: existing.id, name: existing.name };
+    const { group } = await adminEmail<{ group: { id: string; name: string } }>({ action: "group_create", name: name.trim(), description });
+    return group;
+  };
+  const addTo = async (groupId: string, emails: string[]) => {
+    let added = 0, skipped = 0;
+    for (let i = 0; i < emails.length; i += CHUNK) {
+      const r = await adminEmail<{ added: number; skipped?: string[] }>({ action: "group_add", group_id: groupId, emails: emails.slice(i, i + CHUNK) });
+      added += r.added; skipped += r.skipped?.length ?? 0;
+    }
+    return { added, skipped };
+  };
+
   const add = async () => {
     if (!chosen.length) return;
-    if (target === "new" && !newName.trim()) { toast.error("Give the new group a name"); return; }
+    if ((perSheet || target === "new") && !newName.trim()) { toast.error("Give the group a name"); return; }
     setBusy(true);
     try {
-      let groupId = target;
-      let groupName = groups?.find((g) => g.id === target)?.name ?? "";
-      if (target === "new") {
-        const { group } = await adminEmail<{ group: { id: string; name: string } }>({
-          action: "group_create", name: newName.trim(),
-          description: `Imported from ${file} (${[...sheets].join(", ")})`,
-        });
-        groupId = group.id; groupName = group.name;
-      }
-      const emails = chosen.map((c) => c.email);
       let added = 0, skipped = 0;
-      for (let i = 0; i < emails.length; i += CHUNK) {
-        const r = await adminEmail<{ added: number; skipped?: string[] }>({ action: "group_add", group_id: groupId, emails: emails.slice(i, i + CHUNK) });
-        added += r.added; skipped += r.skipped?.length ?? 0;
+      const made: string[] = [];
+      if (perSheet) {
+        // One group per ticked sheet, reusing any with the same name.
+        for (const s of list.sheets.filter((x) => sheets.has(x.sheet))) {
+          const g = await createGroup(`${newName.trim()} – ${sheetLabel(s.sheet)}`, `Imported from ${file} (sheet “${s.sheet}”)`);
+          const r = await addTo(g.id, s.contacts.map((c) => c.email));
+          added += r.added; skipped += r.skipped; made.push(g.name);
+        }
+      } else {
+        const g = target === "new"
+          ? await createGroup(newName, `Imported from ${file} (${[...sheets].join(", ")})`)
+          : { id: target, name: groups?.find((x) => x.id === target)?.name ?? "" };
+        const r = await addTo(g.id, chosen.map((c) => c.email));
+        added += r.added; skipped += r.skipped; made.push(g.name);
       }
-      setDone({ added, skipped, group: groupName });
-      toast.success(`${added} addresses added to ${groupName}`);
+      setDone({ added, skipped, groups: made });
+      toast.success(`${added} addresses added to ${made.length === 1 ? made[0] : `${made.length} groups`}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't add the addresses");
     } finally {
@@ -104,7 +125,8 @@ export function ContactListImport({ file, list, onBack, onClose }: {
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           <CheckCircle2 className="h-9 w-9 text-emerald-600" />
           <div>
-            <p className="font-medium">{done.added} addresses are in “{done.group}”</p>
+            <p className="font-medium">{done.added} addresses added to {done.groups.length === 1 ? `“${done.groups[0]}”` : `${done.groups.length} groups`}</p>
+            {done.groups.length > 1 && <p className="mt-1 text-sm">{done.groups.join(" · ")}</p>}
             <p className="mt-1 text-sm text-muted-foreground">
               Find it under Email → Groups to send to it.{done.skipped ? ` ${done.skipped} couldn't be used and were left out.` : ""} Nothing was added to the player database.
             </p>
@@ -151,8 +173,18 @@ export function ContactListImport({ file, list, onBack, onClose }: {
         </div>
       )}
 
+      {list.sheets.length > 1 && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card px-3 py-2.5">
+          <Checkbox className="mt-0.5" checked={perSheet} onCheckedChange={(v) => setPerSheet(v === true)} aria-label="A separate group for each sheet" />
+          <span className="text-sm">
+            <span className="block font-medium">A separate group for each sheet</span>
+            <span className="block text-xs text-muted-foreground">e.g. “{newName || "Group"} – {sheetLabel(list.sheets[0].sheet)}”, so you can email each type on its own.</span>
+          </span>
+        </label>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2">
-        <div>
+        {!perSheet && <div>
           <Label>Add to</Label>
           <Select value={target} onValueChange={setTarget}>
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -161,10 +193,10 @@ export function ContactListImport({ file, list, onBack, onClose }: {
               {(groups ?? []).map((g) => <SelectItem key={g.id} value={g.id}>{g.name} ({g.member_count})</SelectItem>)}
             </SelectContent>
           </Select>
-        </div>
-        {target === "new" && (
+        </div>}
+        {(perSheet || target === "new") && (
           <div>
-            <Label htmlFor="new-group-name">New group name</Label>
+            <Label htmlFor="new-group-name">{perSheet ? "Group names start with" : "New group name"}</Label>
             <Input id="new-group-name" value={newName} onChange={(e) => setNewName(e.target.value)} />
           </div>
         )}

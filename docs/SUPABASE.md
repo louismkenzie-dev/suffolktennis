@@ -1523,3 +1523,21 @@ October. The Culford Rising Stars event was re-typed from `general` to
   (`skipped`) instead of rejecting the whole batch — one `%20office@…` cell in
   the schools list had been failing Ollie's whole paste with "non-2xx". The
   Email panel's error helper now shows the server's own message.
+- A workbook with several sheets defaults to **a separate group per sheet**
+  ("<name> – Primary", "<name> – Secondary", …); an existing group with the
+  same name is reused, so re-uploading tops a group up rather than duplicating
+  it. Addresses go to `group_add` in chunks of 1,000.
+- The county schools list was loaded this way on 29 Sep 2026 as five groups:
+  Suffolk Schools – Primary (249), Secondary (43), Special (12), PRU (9) and
+  Independent (23), each address also given an `email_preferences` row
+  (`source = 'group'`) so group sends include it. Ollie's earlier empty
+  "Suffolk Schools" group was left untouched.
+
+## Inviting nominated players (29 Sep 2026)
+
+Bookings → an event → Invite players has a list menu beside the age and gender
+filters (its own row on phones): All players, "Nominated for this day", "Rising
+Stars nominations" (any day, declined excluded) and one entry per roster tag,
+such as a county squad. Select all shown → Review → Send works as before. After
+the invitations go, any of those players' nominations still at New are set to
+Invited, so the Nominations page shows who is still waiting.

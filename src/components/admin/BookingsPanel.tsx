@@ -68,6 +68,10 @@ type Player = {
   dob?: string | null;         // children rows only
   /** Has a paid programme place already — other programmes are free for them. */
   paid_programme: boolean;
+  /** Roster tags — the county squads, "Rising Stars nomination 2026", … */
+  tags: string[];
+  /** Events this player was nominated for through /nominate ("" = either day). */
+  nominated_for: string[];
 };
 
 const AGE_GROUPS = [8, 9, 10, 11, 12, 14, 16, 18];
@@ -175,6 +179,8 @@ const BookingsPanel = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerFilter, setPlayerFilter] = useState("all");
   const [genderFilter, setGenderFilter] = useState("all");
+  // "all" | "nominated" | "nominated_here" | "tag:<name>" — who to show in the invite picker.
+  const [listFilter, setListFilter] = useState("all");
   const [playerSearch, setPlayerSearch] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [addPlayerOpen, setAddPlayerOpen] = useState(false);
@@ -326,15 +332,22 @@ const BookingsPanel = () => {
   };
 
   const loadPlayers = async () => {
-    const [{ data: roster }, { data: kids }, { data: emails }, { data: profiles }, { data: paidProg }] = await Promise.all([
-      db.from("player_roster").select("id, first_name, last_name, gender, age_group, contact_email, contact_name, singles_wtn, linked_child_id").order("last_name"),
+    const [{ data: roster }, { data: kids }, { data: emails }, { data: profiles }, { data: paidProg }, { data: noms }] = await Promise.all([
+      db.from("player_roster").select("id, first_name, last_name, gender, age_group, contact_email, contact_name, singles_wtn, linked_child_id, tags").order("last_name"),
       db.from("children").select("id, name, date_of_birth, gender, parent_user_id").order("name"),
       db.rpc("get_parent_emails"),
       db.from("profiles").select("user_id, first_name, last_name"),
       // Children already paying for a programme: any other programme is free.
       db.from("bookings").select("child_id, events!inner(programme_type)")
         .eq("status", "paid").eq("complimentary", false).eq("events.programme_type", "programme"),
+      // Talent ID nominations, so the picker can offer "Rising Stars nominations".
+      db.from("talent_nominations").select("roster_id, event_id").neq("status", "declined"),
     ]);
+    const nominatedFor = new Map<string, string[]>();
+    for (const n of (noms ?? []) as Array<{ roster_id: string | null; event_id: string | null }>) {
+      if (!n.roster_id) continue;
+      nominatedFor.set(n.roster_id, [...(nominatedFor.get(n.roster_id) ?? []), n.event_id ?? ""]);
+    }
     const paidProgramme = new Set<string>((paidProg ?? []).map((b: any) => b.child_id).filter(Boolean));
     const emailMap = new Map<string, string>((emails ?? []).map((e: any) => [e.user_id, e.email]));
     const nameMap = new Map<string, string>((profiles ?? []).map((p: any) => [p.user_id, `${p.first_name} ${p.last_name}`.trim()]));
@@ -350,6 +363,8 @@ const BookingsPanel = () => {
       parent_name: r.contact_name,
       wtn: r.singles_wtn != null ? Number(r.singles_wtn) : null,
       paid_programme: !!r.linked_child_id && paidProgramme.has(r.linked_child_id),
+      tags: r.tags ?? [],
+      nominated_for: nominatedFor.get(r.id) ?? [],
     }));
 
     // Registered families not already represented in the roster (matched by
@@ -369,6 +384,8 @@ const BookingsPanel = () => {
         wtn: null,
         dob: k.date_of_birth ?? null,
         paid_programme: paidProgramme.has(k.id),
+        tags: [],
+        nominated_for: [],
       }))
       .filter((p: Player) => !seen.has(`${p.name.toLowerCase()}|${(p.contact_email ?? "").toLowerCase()}`));
 
@@ -397,14 +414,26 @@ const BookingsPanel = () => {
     return m;
   }, [selected, invitations, bookings, players]);
 
+  /** The lists the picker can narrow to: nominations first, then roster tags. */
+  const pickerLists = useMemo(() => {
+    const nominated = players.filter((p) => p.nominated_for.length > 0).length;
+    const here = selected ? players.filter((p) => p.nominated_for.includes(selected.id)).length : 0;
+    const tagCounts = new Map<string, number>();
+    for (const p of players) for (const t of p.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+    return { nominated, here, tags: [...tagCounts.entries()].sort((a, b) => a[0].localeCompare(b[0])) };
+  }, [players, selected]);
+
   const filteredPlayers = useMemo(() => {
     return players.filter((p) => {
+      if (listFilter === "nominated" && p.nominated_for.length === 0) return false;
+      if (listFilter === "nominated_here" && !(selected && p.nominated_for.includes(selected.id))) return false;
+      if (listFilter.startsWith("tag:") && !p.tags.includes(listFilter.slice(4))) return false;
       if (playerFilter !== "all" && p.age_group !== playerFilter) return false;
       if (genderFilter !== "all" && (p.gender ?? "").toLowerCase() !== genderFilter) return false;
       if (playerSearch && !p.name.toLowerCase().includes(playerSearch.toLowerCase())) return false;
       return true;
     });
-  }, [players, playerFilter, genderFilter, playerSearch]);
+  }, [players, playerFilter, genderFilter, playerSearch, listFilter, selected]);
 
   /** The tick list as it will be sent: who goes, who has no email and is skipped. */
   const selection = useMemo(() => {
@@ -437,6 +466,12 @@ const BookingsPanel = () => {
       return;
     }
     toast.success(`${data.sent ?? 0}/${data.total ?? invitees.length} invitation emails sent`);
+    // Anyone invited who came in through /nominate moves from New to Invited
+    // on the Nominations page, so Ollie can see who is still waiting.
+    const nominatedIds = selection.sending.filter((p) => p.roster_id && p.nominated_for.length > 0).map((p) => p.roster_id!);
+    if (nominatedIds.length > 0) {
+      await db.from("talent_nominations").update({ status: "invited" }).in("roster_id", nominatedIds).eq("status", "new");
+    }
     const failed = (data.results ?? []).filter((r: any) => r.error);
     if (failed.length > 0) {
       const byEmail = new Map(invitees.map((i) => [i.parent_email, i.child_name]));
@@ -997,7 +1032,7 @@ const BookingsPanel = () => {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => { loadPlayers(); setChecked(new Set()); setFreePlace(new Set()); setInviteOpen(true); }} disabled={!!selected.cancelled_at}><Send className="w-4 h-4" /> Invite players</Button>
+                <Button size="sm" onClick={() => { loadPlayers(); setChecked(new Set()); setFreePlace(new Set()); setListFilter("all"); setInviteOpen(true); }} disabled={!!selected.cancelled_at}><Send className="w-4 h-4" /> Invite players</Button>
                 <Button variant="outline" size="sm" onClick={() => editEvent(selected)}><Pencil className="w-4 h-4" /> Edit</Button>
                 {!selected.cancelled_at && (
                   <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setChangeReason(""); setSessionChange({ mode: "cancel_event" }); }}>
@@ -1303,6 +1338,15 @@ const BookingsPanel = () => {
               <div className="flex gap-2">
                 <SearchField value={playerSearch} onChange={setPlayerSearch} placeholder="Search players" className="flex-1" />
                 <div className="hidden gap-2 md:flex">
+                  <Select value={listFilter} onValueChange={setListFilter}>
+                    <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All players</SelectItem>
+                      {pickerLists.here > 0 && <SelectItem value="nominated_here">Nominated for this day ({pickerLists.here})</SelectItem>}
+                      {pickerLists.nominated > 0 && <SelectItem value="nominated">Rising Stars nominations ({pickerLists.nominated})</SelectItem>}
+                      {pickerLists.tags.map(([t, n]) => <SelectItem key={t} value={`tag:${t}`}>{t} ({n})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                   <Select value={playerFilter} onValueChange={setPlayerFilter}>
                     <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -1323,6 +1367,19 @@ const BookingsPanel = () => {
                 </div>
                 <Button variant="outline" size="icon" className="md:hidden" aria-label="Add new player" onClick={() => setAddPlayerOpen(true)}><Plus className="w-4 h-4" /></Button>
               </div>
+              {(pickerLists.nominated > 0 || pickerLists.tags.length > 0) && (
+                <div className="md:hidden">
+                  <Select value={listFilter} onValueChange={setListFilter}>
+                    <SelectTrigger aria-label="Which players"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All players</SelectItem>
+                      {pickerLists.here > 0 && <SelectItem value="nominated_here">Nominated for this day ({pickerLists.here})</SelectItem>}
+                      {pickerLists.nominated > 0 && <SelectItem value="nominated">Rising Stars nominations ({pickerLists.nominated})</SelectItem>}
+                      {pickerLists.tags.map(([t, n]) => <SelectItem key={t} value={`tag:${t}`}>{t} ({n})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <ChipRow className="md:hidden">
                 <Chip active={playerFilter === "all"} onClick={() => setPlayerFilter("all")}>All ages</Chip>
                 {AGE_GROUPS.map((g) => <Chip key={g} active={playerFilter === `${g}U`} onClick={() => setPlayerFilter(`${g}U`)}>{g}U</Chip>)}
