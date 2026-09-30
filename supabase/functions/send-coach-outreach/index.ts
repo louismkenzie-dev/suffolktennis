@@ -4,10 +4,14 @@
 //   { action: "test", to: "one@address" }        one copy, subject prefixed [TEST]
 //   { action: "send", to: ["a@…", "b@…"] }        the real send, admin only
 //
-// Both need an admin session. A test may instead carry `guard`, matched
-// against app_settings.coach_outreach_guard (random, generated in the DB,
-// never committed, admin-readable only) so a proof can be sent from the
-// database without a browser login. Delete that row when it is not needed.
+// Both need an admin session, or `guard`: matched against
+// app_settings.coach_outreach_guard (random, generated in the DB, never
+// committed, admin-readable only), so a proof or the approved send can be
+// run from the database without a browser login. Delete that row as soon as
+// it is not needed.
+//
+// A real send skips anyone this email has already been sent to (recorded in
+// email_deliveries), so a batch can be retried without doubling up.
 //
 // Recipients here are not platform accounts, so each send goes through the
 // same suppression and unsubscribe handling as a campaign: anyone who has
@@ -57,12 +61,15 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   if (!apiKey) return json({ error: "RESEND_API_KEY not configured" }, 500);
 
+  const guardOk = async () => {
+    if (!body.guard) return false;
+    const { data: setting } = await admin.from("app_settings")
+      .select("value").eq("key", "coach_outreach_guard").maybeSingle();
+    return !!setting?.value && body.guard === setting.value;
+  };
+
   if (body.action === "test") {
-    if (!adminUserId) {
-      const { data: setting } = await admin.from("app_settings")
-        .select("value").eq("key", "coach_outreach_guard").maybeSingle();
-      if (!setting?.value || !body.guard || body.guard !== setting.value) return json({ error: "Forbidden" }, 403);
-    }
+    if (!adminUserId && !(await guardOk())) return json({ error: "Forbidden" }, 403);
     const to = norm(Array.isArray(body.to) ? body.to[0] : body.to);
     if (!looksLikeEmail(to)) return json({ error: "to must be an email address" }, 400);
     try {
@@ -73,12 +80,16 @@ Deno.serve(async (req) => {
   }
 
   if (body.action === "send") {
-    if (!adminUserId) return json({ error: "Forbidden" }, 403);
+    if (!adminUserId && !(await guardOk())) return json({ error: "Forbidden" }, 403);
     const list = [...new Set((Array.isArray(body.to) ? body.to : [body.to]).map(norm).filter(looksLikeEmail))];
     if (!list.length) return json({ error: "to must be a list of email addresses" }, 400);
     if (list.length > MAX_PER_CALL) return json({ error: `at most ${MAX_PER_CALL} addresses per call` }, 400);
+    const { data: done } = await admin.from("email_deliveries")
+      .select("recipient").eq("purpose", "coach_outreach").in("recipient", list);
+    const already = new Set((done ?? []).map((d: { recipient: string }) => d.recipient.toLowerCase()));
     const results = [];
     for (const to of list) {
+      if (already.has(to)) { results.push({ to, sent: false, skipped: "already_sent" }); continue; }
       try {
         results.push(await sendOne(admin, apiKey, to, false));
       } catch (e) {
