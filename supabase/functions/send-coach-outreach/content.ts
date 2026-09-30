@@ -75,7 +75,8 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
       html:
         emailKicker("Suffolk Tennis &middot; 10U Pathway") +
         emailHeading("We want you involved", { size: 30 }) +
-        emailParagraph("Hi,") +
+        // Ollie's opening line, in bold, before he introduces himself.
+        `<p style="margin: 0 0 18px; font-family: ${FONT}; font-size: 17px; line-height: 1.55; font-weight: 700; color: ${NAVY};">You play a vital role in helping Suffolk&rsquo;s children discover their sporting potential &ndash; and we&rsquo;d love your help to identify our next tennis Rising Stars.</p>` +
         emailParagraph("My name is <strong>Ollie Sutton</strong>, and I&rsquo;ve recently taken on the role of Suffolk Tennis&rsquo;s <strong>10U County Lead Coach</strong>. I wanted to introduce myself and draw your attention to our plans to strengthen the 10U pathway and Talent ID network across the county.") +
         emailParagraph("I&rsquo;m working alongside <strong>Danny Wyatt</strong>, Lead Coach of the LTA 10U Enhanced Performance Programme at Culford, and <strong>Chris Daynes</strong>, our 11&ndash;18 County Lead. A key priority for us is to build stronger connections with the coaches, clubs and schools developing young players across Suffolk every week."),
     },
