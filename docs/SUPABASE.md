@@ -1541,3 +1541,17 @@ Stars nominations" (any day, declined excluded) and one entry per roster tag,
 such as a county squad. Select all shown → Review → Send works as before. After
 the invitations go, any of those players' nominations still at New are set to
 Invited, so the Nominations page shows who is still waiting.
+
+## Nomination date of birth (30 Sep 2026)
+
+Ollie asked for the full date of birth rather than the year: at 8U a January
+and a December birthday are nearly a year apart in growth. `/nominate` now has
+Day / Month / Year dropdowns; the year alone is still accepted when that is all
+a coach knows, a part-date or an impossible date (31 February) is refused on
+the form and again in `submit-nomination` (v2). The date is stored in
+`talent_nominations.date_of_birth` (migration `20260930090000`) and decides
+`birth_year` and the age group. The Nominations page shows "born Jan 2020" on
+the list and the full date in the detail; the confirmation and enquiries@
+emails show it too. The outreach email asks for "name and date of birth", and
+Danny Wyatt is described as leading the LTA 10U Enhanced Performance Programme
+there, in the coaches table and in the site's fallback profile.

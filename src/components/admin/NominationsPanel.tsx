@@ -19,11 +19,17 @@ import { ageGroupOf } from "@/lib/ageGroup";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
+/** "2020-01-14" → "Jan 2020" on the list, "14 January 2020" in the detail. */
+const fmtDob = (iso: string, style: "short" | "long") =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", style === "short"
+    ? { month: "short", year: "numeric", timeZone: "UTC" }
+    : { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
 type Status = "new" | "invited" | "declined";
 type Nomination = {
   id: string;
   player_first_name: string; player_last_name: string;
-  birth_year: number | null; gender: string | null; club: string | null;
+  birth_year: number | null; date_of_birth: string | null; gender: string | null; club: string | null;
   event_id: string | null; session_slot: string | null;
   parent_name: string | null; parent_email: string | null; parent_phone: string | null;
   nominator_name: string; nominator_role: string | null; nominator_email: string; nominator_phone: string | null;
@@ -105,7 +111,7 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
     const { data, error } = await db.from("player_roster").insert({
       first_name: n.player_first_name, last_name: n.player_last_name,
       gender: n.gender === "male" ? "Male" : n.gender === "female" ? "Female" : null,
-      age_group: n.birth_year ? ageGroupOf(`${n.birth_year}-07-01`) : null,
+      age_group: n.date_of_birth ? ageGroupOf(n.date_of_birth) : n.birth_year ? ageGroupOf(`${n.birth_year}-07-01`) : null,
       contact_name: n.parent_name, contact_email: n.parent_email, mobile: n.parent_phone,
       tags: ["Rising Stars nomination 2026"], source: "nomination",
     }).select("id").single();
@@ -161,7 +167,7 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-[15px] font-medium">{player(n)}</span>
-                  {n.birth_year && <span className="rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">born {n.birth_year}</span>}
+                  {n.birth_year && <span className="rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">born {n.date_of_birth ? fmtDob(n.date_of_birth, "short") : n.birth_year}</span>}
                   <RosterBadge n={n} />
                   {n.status !== "new" && <Badge variant="outline" className="text-[10px]">{STATUS_LABEL[n.status]}</Badge>}
                 </div>
@@ -196,7 +202,7 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
                   </div>
                 )}
                 <dl className="grid grid-cols-[9rem_1fr] gap-y-1.5">
-                  <dt className="text-muted-foreground">Year of birth</dt><dd>{open.birth_year ?? "—"}{open.gender ? ` · ${open.gender === "male" ? "Boy" : "Girl"}` : ""}</dd>
+                  <dt className="text-muted-foreground">{open.date_of_birth ? "Date of birth" : "Year of birth"}</dt><dd>{open.date_of_birth ? fmtDob(open.date_of_birth, "long") : open.birth_year ?? "—"}{open.gender ? ` · ${open.gender === "male" ? "Boy" : "Girl"}` : ""}</dd>
                   <dt className="text-muted-foreground">Club / school</dt><dd>{open.club ?? "—"}</dd>
                   <dt className="text-muted-foreground">Preferred day</dt><dd>{eventLine(open)}</dd>
                   <dt className="text-muted-foreground">Nominator</dt>

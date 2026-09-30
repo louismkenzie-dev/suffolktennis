@@ -2,8 +2,8 @@
 // for the Suffolk Rising Stars Talent ID days.
 //
 // The link in Ollie's outreach email and on the posters. It asks only what a
-// coach can answer from the side of a court: the child's name and year of
-// birth, where they play, which day suits, and why. Parent details are
+// coach can answer from the side of a court: the child's name and date of
+// birth (the year alone if that's all they know), where they play, which day suits, and why. Parent details are
 // optional and only with permission. The submit-nomination function saves it
 // and adds the child to the county database, so nothing is retyped.
 import { cloneElement, useEffect, useId, useState } from "react";
@@ -25,11 +25,30 @@ import risingStarsBadge from "@/assets/suffolk-rising-stars-badge.png";
 const NOMINATIONS_CLOSE = "Sunday 11 October 2026";
 const CONTACT_EMAIL = "enquiries@suffolktennis.online";
 const BIRTH_YEARS = [2017, 2018, 2019, 2020, 2021, 2022];
+// Short names so the month fits beside the day and year on a phone.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+
+/**
+ * Day, month and year as chosen → what we send. The full date when all three
+ * are there and real; the year alone is accepted too. Returns an error for a
+ * part-date or an impossible one (31 February).
+ */
+function birthFields(day: string, month: string, year: string): { date_of_birth: string | null; birth_year: number | null } | { error: string } {
+  if (!day && !month) return { date_of_birth: null, birth_year: year ? Number(year) : null };
+  if (!day || !month || !year) return { error: "Please choose the day, month and year of birth — or just the year if that's all you know" };
+  const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (d.getUTCDate() !== Number(day)) return { error: "That date of birth doesn't exist — please check the day and month" };
+  return { date_of_birth: iso, birth_year: Number(year) };
+}
 
 const opt = (max: number) => z.string().trim().max(max).optional().or(z.literal(""));
 const schema = z.object({
   player_first_name: z.string().trim().min(1, "The player's first name is needed").max(80),
   player_last_name: z.string().trim().min(1, "The player's last name is needed").max(80),
+  birth_day: z.string().optional(),
+  birth_month: z.string().optional(),
   birth_year: z.string().optional(),
   gender: z.enum(["male", "female", ""]).optional(),
   club: opt(160),
@@ -49,7 +68,7 @@ const schema = z.object({
 type TalentEvent = { id: string; title: string; event_date: string; location: string | null; session_slots: string[] | null };
 
 const empty = {
-  player_first_name: "", player_last_name: "", birth_year: "", gender: "" as "" | "male" | "female", club: "",
+  player_first_name: "", player_last_name: "", birth_day: "", birth_month: "", birth_year: "", gender: "" as "" | "male" | "female", club: "",
   event_id: "", session_slot: "", parent_name: "", parent_email: "", parent_phone: "",
   nominator_name: "", nominator_role: "", nominator_email: "", nominator_phone: "", reason: "", website: "",
 };
@@ -103,9 +122,12 @@ const Nominate = () => {
       toast.error(Object.values(parsed.error.flatten().fieldErrors)[0]?.[0] ?? "Please check the form");
       return;
     }
+    const birth = birthFields(parsed.data.birth_day ?? "", parsed.data.birth_month ?? "", parsed.data.birth_year ?? "");
+    if ("error" in birth) { toast.error(birth.error); return; }
+    const { birth_day: _d, birth_month: _m, ...rest } = parsed.data;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("submit-nomination", {
-      body: { ...parsed.data, birth_year: parsed.data.birth_year ? Number(parsed.data.birth_year) : null },
+      body: { ...rest, ...birth },
     });
     setBusy(false);
     const detail = (data as { error?: string } | null)?.error;
@@ -175,13 +197,25 @@ const Nominate = () => {
                     <Field label="First name *"><Input autoComplete="off" value={form.player_first_name} onChange={(e) => set({ player_first_name: e.target.value })} /></Field>
                     <Field label="Last name *"><Input autoComplete="off" value={form.player_last_name} onChange={(e) => set({ player_last_name: e.target.value })} /></Field>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Year of birth" hint="Our focus is 2020 and 2021, and the 2019s heading for 8U County Cup — but nominate anyone who stands out.">
+                  <fieldset>
+                    <legend className="text-sm font-medium leading-none text-foreground">Date of birth</legend>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <Select value={form.birth_day} onValueChange={(v) => set({ birth_day: v })}>
+                        <SelectTrigger aria-label="Day of birth"><SelectValue placeholder="Day" /></SelectTrigger>
+                        <SelectContent>{DAYS.map((d) => <SelectItem key={d} value={String(d)}>{d}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Select value={form.birth_month} onValueChange={(v) => set({ birth_month: v })}>
+                        <SelectTrigger aria-label="Month of birth"><SelectValue placeholder="Month" /></SelectTrigger>
+                        <SelectContent>{MONTHS.map((m, i) => <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>)}</SelectContent>
+                      </Select>
                       <Select value={form.birth_year} onValueChange={(v) => set({ birth_year: v })}>
-                        <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
+                        <SelectTrigger aria-label="Year of birth"><SelectValue placeholder="Year" /></SelectTrigger>
                         <SelectContent>{BIRTH_YEARS.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
                       </Select>
-                    </Field>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">The full date if you know it, as a January and a December birthday are nearly a year apart at this age. Just the year is fine if that's all you have. Our focus is 2020 and 2021, and the 2019s heading for 8U County Cup, but nominate anyone who stands out.</p>
+                  </fieldset>
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Boy or girl">
                       <Select value={form.gender} onValueChange={(v) => set({ gender: v as "male" | "female" })}>
                         <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>

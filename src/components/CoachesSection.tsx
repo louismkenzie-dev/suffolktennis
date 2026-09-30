@@ -63,10 +63,10 @@ const defaultCoaches: CoachCard[] = [
     specialty: "10U Performance Coaching",
     photo: dannyImg,
     quote: "\"The 10&Under pathway is where champions are made — it's about building the right habits, mindset, and love for competition from the very start.\"",
-    bio: "Danny is an LTA Level 4 Performance Coach who runs the 10U Enhanced Performance Programme at Culford, part of the Culford RPDC, where he is also Assistant Head Coach. His expertise in early-stage player development ensures young athletes build strong technical foundations while maintaining a passion for the game.",
+    bio: "Danny is an LTA Level 4 Performance Coach who runs the LTA 10U Enhanced Performance Programme at Culford, part of the Culford RPDC, where he is also Assistant Head Coach. His expertise in early-stage player development ensures young athletes build strong technical foundations while maintaining a passion for the game.",
     achievements: [
       "LTA Level 4 Performance Coach qualification",
-      "Runs the 10U Enhanced Performance Programme at Culford RPDC",
+      "Runs the LTA 10U Enhanced Performance Programme at Culford RPDC",
       "Assistant Head Coach at Culford RPDC",
       "Specialist in early-stage competitive development",
     ],

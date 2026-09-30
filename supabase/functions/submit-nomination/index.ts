@@ -35,6 +35,8 @@ const Body = z.object({
   player_first_name: z.string().trim().min(1).max(80),
   player_last_name: z.string().trim().min(1).max(80),
   birth_year: z.coerce.number().int().min(2010).max(2024).optional().nullable(),
+  /** YYYY-MM-DD; when given it decides birth_year. */
+  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable().or(z.literal("")),
   gender: z.enum(["male", "female", ""]).optional(),
   club: opt(160),
   event_id: z.string().uuid().optional().or(z.literal("")),
@@ -72,6 +74,10 @@ function fmtDate(iso: string | null | undefined): string {
   return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/London" });
 }
 
+/** "2020-01-14" → "14 January 2020". */
+const fmtDob = (iso: string) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
 type RosterRow = { id: string; first_name: string; last_name: string; age_group: string | null; contact_email: string | null };
 
 Deno.serve(async (req) => {
@@ -91,6 +97,19 @@ Deno.serve(async (req) => {
 
   // A bot filled the hidden field: say thank you and do nothing.
   if (p.website) return json({ ok: true });
+
+  // A full date of birth, when given, must be a real day in range, and it
+  // decides the birth year (and so the age group).
+  let dob: string | null = null;
+  if (p.date_of_birth) {
+    const d = new Date(`${p.date_of_birth}T12:00:00Z`);
+    const y = d.getUTCFullYear();
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== p.date_of_birth || y < 2010 || y > 2024) {
+      return json({ error: "Please check the date of birth" }, 400);
+    }
+    dob = p.date_of_birth;
+    p.birth_year = y;
+  }
 
   const first = p.player_first_name, last = p.player_last_name;
   const nominatorEmail = p.nominator_email.toLowerCase();
@@ -156,6 +175,7 @@ Deno.serve(async (req) => {
   const { data: nom, error: insErr } = await admin.from("talent_nominations").insert({
     player_first_name: first, player_last_name: last,
     birth_year: p.birth_year ?? null,
+    date_of_birth: dob,
     gender: p.gender || null,
     club: p.club || null,
     event_id: event?.id ?? null,
@@ -182,7 +202,9 @@ Deno.serve(async (req) => {
   const when = event ? `${fmtDate(event.event_date)} · ${event.location ?? ""}${p.session_slot ? ` · ${p.session_slot}` : ""}` : (p.session_slot || "Either day");
   const details: Array<[string, string]> = [
     ["Player", esc(player)],
-    ["Year of birth", p.birth_year ? String(p.birth_year) : ""],
+    dob
+      ? ["Date of birth", fmtDob(dob)]
+      : ["Year of birth", p.birth_year ? String(p.birth_year) : ""],
     ["Club, school or programme", esc(p.club)],
     ["Preferred day", esc(when)],
     ["Nominated by", esc(p.nominator_role ? `${p.nominator_name} — ${p.nominator_role}` : p.nominator_name)],

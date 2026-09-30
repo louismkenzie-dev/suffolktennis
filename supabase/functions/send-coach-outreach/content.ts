@@ -77,7 +77,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailHeading("We want you involved", { size: 30 }) +
         emailParagraph("Hi,") +
         emailParagraph("My name is <strong>Ollie Sutton</strong>, and I&rsquo;ve recently taken on the role of Suffolk Tennis&rsquo;s <strong>10U County Lead Coach</strong>. I wanted to introduce myself and draw your attention to our plans to strengthen the 10U pathway and Talent ID network across the county.") +
-        emailParagraph("I&rsquo;m working alongside <strong>Danny Wyatt</strong>, Lead Coach of the 10U Enhanced Performance Programme at Culford, and <strong>Chris Daynes</strong>, our 11&ndash;18 County Lead. A key priority for us is to build stronger connections with the coaches, clubs and schools developing young players across Suffolk every week."),
+        emailParagraph("I&rsquo;m working alongside <strong>Danny Wyatt</strong>, Lead Coach of the LTA 10U Enhanced Performance Programme at Culford, and <strong>Chris Daynes</strong>, our 11&ndash;18 County Lead. A key priority for us is to build stronger connections with the coaches, clubs and schools developing young players across Suffolk every week."),
     },
 
     // Statement band — the heart of the message.
@@ -105,7 +105,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailParagraph("Each session is a fun, positive 90 minutes designed to help young players show their potential through movement, racket skills, learning and competition. We look for potential, not just polished technique. All sessions are free of charge.") +
         emailParagraph("If there is a child you believe deserves the opportunity to be seen, nominate them through the link below. It takes about a minute per player and asks for:") +
         bullets([
-          "Player&rsquo;s name and year of birth",
+          "Player&rsquo;s name and date of birth",
           "Club, school or programme",
           "Which day and session they could attend, if known",
           "A brief note on why you&rsquo;ve nominated them",
@@ -172,7 +172,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         `<p style="margin: 26px 0 0; font-family: ${FONT}; font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.82);">Best wishes,</p>
         <p style="margin: 10px 0 0; font-family: ${DISPLAY}; font-size: 17px; font-weight: 700; font-stretch: 112%; text-transform: uppercase; letter-spacing: 0.03em; color: #FFFFFF;">Ollie Sutton</p>
         <p style="margin: 2px 0 0; font-family: ${FONT}; font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.70);">10U County Lead Coach, Suffolk Tennis<br><a href="mailto:${CONTACT_EMAIL}" style="color: ${CYAN}; text-decoration: none;">${CONTACT_EMAIL}</a></p>` +
-        emailNote("Danny Wyatt &middot; 10U Enhanced Performance Programme Lead, Culford RPDC<br>Chris Daynes &middot; 11&ndash;18 County Lead", { onDark: true }),
+        emailNote("Danny Wyatt &middot; LTA 10U Enhanced Performance Programme Lead, Culford RPDC<br>Chris Daynes &middot; 11&ndash;18 County Lead", { onDark: true }),
     },
   ];
 
