@@ -11,8 +11,8 @@ load from suffolktennis.online/email/):
       await (await import("node:fs/promises")).writeFile("public/email/coach-outreach.html",html)})'
 
 The Talent ID dates and the nomination deadline are constants at the top of
-`content.ts`. Nominations go to enquiries@suffolktennis.online (the
-"Nominate a player" button opens a pre-filled email).
+`content.ts`. The "Nominate a player" button links to /nominate (the form
+feeds People → Nominations); enquiries@suffolktennis.online is the fallback.
 
 Sending: `index.ts` is the `send-coach-outreach` edge function.
 

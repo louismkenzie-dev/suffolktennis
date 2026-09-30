@@ -76,9 +76,8 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailKicker("Suffolk Tennis &middot; 10U Pathway") +
         emailHeading("We want you involved", { size: 30 }) +
         emailParagraph("Hi,") +
-        emailParagraph("I wanted to get in touch to introduce the direction we are taking with Suffolk Tennis, and in particular our plans to significantly strengthen the 10U pathway and Talent ID network across the county.") +
-        emailParagraph("Alongside <strong>Danny Wyatt</strong>, Lead Coach for our 10U Enhanced Performance Programme at Culford, and <strong>Chris Daynes</strong>, our 11&ndash;18 County Lead, I have recently taken responsibility for the 10U performance provision as Suffolk&rsquo;s <strong>10U County Lead</strong>.") +
-        emailParagraph("One of our biggest priorities is simple: to reconnect Suffolk Tennis with the coaches, clubs and schools developing young players every single week."),
+        emailParagraph("My name is <strong>Ollie Sutton</strong>, and I&rsquo;ve recently taken on the role of Suffolk Tennis&rsquo;s <strong>10U County Lead Coach</strong>. I wanted to introduce myself and draw your attention to our plans to strengthen the 10U pathway and Talent ID network across the county.") +
+        emailParagraph("I&rsquo;m working alongside <strong>Danny Wyatt</strong>, Lead Coach of the 10U Enhanced Performance Programme at Culford, and <strong>Chris Daynes</strong>, our 11&ndash;18 County Lead. A key priority for us is to build stronger connections with the coaches, clubs and schools developing young players across Suffolk every week."),
     },
 
     // Statement band — the heart of the message.
@@ -172,7 +171,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
         emailButton(`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Suffolk 10U pathway")}`, "Get in touch") +
         `<p style="margin: 26px 0 0; font-family: ${FONT}; font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.82);">Best wishes,</p>
         <p style="margin: 10px 0 0; font-family: ${DISPLAY}; font-size: 17px; font-weight: 700; font-stretch: 112%; text-transform: uppercase; letter-spacing: 0.03em; color: #FFFFFF;">Ollie Sutton</p>
-        <p style="margin: 2px 0 0; font-family: ${FONT}; font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.70);">10U County Lead, Suffolk Tennis<br><a href="mailto:${CONTACT_EMAIL}" style="color: ${CYAN}; text-decoration: none;">${CONTACT_EMAIL}</a></p>` +
+        <p style="margin: 2px 0 0; font-family: ${FONT}; font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.70);">10U County Lead Coach, Suffolk Tennis<br><a href="mailto:${CONTACT_EMAIL}" style="color: ${CYAN}; text-decoration: none;">${CONTACT_EMAIL}</a></p>` +
         emailNote("Danny Wyatt &middot; 10U Enhanced Performance Programme Lead, Culford RPDC<br>Chris Daynes &middot; 11&ndash;18 County Lead", { onDark: true }),
     },
   ];
@@ -181,7 +180,7 @@ export function build(unsubscribeUrl?: string): { subject: string; html: string 
     subject: "Connecting Suffolk’s 10U Pathway – We Want You Involved",
     html: brandedEmail({
       title: "Connecting Suffolk’s 10U Pathway",
-      preheader: "A new 10U County Lead, a new digital home for Suffolk Tennis, and County Rising Stars Talent ID days in October. Is there a child we should know about?",
+      preheader: "A new 10U County Lead Coach, a new digital home for Suffolk Tennis, and County Rising Stars Talent ID days in October. Is there a child we should know about?",
       hero: { file: "punchy-pathway-v2.jpg", alt: "Suffolk Tennis: your 10U tennis pathway. Punchy in red, orange and green for 8U, 9U and 10U" },
       sections,
       unsubscribeUrl,
