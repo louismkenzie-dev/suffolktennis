@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { slotFor, slotMismatch } from "@/lib/sessionSlots";
 import risingStarsBadge from "@/assets/suffolk-rising-stars-badge.png";
 
 /** Shown on the page; the form stays open after it so late ones still land. */
@@ -241,7 +242,8 @@ const Nominate = () => {
                           <button
                             key={ev.id}
                             type="button"
-                            onClick={() => set({ event_id: active ? "" : ev.id, session_slot: "" })}
+                            // Pre-select the session that fits the child's birth year, if one does.
+                            onClick={() => set({ event_id: active ? "" : ev.id, session_slot: active ? "" : slotFor((ev.session_slots ?? []).filter(Boolean), form.birth_year ? Number(form.birth_year) : null) ?? "" })}
                             aria-pressed={active}
                             className={`rounded-2xl border p-4 text-left transition-colors ${active ? "border-lta-cyan bg-lta-cyan/10" : "border-border bg-background hover:border-lta-cyan/50"}`}
                           >
@@ -259,6 +261,11 @@ const Nominate = () => {
                         <SelectContent>{slots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                       </Select>
                     </Field>
+                  )}
+                  {slotMismatch(form.session_slot, form.birth_year ? Number(form.birth_year) : null) && (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      That session is for children born in a different year from {form.birth_year}. Please check the session, or the date of birth above.
+                    </p>
                   )}
                 </div>
 

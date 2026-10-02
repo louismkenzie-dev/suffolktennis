@@ -1574,3 +1574,20 @@ there, in the coaches table and in the site's fallback profile.
   turns the "page address" into a valid slug (made from the name if blank;
   a pasted website moves to the website field), and the menu links a bad
   slug to /venues rather than a dead page. Bramford's slug is now `bramford`.
+
+## Editing nominations (2 Oct 2026)
+
+People → Nominations → a nomination → **Edit details**: the player's name,
+date of birth, gender and club, the day and session, the parent's details and
+the nominator's. Changing the day keeps the same session label if that day
+has it, otherwise picks the session that fits the child's birth year. When
+the nomination itself created the player on the database
+(`roster_match = 'created'`), the player record's name, gender, age group and
+parent contact are corrected with it, so invitations go to the right parent;
+a player who was already on the database is left alone.
+
+`src/lib/sessionSlots.ts` reads the birth years out of a session label
+("… Players Born - 2020/2021"). The list and the detail flag a child in a
+session for another year ("Wrong age session?"), and the public form picks
+the matching session when a day is chosen and warns if a non-matching one is
+selected.

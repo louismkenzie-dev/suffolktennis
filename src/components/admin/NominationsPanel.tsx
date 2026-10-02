@@ -2,19 +2,24 @@
 // forward through /nominate, with why, who by, and what happened on the
 // player database. Ollie works the list from New to Invited (invitations go
 // out from the Bookings tab, where nominated players already sit on the
-// roster) or Declined, and keeps a note against each.
+// roster) or Declined, and keeps a note against each. A nomination can be
+// corrected (wrong day, wrong age session, a misspelt name, the parent's
+// email); when the nomination itself created the player on the database, the
+// player record is corrected with it so the invitation goes to the right place.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ChevronRight, Loader2, RefreshCw, Star, UserPlus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, Pencil, RefreshCw, Star, UserPlus } from "lucide-react";
 import { PageHeader, SegmentedControl, SearchField, ListGroup, EmptyState, SkeletonRows } from "@/components/app";
 import { ageGroupOf } from "@/lib/ageGroup";
+import { slotFor, slotMismatch } from "@/lib/sessionSlots";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -38,7 +43,26 @@ type Nomination = {
   status: Status; admin_notes: string | null;
   created_at: string;
 };
-type EventRow = { id: string; event_date: string; location: string | null; title: string };
+type EventRow = { id: string; event_date: string; location: string | null; title: string; session_slots: string[] | null; cancelled_at: string | null };
+
+/** The editable part of a nomination, as strings for the form. */
+type Draft = {
+  player_first_name: string; player_last_name: string; date_of_birth: string; birth_year: string; gender: string;
+  club: string; event_id: string; session_slot: string;
+  parent_name: string; parent_email: string; parent_phone: string;
+  nominator_name: string; nominator_role: string; nominator_email: string; nominator_phone: string;
+};
+const draftOf = (n: Nomination): Draft => ({
+  player_first_name: n.player_first_name, player_last_name: n.player_last_name,
+  date_of_birth: n.date_of_birth ?? "", birth_year: n.birth_year ? String(n.birth_year) : "", gender: n.gender ?? "",
+  club: n.club ?? "", event_id: n.event_id ?? "", session_slot: n.session_slot ?? "",
+  parent_name: n.parent_name ?? "", parent_email: n.parent_email ?? "", parent_phone: n.parent_phone ?? "",
+  nominator_name: n.nominator_name, nominator_role: n.nominator_role ?? "", nominator_email: n.nominator_email, nominator_phone: n.nominator_phone ?? "",
+});
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NONE = "__none__";
+const birthYearOf = (d: { date_of_birth: string | null; birth_year: number | null }) =>
+  d.date_of_birth ? Number(d.date_of_birth.slice(0, 4)) : d.birth_year;
 
 const STATUS_LABEL: Record<Status, string> = { new: "New", invited: "Invited", declined: "Declined" };
 const player = (n: Nomination) => `${n.player_first_name} ${n.player_last_name}`;
@@ -60,12 +84,13 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
   const [open, setOpen] = useState<Nomination | null>(null);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data, error }, { data: evs }] = await Promise.all([
       db.from("talent_nominations").select("*").order("created_at", { ascending: false }),
-      db.from("events").select("id, event_date, location, title").eq("event_type", "rising-stars"),
+      db.from("events").select("id, event_date, location, title, session_slots, cancelled_at").eq("event_type", "rising-stars").order("event_date"),
     ]);
     if (error) toast.error(error.message);
     setRows(data ?? []);
@@ -123,6 +148,49 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
     setOpen(null);
   };
 
+  /** Save a corrected nomination, and the player it created, if it created one. */
+  const saveEdit = async () => {
+    if (!open || !draft) return;
+    const d = draft;
+    const t = (s: string) => s.trim();
+    if (!t(d.player_first_name) || !t(d.player_last_name)) { toast.error("The player needs a first and last name"); return; }
+    if (!t(d.nominator_name) || !EMAIL.test(t(d.nominator_email))) { toast.error("The nominator needs a name and a valid email"); return; }
+    if (t(d.parent_email) && !EMAIL.test(t(d.parent_email))) { toast.error("That parent email doesn't look right"); return; }
+    const dob = t(d.date_of_birth) || null;
+    const year = dob ? Number(dob.slice(0, 4)) : d.birth_year ? Number(d.birth_year) : null;
+    if (year && (year < 2010 || year > 2024)) { toast.error("Please check the date of birth"); return; }
+    const patch = {
+      player_first_name: t(d.player_first_name), player_last_name: t(d.player_last_name),
+      date_of_birth: dob, birth_year: year, gender: d.gender || null, club: t(d.club) || null,
+      event_id: d.event_id || null, session_slot: d.session_slot || null,
+      parent_name: t(d.parent_name) || null, parent_email: t(d.parent_email).toLowerCase() || null, parent_phone: t(d.parent_phone) || null,
+      nominator_name: t(d.nominator_name), nominator_role: t(d.nominator_role) || null,
+      nominator_email: t(d.nominator_email).toLowerCase(), nominator_phone: t(d.nominator_phone) || null,
+    };
+    setSaving(true);
+    const { error } = await db.from("talent_nominations").update(patch).eq("id", open.id);
+    if (error) { setSaving(false); toast.error(error.message); return; }
+    // The player this nomination put on the database is corrected with it.
+    // A player who was already there is left alone: their record came from
+    // elsewhere (the LTA export, a booking) and may be more accurate.
+    let rosterNote = "";
+    if (open.roster_match === "created" && open.roster_id) {
+      const { error: e2 } = await db.from("player_roster").update({
+        first_name: patch.player_first_name, last_name: patch.player_last_name,
+        gender: patch.gender === "male" ? "Male" : patch.gender === "female" ? "Female" : null,
+        age_group: dob ? ageGroupOf(dob) : year ? ageGroupOf(`${year}-07-01`) : null,
+        contact_name: patch.parent_name, contact_email: patch.parent_email, mobile: patch.parent_phone,
+      }).eq("id", open.roster_id);
+      rosterNote = e2 ? ` (the player database wasn't updated: ${e2.message})` : " and on the player database";
+    }
+    setSaving(false);
+    const updated = { ...open, ...patch } as Nomination;
+    setRows((rs) => rs.map((r) => (r.id === open.id ? updated : r)));
+    setOpen(updated);
+    setDraft(null);
+    toast.success(`Saved${rosterNote}`);
+  };
+
   const eventLine = (n: Nomination) => {
     const ev = n.event_id ? events.get(n.event_id) : undefined;
     if (!ev && !n.session_slot) return "Either day";
@@ -163,12 +231,13 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
       ) : (
         <ListGroup>
           {shown.map((n) => (
-            <button key={n.id} type="button" className="press flex w-full items-center gap-3 bg-card px-4 py-3 text-left" onClick={() => { setNotes(n.admin_notes ?? ""); setOpen(n); }}>
+            <button key={n.id} type="button" className="press flex w-full items-center gap-3 bg-card px-4 py-3 text-left" onClick={() => { setNotes(n.admin_notes ?? ""); setDraft(null); setOpen(n); }}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-[15px] font-medium">{player(n)}</span>
                   {n.birth_year && <span className="rounded-md bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">born {n.date_of_birth ? fmtDob(n.date_of_birth, "short") : n.birth_year}</span>}
                   <RosterBadge n={n} />
+                  {slotMismatch(n.session_slot, birthYearOf(n)) && <Badge variant="secondary" className="bg-amber-50 text-amber-800">Wrong age session?</Badge>}
                   {n.status !== "new" && <Badge variant="outline" className="text-[10px]">{STATUS_LABEL[n.status]}</Badge>}
                 </div>
                 <div className="truncate text-[13px] text-muted-foreground">
@@ -182,7 +251,7 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
         </ListGroup>
       )}
 
-      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+      <Dialog open={!!open} onOpenChange={(o) => { if (!o) { setOpen(null); setDraft(null); } }}>
         <DialogContent className="max-h-dialog overflow-auto md:max-w-lg">
           {open && (
             <>
@@ -193,8 +262,20 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
                 </DialogDescription>
               </DialogHeader>
 
+              {draft ? (
+                <EditForm draft={draft} setDraft={setDraft} events={[...events.values()]} createdPlayer={open.roster_match === "created"} />
+              ) : (
               <div className="space-y-3 text-sm">
-                <div className="flex flex-wrap gap-2"><RosterBadge n={open} /></div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <RosterBadge n={open} />
+                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => setDraft(draftOf(open))}><Pencil className="h-4 w-4" /> Edit details</Button>
+                </div>
+                {slotMismatch(open.session_slot, birthYearOf(open)) && (
+                  <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>Born {birthYearOf(open)}, but nominated for “{open.session_slot}”. Use Edit details to move them to the right session.</span>
+                  </div>
+                )}
                 {open.roster_match === "review" && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
                     Someone with this name is already on the database with a different parent email, so nothing was added automatically. If this is a different child, add them:
@@ -242,15 +323,139 @@ export default function NominationsPanel({ query = "" }: { query?: string }) {
                   </div>
                 </div>
               </div>
+              )}
 
               <DialogFooter>
-                <Button variant="ghost" onClick={() => setOpen(null)}>Close</Button>
-                <Button onClick={saveNotes} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save note</Button>
+                {draft ? (
+                  <>
+                    <Button variant="ghost" onClick={() => setDraft(null)} disabled={saving}>Cancel</Button>
+                    <Button onClick={saveEdit} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save changes</Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="ghost" onClick={() => setOpen(null)}>Close</Button>
+                    <Button onClick={saveNotes} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save note</Button>
+                  </>
+                )}
               </DialogFooter>
             </>
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** The edit view of a nomination: the same questions the public form asks. */
+function EditForm({ draft, setDraft, events, createdPlayer }: {
+  draft: Draft; setDraft: (d: Draft) => void; events: EventRow[]; createdPlayer: boolean;
+}) {
+  const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
+  const ev = events.find((e) => e.id === draft.event_id);
+  const slots = (ev?.session_slots ?? []).filter(Boolean);
+  const year = draft.date_of_birth ? Number(draft.date_of_birth.slice(0, 4)) : draft.birth_year ? Number(draft.birth_year) : null;
+  const mismatch = slotMismatch(draft.session_slot, year);
+  const field = (label: string, key: keyof Draft, props: React.ComponentProps<typeof Input> = {}) => (
+    <div>
+      <Label htmlFor={`nom-${key}`}>{label}</Label>
+      <Input id={`nom-${key}`} value={draft[key]} onChange={(e) => set({ [key]: e.target.value } as Partial<Draft>)} {...props} />
+    </div>
+  );
+  const pickDay = (id: string) => {
+    const next = events.find((e) => e.id === id);
+    const nextSlots = (next?.session_slots ?? []).filter(Boolean);
+    // Keep the same session if the new day has one with that label, else the one that fits the child.
+    const keep = nextSlots.includes(draft.session_slot) ? draft.session_slot : slotFor(nextSlots, year) ?? "";
+    set({ event_id: id, session_slot: keep });
+  };
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="space-y-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">The player</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field("First name", "player_first_name")}
+          {field("Last name", "player_last_name")}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="nom-dob">Date of birth</Label>
+            <Input id="nom-dob" type="date" value={draft.date_of_birth} min="2010-01-01" max="2024-12-31"
+              onChange={(e) => set({ date_of_birth: e.target.value, birth_year: e.target.value ? e.target.value.slice(0, 4) : draft.birth_year })} />
+            {!draft.date_of_birth && draft.birth_year && <p className="mt-1 text-xs text-muted-foreground">Only the year ({draft.birth_year}) was given.</p>}
+          </div>
+          <div>
+            <Label>Boy or girl</Label>
+            <Select value={draft.gender || NONE} onValueChange={(v) => set({ gender: v === NONE ? "" : v })}>
+              <SelectTrigger aria-label="Boy or girl"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Not given</SelectItem>
+                <SelectItem value="male">Boy</SelectItem>
+                <SelectItem value="female">Girl</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {field("Club, school or programme", "club")}
+      </div>
+
+      <div className="space-y-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Day and session</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label>Day</Label>
+            <Select value={draft.event_id || NONE} onValueChange={(v) => (v === NONE ? set({ event_id: "", session_slot: "" }) : pickDay(v))}>
+              <SelectTrigger aria-label="Day"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Either day / not sure</SelectItem>
+                {events.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>{fmtDay(e.event_date)} · {e.location ?? e.title}{e.cancelled_at ? " (cancelled)" : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Session</Label>
+            <Select value={draft.session_slot || NONE} onValueChange={(v) => set({ session_slot: v === NONE ? "" : v })} disabled={!ev}>
+              <SelectTrigger aria-label="Session"><SelectValue placeholder={ev ? "Choose" : "Choose a day first"} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Not sure</SelectItem>
+                {slots.map((sl) => <SelectItem key={sl} value={sl}>{sl}</SelectItem>)}
+                {draft.session_slot && !slots.includes(draft.session_slot) && <SelectItem value={draft.session_slot}>{draft.session_slot}</SelectItem>}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {mismatch && (
+          <p className="flex gap-1.5 text-xs text-amber-800"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /> This session isn't for children born in {year}.</p>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Parent or guardian</div>
+        {field("Name", "parent_name")}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field("Email", "parent_email", { type: "email", inputMode: "email" })}
+          {field("Phone", "parent_phone", { type: "tel", inputMode: "tel" })}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Nominated by</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field("Name", "nominator_name")}
+          {field("Role and club or school", "nominator_role")}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field("Email", "nominator_email", { type: "email", inputMode: "email" })}
+          {field("Phone", "nominator_phone", { type: "tel", inputMode: "tel" })}
+        </div>
+      </div>
+
+      <p className="rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
+        {createdPlayer
+          ? "This nomination added the player to the database, so the name, date of birth and parent details are corrected there too."
+          : "Only the nomination changes. The player's record on the database is left as it is."}
+      </p>
     </div>
   );
 }
