@@ -1,5 +1,9 @@
-// Edge function: AI-compose a Suffolk Tennis news article from a draft
+// Edge function: AI-compose a Suffolk Tennis news article from a draft.
+//
+// Admin only: it spends the ANTHROPIC_API_KEY, so a signed-in admin session is
+// required (verify_jwt = true at the gateway, plus the admin-role check here).
 import Anthropic from 'npm:@anthropic-ai/sdk'
+import { requireAdmin, serviceClient } from "../_shared/adminAuth.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -10,11 +14,21 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
-    const { title, draft } = await req.json();
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: "AI not configured" }), {
+      return new Response(JSON.stringify({ error: "AI not configured (ANTHROPIC_API_KEY missing)" }), {
         status: 500, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+    if (!(await requireAdmin(req, serviceClient()))) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+    const { title, draft } = await req.json();
+    if (!String(draft ?? "").trim()) {
+      return new Response(JSON.stringify({ error: "Write a rough draft first" }), {
+        status: 400, headers: { ...CORS, "Content-Type": "application/json" },
       });
     }
 

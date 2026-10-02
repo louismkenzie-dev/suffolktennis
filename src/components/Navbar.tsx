@@ -110,6 +110,12 @@ const Navbar = () => {
   const [partnerVenues, setPartnerVenues] = useState(defaultPartnerVenues);
   const [feederClubs, setFeederClubs] = useState(defaultFeederClubs);
 
+  // A venue's own page when it has a usable slug. Menu items are router links,
+  // so an outside website can't go here: a missing or malformed slug (someone
+  // pasted a URL into it) falls back to the venues list rather than a 404.
+  const pageFor = (base: "clubs" | "venues", slug: string | null) =>
+    slug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? `/${base}/${slug}` : "/venues";
+
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -123,11 +129,11 @@ const Navbar = () => {
         tagline: v.tagline ?? "",
         logo: v.logo_url ?? "",
         logoStyle: v.logo_bg_color ? `p-1.5` : "p-1.5 bg-white",
-        path: v.slug ? `/venues/${v.slug}` : (v.website_url ?? "#"),
+        path: pageFor("venues", v.slug),
       }));
       const feeders = data.filter(v => v.venue_type === "feeder").map(v => ({
         name: v.name,
-        path: v.slug ? `/clubs/${v.slug}` : (v.website_url ?? "#"),
+        path: pageFor("clubs", v.slug),
       }));
       if (partners.length) setPartnerVenues(partners);
       if (feeders.length) setFeederClubs(feeders);

@@ -1555,3 +1555,22 @@ the list and the full date in the detail; the confirmation and enquiries@
 emails show it too. The outreach email asks for "name and date of birth", and
 Danny Wyatt is described as leading the LTA 10U Enhanced Performance Programme
 there, in the coaches table and in the site's fallback profile.
+
+## Fixes, 1–2 Oct 2026
+
+- **Website events wouldn't save.** `events.programme_type` still defaulted
+  to the pre-10-Sep value `'one_off'`, which the check constraint no longer
+  allows, so every insert from Website → Events page (which never set the
+  field) failed with `events_programme_type_check`. Default is now `'event'`
+  (migration `20261001090000`) and that page sets it explicitly.
+- **News "AI compose" did nothing.** `compose-news` had never been deployed
+  (every call was a 404). Now deployed, admin-only (`verify_jwt = true` plus
+  the admin-role check, as it spends the Anthropic key), and the page shows
+  the function's own error message.
+- **Clubs added in Admin → Venues had no page.** Only the hand-built club
+  pages had routes, and Bramford's slug held its ClubSpark URL. New
+  `/clubs/:slug` and `/venues/:slug` routes (`VenueFromDb`) render any
+  published venue from its row; empty sections are hidden. The admin form
+  turns the "page address" into a valid slug (made from the name if blank;
+  a pasted website moves to the website field), and the menu links a bad
+  slug to /venues rather than a dead page. Bramford's slug is now `bramford`.

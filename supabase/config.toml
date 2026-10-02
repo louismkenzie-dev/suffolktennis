@@ -4,7 +4,7 @@ project_id = "twtmkvorzpvwnznqzcrw"
   [functions.auth-email-hook]
     verify_jwt = false
   [functions.compose-news]
-    verify_jwt = false
+    verify_jwt = true
   [functions.handle-email-suppression]
     verify_jwt = false
   [functions.handle-email-unsubscribe]

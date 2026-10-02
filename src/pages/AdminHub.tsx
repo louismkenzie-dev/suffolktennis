@@ -1274,7 +1274,9 @@ const EventsPanel = ({ currentUserId }: { currentUserId: string }) => {
     };
     const { error } = editingId
       ? await supabase.from("events").update(payload).eq("id", editingId)
-      : await supabase.from("events").insert(payload);
+      // A website event is a one-off event, never a paid programme (those are
+      // made in Bookings). Said explicitly so it never rests on the default.
+      : await supabase.from("events").insert({ ...payload, programme_type: "event" });
     if (error) toast.error(error.message);
     else { toast.success(editingId ? "Event updated" : "Event created"); resetForm(); setFormOpen(false); load(); }
   };
@@ -1661,7 +1663,13 @@ const NewsPanel = () => {
       const { data, error } = await supabase.functions.invoke("compose-news", {
         body: { title: form.title, draft: form.content },
       });
-      if (error) throw error;
+      if (error) {
+        // Show the function's own message rather than "non-2xx status code".
+        let detail: string | undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        try { detail = (await (error as any).context?.json?.())?.error; } catch { /* not JSON */ }
+        throw new Error(detail ?? error.message);
+      }
       if (data?.error) throw new Error(data.error);
       if (data?.content) {
         setForm(f => ({ ...f, content: data.content }));

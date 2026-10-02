@@ -9,12 +9,16 @@ interface FeederClubPageProps {
   name: string;
   tagline: string;
   logo?: string;
-  externalUrl: string;
-  address: string;
+  // Everything below may be empty for a club added in the admin Venues panel
+  // with only a name and website; empty sections are simply not shown.
+  externalUrl?: string;
+  address?: string;
   about: string[];
-  coaching: string;
-  facilities: string[];
+  coaching?: string;
+  facilities?: string[];
   highlights?: string[];
+  /** A partner venue rather than a feeder club (only changes the badge). */
+  partner?: boolean;
 }
 
 const FeederClubPage = ({
@@ -27,6 +31,7 @@ const FeederClubPage = ({
   coaching,
   facilities,
   highlights,
+  partner = false,
 }: FeederClubPageProps) => {
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
@@ -72,15 +77,22 @@ const FeederClubPage = ({
               <div className="lg:col-span-2 space-y-8">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                   <h2 className="font-display text-2xl font-black text-foreground mb-4">About the Club</h2>
-                  {about.map((p, i) => (
+                  {about.length > 0 ? about.map((p, i) => (
                     <p key={i} className="text-muted-foreground font-body leading-relaxed mb-4">{p}</p>
-                  ))}
+                  )) : (
+                    <p className="text-muted-foreground font-body leading-relaxed mb-4">
+                      {name} is part of the Suffolk Tennis Performance Pathway network, helping young players take their first steps in the game.
+                      {externalUrl ? " Visit the club's website for coaching, membership and court times." : ""}
+                    </p>
+                  )}
                 </motion.div>
 
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-                  <h2 className="font-display text-2xl font-black text-foreground mb-4">Coaching & Programmes</h2>
-                  <p className="text-muted-foreground font-body leading-relaxed">{coaching}</p>
-                </motion.div>
+                {coaching && (
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                    <h2 className="font-display text-2xl font-black text-foreground mb-4">Coaching & Programmes</h2>
+                    <p className="text-muted-foreground font-body leading-relaxed">{coaching}</p>
+                  </motion.div>
+                )}
 
                 {highlights && highlights.length > 0 && (
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
@@ -99,7 +111,7 @@ const FeederClubPage = ({
 
               {/* Sidebar */}
               <div className="space-y-6">
-                <motion.div
+                {facilities && facilities.length > 0 && <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 }}
@@ -114,25 +126,25 @@ const FeederClubPage = ({
                       </div>
                     ))}
                   </div>
-                </motion.div>
+                </motion.div>}
 
-                <motion.div
+                {(address || externalUrl) && <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 }}
                   className="bg-card rounded-2xl p-6 border border-border"
                 >
-                  <h3 className="font-display font-bold text-foreground mb-3">Location</h3>
-                  <p className="text-sm text-muted-foreground font-body mb-4">{address}</p>
-                  <a
+                  <h3 className="font-display font-bold text-foreground mb-3">{address ? "Location" : "Find out more"}</h3>
+                  {address && <p className="text-sm text-muted-foreground font-body mb-4">{address}</p>}
+                  {externalUrl && <a
                     href={externalUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-primary-foreground font-display font-bold text-sm hover:brightness-110 transition-all w-full justify-center"
                   >
                     Visit Official Website <ExternalLink size={14} />
-                  </a>
-                </motion.div>
+                  </a>}
+                </motion.div>}
 
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -141,7 +153,7 @@ const FeederClubPage = ({
                   className="bg-[hsl(var(--suffolk-navy))] rounded-2xl p-6 text-center"
                 >
                   <Users size={24} className="text-primary mx-auto mb-3" />
-                  <h3 className="font-display font-bold text-white text-sm mb-1">Suffolk Tennis Feeder Club</h3>
+                  <h3 className="font-display font-bold text-white text-sm mb-1">{partner ? "Suffolk Tennis Partner Venue" : "Suffolk Tennis Feeder Club"}</h3>
                   <p className="text-white/60 text-xs font-body">Part of the Suffolk Tennis Performance Pathway network</p>
                 </motion.div>
               </div>

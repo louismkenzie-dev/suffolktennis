@@ -22,6 +22,7 @@ const VenueDavidLloyd = lazyWithRetry(() => import("./pages/VenueDavidLloyd"));
 const VenueIpswichSports = lazyWithRetry(() => import("./pages/VenueIpswichSports"));
 const VenueCulford = lazyWithRetry(() => import("./pages/VenueCulford"));
 const Venues = lazyWithRetry(() => import("./pages/Venues"));
+const VenueFromDb = lazyWithRetry(() => import("./pages/VenueFromDb"));
 const TourRed = lazyWithRetry(() => import("./pages/TourRed"));
 const TourOrange = lazyWithRetry(() => import("./pages/TourOrange"));
 const TourGreen = lazyWithRetry(() => import("./pages/TourGreen"));
@@ -98,6 +99,9 @@ const App = () => (
             <Route path="/clubs/felixstowe" element={<ClubFelixstowe />} />
             <Route path="/clubs/woodbridge" element={<ClubWoodbridge />} />
             <Route path="/clubs/framlingham" element={<ClubFramlingham />} />
+            {/* Any other club/venue added in Admin → Website → Venues. */}
+            <Route path="/clubs/:slug" element={<VenueFromDb />} />
+            <Route path="/venues/:slug" element={<VenueFromDb />} />
             <Route path="/programs" element={<Programs />} />
             <Route path="/programs/red-tour" element={<TourRed />} />
             <Route path="/programs/orange-tour" element={<TourOrange />} />

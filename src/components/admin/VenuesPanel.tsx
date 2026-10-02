@@ -35,6 +35,12 @@ export type VenueRow = {
 
 type Form = Omit<VenueRow, "id" | "highlights"> & { highlights: { label: string }[] };
 
+/** "Bramford Tennis Club" → "bramford-tennis-club". */
+const slugify = (s: string) =>
+  s.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+const looksLikeUrl = (s: string) => /^(https?:\/\/|www\.)|\.[a-z]{2,}\//i.test(s.trim());
+
 const emptyForm = (): Form => ({
   venue_type: "partner",
   name: "",
@@ -176,10 +182,17 @@ const VenuesPanel = () => {
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Name is required"); return; }
+    // The slug is the page address (suffolktennis.online/clubs/<slug>). A
+    // website pasted here belongs in the website field instead, and anything
+    // else is tidied into a valid address; a blank one comes from the name.
+    const rawSlug = form.slug?.trim() ?? "";
+    let website = form.website_url?.trim() ?? "";
+    if (rawSlug && looksLikeUrl(rawSlug) && !website) website = rawSlug;
+    const slug = (rawSlug && !looksLikeUrl(rawSlug) ? slugify(rawSlug) : "") || slugify(form.name);
     const payload = {
       ...form,
       name: form.name.trim(),
-      slug: form.slug?.trim() || null,
+      slug: slug || null,
       tagline: form.tagline?.trim() || null,
       location: form.location?.trim() || null,
       intro: form.intro?.trim() || null,
@@ -187,7 +200,7 @@ const VenuesPanel = () => {
       image_url: form.image_url?.trim() || null,
       logo_url: form.logo_url?.trim() || null,
       logo_bg_color: form.logo_bg_color?.trim() || null,
-      website_url: form.website_url?.trim() || null,
+      website_url: website || null,
       contact_email: form.contact_email?.trim() || null,
       contact_phone: form.contact_phone?.trim() || null,
       address: form.address?.trim() || null,
@@ -249,8 +262,11 @@ const VenuesPanel = () => {
               <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <Label>Slug (URL, optional)</Label>
-              <Input value={form.slug ?? ""} onChange={e => setForm({ ...form, slug: e.target.value })} placeholder="david-lloyd" />
+              <Label>Page address (optional)</Label>
+              <Input value={form.slug ?? ""} onChange={e => setForm({ ...form, slug: e.target.value })} placeholder={slugify(form.name) || "david-lloyd"} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                suffolktennis.online/{form.venue_type === "partner" ? "venues" : "clubs"}/{(form.slug && !looksLikeUrl(form.slug) ? slugify(form.slug) : slugify(form.name)) || "…"}. Made from the name if left blank. The club's own website goes in the website field.
+              </p>
             </div>
           </div>
 
